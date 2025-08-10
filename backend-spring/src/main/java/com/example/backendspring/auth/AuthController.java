@@ -36,14 +36,16 @@ public class AuthController {
     private final JwtService jwtService;
 
     @PostMapping("/login")
-    public ResponseEntity<?> login(@RequestBody LoginRequest req) {
+    public ResponseEntity<Map<String, Object>> login(@RequestBody LoginRequest req) {
         if (req.getUsername() == null || req.getPassword() == null) {
-            return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, "Username e password são obrigatórios"));
+            return ResponseEntity.badRequest()
+                    .body(Map.<String, Object>of(KEY_ERROR, "Username e password são obrigatórios"));
         }
         return userRepository.findByUsername(req.getUsername())
                 .map(u -> {
                     if (!passwordEncoder.matches(req.getPassword(), u.getPassword())) {
-                        return ResponseEntity.status(401).body(Map.of(KEY_ERROR, "Credenciais inválidas"));
+                        return ResponseEntity.status(401)
+                                .body(Map.<String, Object>of(KEY_ERROR, "Credenciais inválidas"));
                     }
                     Map<String, Object> claims = new HashMap<>();
                     claims.put("id", u.getId());
@@ -55,59 +57,62 @@ public class AuthController {
                     user.put(KEY_USERNAME, u.getUsername());
                     user.put(KEY_ROLE, u.getRole());
                     user.put(KEY_PODE_CONTROLAR_CAIXA, Boolean.TRUE.equals(u.getPodeControlarCaixa()));
-                    return ResponseEntity.ok(Map.of(KEY_TOKEN, token, KEY_USER, user));
+                    return ResponseEntity.ok(Map.<String, Object>of(KEY_TOKEN, token, KEY_USER, user));
                 })
-                .orElse(ResponseEntity.status(401).body(Map.of(KEY_ERROR, "Credenciais inválidas")));
+                .orElse(ResponseEntity.status(401).body(Map.<String, Object>of(KEY_ERROR, "Credenciais inválidas")));
     }
 
     @GetMapping("/profile")
-    public ResponseEntity<?> profile(@RequestAttribute(name = "userId", required = false) Long userId) {
+    public ResponseEntity<Map<String, Object>> profile(
+            @RequestAttribute(name = "userId", required = false) Long userId) {
         if (userId == null)
-            return ResponseEntity.status(401).body(Map.of(KEY_ERROR, MSG_NAO_AUTENTICADO));
+            return ResponseEntity.status(401).body(Map.<String, Object>of(KEY_ERROR, MSG_NAO_AUTENTICADO));
         return userRepository.findById(userId)
-                .map(u -> ResponseEntity.ok(Map.of(
+                .map(u -> ResponseEntity.ok(Map.<String, Object>of(
                         "id", u.getId(),
                         KEY_USERNAME, u.getUsername(),
                         KEY_ROLE, u.getRole())))
-                .orElse(ResponseEntity.status(404).body(Map.of(KEY_ERROR, MSG_NAO_ENCONTRADO)));
+                .orElse(ResponseEntity.status(404).body(Map.<String, Object>of(KEY_ERROR, MSG_NAO_ENCONTRADO)));
     }
 
     @GetMapping("/me")
-    public ResponseEntity<?> me(@RequestAttribute(name = "userId", required = false) Long userId) {
+    public ResponseEntity<Map<String, Object>> me(@RequestAttribute(name = "userId", required = false) Long userId) {
         if (userId == null)
-            return ResponseEntity.status(401).body(Map.of(KEY_ERROR, MSG_NAO_AUTENTICADO));
+            return ResponseEntity.status(401).body(Map.<String, Object>of(KEY_ERROR, MSG_NAO_AUTENTICADO));
         return userRepository.findById(userId)
-                .map(u -> ResponseEntity.ok(Map.of(
+                .map(u -> ResponseEntity.ok(Map.<String, Object>of(
                         "id", u.getId(),
                         KEY_USERNAME, u.getUsername(),
                         KEY_ROLE, u.getRole(),
                         KEY_PODE_CONTROLAR_CAIXA, Boolean.TRUE.equals(u.getPodeControlarCaixa()))))
-                .orElse(ResponseEntity.status(404).body(Map.of(KEY_ERROR, MSG_NAO_ENCONTRADO)));
+                .orElse(ResponseEntity.status(404).body(Map.<String, Object>of(KEY_ERROR, MSG_NAO_ENCONTRADO)));
     }
 
     @PostMapping("/change-password")
-    public ResponseEntity<?> changePassword(@RequestAttribute(name = "userId", required = false) Long userId,
+    public ResponseEntity<Map<String, Object>> changePassword(
+            @RequestAttribute(name = "userId", required = false) Long userId,
             @RequestBody ChangePasswordRequest req) {
         if (userId == null)
-            return ResponseEntity.status(401).body(Map.of(KEY_ERROR, MSG_NAO_AUTENTICADO));
+            return ResponseEntity.status(401).body(Map.<String, Object>of(KEY_ERROR, MSG_NAO_AUTENTICADO));
         if (req.getCurrentPassword() == null || req.getNewPassword() == null) {
-            return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, "Senha atual e nova senha são obrigatórias"));
+            return ResponseEntity.badRequest()
+                    .body(Map.<String, Object>of(KEY_ERROR, "Senha atual e nova senha são obrigatórias"));
         }
         return userRepository.findById(userId).map(u -> {
             if (!passwordEncoder.matches(req.getCurrentPassword(), u.getPassword())) {
-                return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, "Senha atual incorreta"));
+                return ResponseEntity.badRequest().body(Map.<String, Object>of(KEY_ERROR, "Senha atual incorreta"));
             }
             u.setPassword(passwordEncoder.encode(req.getNewPassword()));
             userRepository.save(u);
-            return ResponseEntity.ok(Map.of(KEY_MESSAGE, "Senha alterada com sucesso"));
-        }).orElse(ResponseEntity.status(404).body(Map.of(KEY_ERROR, MSG_NAO_ENCONTRADO)));
+            return ResponseEntity.ok(Map.<String, Object>of(KEY_MESSAGE, "Senha alterada com sucesso"));
+        }).orElse(ResponseEntity.status(404).body(Map.<String, Object>of(KEY_ERROR, MSG_NAO_ENCONTRADO)));
     }
 
     // Endpoints admin: listar/criar/atualizar/deletar usuários
     @GetMapping("/users")
-    public ResponseEntity<?> listUsers() {
+    public ResponseEntity<List<Map<String, Object>>> listUsers() {
         List<User> users = userRepository.findAll();
-        return ResponseEntity.ok(users.stream().map(u -> Map.of(
+        return ResponseEntity.ok(users.stream().map(u -> Map.<String, Object>of(
                 "id", u.getId(),
                 KEY_USERNAME, u.getUsername(),
                 KEY_ROLE, u.getRole(),
@@ -115,15 +120,16 @@ public class AuthController {
     }
 
     @PostMapping("/users")
-    public ResponseEntity<?> createUser(@RequestBody CreateUserRequest req) {
+    public ResponseEntity<Map<String, Object>> createUser(@RequestBody CreateUserRequest req) {
         if (req.getUsername() == null || req.getPassword() == null || req.getRole() == null) {
-            return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, "Username, password e role são obrigatórios"));
+            return ResponseEntity.badRequest()
+                    .body(Map.<String, Object>of(KEY_ERROR, "Username, password e role são obrigatórios"));
         }
         if (!req.getRole().equals(ROLE_ADMIN) && !req.getRole().equals(ROLE_USER)) {
-            return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, "Role deve ser admin ou user"));
+            return ResponseEntity.badRequest().body(Map.<String, Object>of(KEY_ERROR, "Role deve ser admin ou user"));
         }
         if (userRepository.existsByUsername(req.getUsername())) {
-            return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, "Username já existe"));
+            return ResponseEntity.badRequest().body(Map.<String, Object>of(KEY_ERROR, "Username já existe"));
         }
         boolean permissaoCaixa = ROLE_ADMIN.equals(req.getRole()) || Boolean.TRUE.equals(req.getPodeControlarCaixa());
         User u = User.builder()
@@ -133,7 +139,7 @@ public class AuthController {
                 .podeControlarCaixa(permissaoCaixa)
                 .build();
         userRepository.save(u);
-        return ResponseEntity.status(201).body(Map.of(
+        return ResponseEntity.status(201).body(Map.<String, Object>of(
                 "id", u.getId(),
                 KEY_USERNAME, u.getUsername(),
                 KEY_ROLE, u.getRole(),
@@ -141,12 +147,13 @@ public class AuthController {
     }
 
     @PutMapping("/users/{id}")
-    public ResponseEntity<?> updateUser(@PathVariable Long id, @RequestBody UpdateUserRequest req) {
+    public ResponseEntity<Map<String, Object>> updateUser(@PathVariable Long id, @RequestBody UpdateUserRequest req) {
         if (req.getUsername() == null || req.getRole() == null) {
-            return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, "Username e role são obrigatórios"));
+            return ResponseEntity.badRequest()
+                    .body(Map.<String, Object>of(KEY_ERROR, "Username e role são obrigatórios"));
         }
         if (!req.getRole().equals(ROLE_ADMIN) && !req.getRole().equals(ROLE_USER)) {
-            return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, "Role deve ser admin ou user"));
+            return ResponseEntity.badRequest().body(Map.<String, Object>of(KEY_ERROR, "Role deve ser admin ou user"));
         }
         return userRepository.findById(id).map(u -> {
             u.setUsername(req.getUsername());
@@ -158,21 +165,23 @@ public class AuthController {
                 u.setPassword(passwordEncoder.encode(req.getPassword()));
             }
             userRepository.save(u);
-            return ResponseEntity.ok(Map.of(KEY_MESSAGE, "Usuário atualizado com sucesso"));
-        }).orElse(ResponseEntity.status(404).body(Map.of(KEY_ERROR, MSG_NAO_ENCONTRADO)));
+            return ResponseEntity.ok(Map.<String, Object>of(KEY_MESSAGE, "Usuário atualizado com sucesso"));
+        }).orElse(ResponseEntity.status(404).body(Map.<String, Object>of(KEY_ERROR, MSG_NAO_ENCONTRADO)));
     }
 
     @DeleteMapping("/users/{id}")
-    public ResponseEntity<?> deleteUser(@RequestAttribute(name = "userId", required = false) Long requesterId,
+    public ResponseEntity<Map<String, Object>> deleteUser(
+            @RequestAttribute(name = "userId", required = false) Long requesterId,
             @PathVariable Long id) {
         if (requesterId != null && requesterId.equals(id)) {
-            return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, "Não é possível deletar sua própria conta"));
+            return ResponseEntity.badRequest()
+                    .body(Map.<String, Object>of(KEY_ERROR, "Não é possível deletar sua própria conta"));
         }
         if (!userRepository.existsById(id)) {
-            return ResponseEntity.status(404).body(Map.of(KEY_ERROR, MSG_NAO_ENCONTRADO));
+            return ResponseEntity.status(404).body(Map.<String, Object>of(KEY_ERROR, MSG_NAO_ENCONTRADO));
         }
         userRepository.deleteById(id);
-        return ResponseEntity.ok(Map.of(KEY_MESSAGE, "Usuário deletado com sucesso"));
+        return ResponseEntity.ok(Map.<String, Object>of(KEY_MESSAGE, "Usuário deletado com sucesso"));
     }
 
     @Data

@@ -13,9 +13,9 @@ spring:
       ddl-auto: update
     properties:
       hibernate:
-        "format_sql": true
+        "[format_sql]": true
         jdbc:
-          "time_zone": "UTC"
+          "[time_zone]": "UTC"
     open-in-view: false
 
 app:
