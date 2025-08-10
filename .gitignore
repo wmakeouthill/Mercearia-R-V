@@ -1,1 +1,86 @@
-node_modules
+############################################################
+# Raiz do projeto - regras gerais de segurança e build
+############################################################
+
+# Node/Electron
+node_modules/
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+package-lock-backup.json
+
+# Arquivos de sistema
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# IDEs/editores
+.vscode/
+.idea/
+*.iml
+
+# Saídas gerais
+dist/
+coverage/
+
+############################################################
+# Frontend (Angular)
+############################################################
+frontend/dist/
+frontend/.angular/cache/
+frontend/tmp/
+frontend/out-tsc/
+frontend/coverage/
+
+############################################################
+# Electron
+############################################################
+electron/dist/
+electron/dist-installer/
+electron/out/
+electron/*.asar
+
+############################################################
+# Backend (Spring/Maven)
+############################################################
+backend-spring/target/
+target/
+backend-spring/.classpath
+backend-spring/.project
+backend-spring/.settings/
+backend-spring/data/
+backend-spring/data/pg/
+backend-spring/secrets/
+
+############################################################
+# Uploads e dados de runtime
+############################################################
+uploads/
+logs/
+*.log
+
+############################################################
+# Variáveis de ambiente e segredos
+############################################################
+.env
+.env.*
+!.env.example
+.npmrc
+.npmrc.*
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*.jks
+*.keystore
+keystore.*
+
+############################################################
+# Temporários/Misc
+############################################################
+tmp/
+temp/
+*.tmp
+*.swp
+*.swo
