@@ -1,0 +1,320 @@
+/* You can add global styles to this file, and also import other style files */
+
+/* Paleta de cores Mercearia R&V */
+:root {
+    --primary-blue: #002E59;
+    --primary-gold: #DBC27D;
+    --secondary-blue: #003366;
+    --light-gold: #E6D09A;
+    --dark-blue: #001D3D;
+    --white: #FFFFFF;
+    --light-gray: #F8F9FA;
+    --medium-gray: #E9ECEF;
+    --dark-gray: #495057;
+    --success: #28A745;
+    --warning: #FFC107;
+    --danger: #DC3545;
+    --info: #17A2B8;
+}
+
+/* Reset e estilos globais */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html,
+body {
+    height: 100%;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: var(--white);
+    color: var(--dark-gray);
+    overflow-x: hidden;
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    line-height: 1.6;
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+/* Estilos para aplicativo desktop */
+.app-body {
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 4px 20px rgba(0, 46, 89, 0.1);
+}
+
+/* Estilos básicos para botões */
+button {
+    cursor: pointer;
+    border: none;
+    outline: none;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.3s ease;
+    border-radius: 6px;
+}
+
+.btn-primary {
+    background: var(--primary-blue);
+    color: var(--white);
+    padding: 10px 20px;
+
+    &:hover {
+        background: var(--secondary-blue);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(0, 46, 89, 0.3);
+    }
+}
+
+.btn-secondary {
+    background: var(--primary-gold);
+    color: var(--primary-blue);
+    padding: 10px 20px;
+
+    &:hover {
+        background: var(--light-gold);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(219, 194, 125, 0.3);
+    }
+}
+
+.btn-outline {
+    background: transparent;
+    color: var(--primary-blue);
+    border: 2px solid var(--primary-blue);
+    padding: 8px 18px;
+
+    &:hover {
+        background: var(--primary-blue);
+        color: var(--white);
+    }
+}
+
+.btn-danger {
+    background: var(--danger);
+    color: var(--white);
+    padding: 10px 20px;
+
+    &:hover {
+        background: #C82333;
+        transform: translateY(-1px);
+    }
+}
+
+/* Estilos básicos para inputs */
+input,
+select,
+textarea {
+    font-family: inherit;
+    outline: none;
+    border: 2px solid var(--medium-gray);
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-size: 14px;
+    transition: border-color 0.3s ease, box-shadow 0.3s ease;
+
+    &:focus {
+        border-color: var(--primary-gold);
+        box-shadow: 0 0 0 3px rgba(219, 194, 125, 0.1);
+    }
+
+    &::placeholder {
+        color: #999;
+    }
+}
+
+/* Estilos básicos para tabelas */
+table {
+    border-collapse: collapse;
+    width: 100%;
+    background: var(--white);
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0, 46, 89, 0.1);
+}
+
+table th {
+    background: var(--primary-blue);
+    color: var(--white);
+    padding: 12px;
+    text-align: left;
+    font-weight: 600;
+}
+
+table td {
+    padding: 12px;
+    border-bottom: 1px solid var(--medium-gray);
+}
+
+table tr:last-child td {
+    border-bottom: none;
+}
+
+table tr:hover {
+    background: var(--light-gray);
+}
+
+/* Estilos básicos para links */
+a {
+    text-decoration: none;
+    color: var(--primary-blue);
+    transition: color 0.3s ease;
+
+    &:hover {
+        color: var(--secondary-blue);
+        text-decoration: underline;
+    }
+}
+
+/* Container principal */
+.container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 0 20px;
+}
+
+/* Cards */
+.card {
+    background: var(--white);
+    border-radius: 12px;
+    box-shadow: 0 4px 16px rgba(0, 46, 89, 0.1);
+    border: 1px solid rgba(219, 194, 125, 0.2);
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+
+    &:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 24px rgba(0, 46, 89, 0.15);
+        border-color: var(--primary-gold);
+    }
+}
+
+.card-header {
+    background: linear-gradient(135deg, var(--primary-blue) 0%, var(--secondary-blue) 100%);
+    color: var(--white);
+    padding: 16px 20px;
+    border-radius: 12px 12px 0 0;
+    border-bottom: 3px solid var(--primary-gold);
+}
+
+.card-body {
+    padding: 20px;
+}
+
+/* Utilitários */
+.text-center {
+    text-align: center;
+}
+
+.text-left {
+    text-align: left;
+}
+
+.text-right {
+    text-align: right;
+}
+
+.text-primary {
+    color: var(--primary-blue);
+}
+
+.text-gold {
+    color: var(--primary-gold);
+}
+
+.bg-primary {
+    background-color: var(--primary-blue);
+}
+
+.bg-gold {
+    background-color: var(--primary-gold);
+}
+
+.mt-10 {
+    margin-top: 10px;
+}
+
+.mt-20 {
+    margin-top: 20px;
+}
+
+.mb-10 {
+    margin-bottom: 10px;
+}
+
+.mb-20 {
+    margin-bottom: 20px;
+}
+
+.p-10 {
+    padding: 10px;
+}
+
+.p-20 {
+    padding: 20px;
+}
+
+/* Layout flexbox */
+.d-flex {
+    display: flex;
+}
+
+.justify-content-between {
+    justify-content: space-between;
+}
+
+.align-items-center {
+    align-items: center;
+}
+
+.gap-10 {
+    gap: 10px;
+}
+
+.gap-20 {
+    gap: 20px;
+}
+
+/* Scrollbar personalizada */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--light-gray);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--primary-gold);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--light-gold);
+}
+
+/* Responsividade básica */
+@media (max-width: 768px) {
+    .container {
+        padding: 0 15px;
+    }
+
+    body {
+        font-size: 13px;
+    }
+
+    .btn-primary,
+    .btn-secondary,
+    .btn-outline,
+    .btn-danger {
+        padding: 8px 16px;
+        font-size: 13px;
+    }
+}

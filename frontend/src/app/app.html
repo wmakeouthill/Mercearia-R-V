@@ -1,0 +1,17 @@
+<div class="app-container">
+  <header class="app-header" *ngIf="!isLoginPage()">
+    <div class="header-content">
+      <div class="logo-section">
+        <h1 class="logo">Mercearia R&V</h1>
+        <span class="logo-subtitle">Sistema de Gestão</span>
+      </div>
+      <div class="header-actions" *ngIf="!isLoginPage()">
+        <span class="user-welcome">Bem-vindo!</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="main-content" [class.full-height]="isLoginPage()">
+    <router-outlet />
+  </main>
+</div>

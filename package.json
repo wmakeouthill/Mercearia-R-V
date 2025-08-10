@@ -1,0 +1,44 @@
+{
+    "name": "sistema-estoque",
+    "version": "1.0.0",
+    "description": "Sistema de Gestão de Estoque com Electron, Angular e Node.js",
+    "scripts": {
+        "install:all": "npm install && cd frontend && npm install && cd ../backend && npm install && cd ../electron && npm install",
+        "build:frontend": "cd frontend && npm run build -- --configuration=production",
+        "build:backend": "cd backend-spring && mvn -q -DskipTests package",
+        "build:electron": "cd electron && npm run build",
+        "build:all": "npm run build:backend && npm run build:frontend && npm run build:electron",
+        "build:prod": "npx ts-node scripts/build-prod.ts",
+        "check-deps": "node scripts/check-dependencies.js",
+        "network-info": "node scripts/show-network-info.js",
+        "serve:frontend": "node scripts/serve-frontend-prod.js",
+        "extract:frontend": "node scripts/extract-frontend-from-electron.js",
+        "prod:web": "concurrently \"cd backend-spring && mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=3000\" \"npm run serve:frontend\"",
+        "dist": "npm run build:prod && cd electron && npm run dist",
+        "dist:win": "npm run build:prod && cd electron && npm run dist:win",
+        "dist:standalone": "npx ts-node scripts/build-standalone.ts",
+        "dev": "concurrently \"cd backend-spring && mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=3000\" \"cd frontend && npm start\" \"node scripts/wait-and-start-electron.js\"",
+        "dev:fast": "concurrently \"cd backend-spring && mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=3000\" \"cd frontend && npm start\" \"cd electron && npm run dev\"",
+        "dev:network": "concurrently \"cd backend-spring && mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=3000\" \"cd frontend && npm run start:network\" \"node scripts/wait-and-start-electron.js\"",
+        "dev:ip": "concurrently \"cd backend-spring && mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=3000\" \"cd frontend && npm run start:ip\" \"node scripts/wait-and-start-electron.js\"",
+        "dev:sequential": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\" \"npm run dev:electron:delayed\"",
+        "dev:backend": "cd backend-spring && mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=3000",
+        "dev:frontend": "cd frontend && npm start",
+        "dev:electron:delayed": "node -e \"setTimeout(() => require('child_process').exec('cd electron && npm run dev'), 8000)\"",
+        "start": "cd electron && npm start"
+    },
+    "keywords": [
+        "electron",
+        "angular",
+        "nodejs",
+        "estoque",
+        "desktop"
+    ],
+    "author": "",
+    "license": "ISC",
+    "devDependencies": {
+        "@types/node": "^24.1.0",
+        "concurrently": "^8.2.2",
+        "typescript": "^5.3.3"
+    }
+}

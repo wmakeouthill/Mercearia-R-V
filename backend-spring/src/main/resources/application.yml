@@ -1,0 +1,33 @@
+server:
+  port: 3000
+
+spring:
+  config:
+    import: optional:file:./backend-spring/secrets/application-secrets.yml,optional:file:./backend-spring/secrets/application-secrets.properties
+  datasource:
+    url: ${DB_URL:}
+    username: ${DB_USERNAME:}
+    password: ${DB_PASSWORD:}
+  jpa:
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        "format_sql": true
+        jdbc:
+          "time_zone": "UTC"
+    open-in-view: false
+
+app:
+  jwt:
+    secret: ${JWT_SECRET}
+    expiration: 86400000 # 24h em ms
+
+# CORS permissivo similar ao Express
+cors:
+  allowed-origins: "*"
+  allowed-methods: "GET,POST,PUT,DELETE,OPTIONS,PATCH"
+  allowed-headers: "Authorization,Content-Type,Accept,Origin,X-Requested-With,Access-Control-Request-Method,Access-Control-Request-Headers"
+  exposed-headers: "Content-Length,X-Foo,X-Bar"
+  allow-credentials: true
+  max-age: 86400

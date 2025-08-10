@@ -1,0 +1,223 @@
+<div class="dashboard-container">
+    <div class="dashboard-header">
+        <div class="header-content">
+            <div class="welcome-section">
+                <h1>Painel de Controle</h1>
+                <p class="welcome-text">Gerencie sua mercearia de forma eficiente</p>
+            </div>
+            <div class="user-info">
+                <div class="user-details">
+                    <span class="user-name">{{ currentUser?.username }}</span>
+                    <span class="user-role">{{ currentUser?.role === 'admin' ? 'Administrador' : 'Operador' }}</span>
+                    <div class="caixa-status">
+                        <span class="status-indicator" [class.aberto]="statusCaixa?.aberto"
+                            [class.fechado]="!statusCaixa?.aberto"></span>
+                        <span class="status-text">{{ statusCaixa?.aberto ? 'Caixa Aberto' : 'Caixa Fechado' }}</span>
+                    </div>
+                </div>
+                <button (click)="logout()" class="logout-button">
+                    <span class="logout-icon">🚪</span>
+                    Sair
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <main class="dashboard-main">
+        <!-- Mensagens -->
+        <div *ngIf="error" class="message error-message" (click)="clearMessages()">
+            <span class="message-icon">⚠️</span>
+            <span>{{ error }}</span>
+            <button class="close-btn">×</button>
+        </div>
+
+        <div *ngIf="success" class="message success-message" (click)="clearMessages()">
+            <span class="message-icon">✅</span>
+            <span>{{ success }}</span>
+            <button class="close-btn">×</button>
+        </div>
+
+        <div class="navigation-grid">
+            <div class="nav-card admin-card" *ngIf="isAdmin" (click)="navigateTo('/produtos')">
+                <div class="card-header">
+                    <div class="nav-icon">📦</div>
+                    <h3>Produtos</h3>
+                </div>
+                <div class="card-body">
+                    <p>Gerenciar produtos e estoque</p>
+                    <div class="card-accent admin-accent"></div>
+                </div>
+            </div>
+
+            <div class="nav-card admin-card" *ngIf="isAdmin" (click)="navigateTo('/produtos/novo')">
+                <div class="card-header">
+                    <div class="nav-icon">➕</div>
+                    <h3>Novo Produto</h3>
+                </div>
+                <div class="card-body">
+                    <p>Adicionar novo produto</p>
+                    <div class="card-accent admin-accent"></div>
+                </div>
+            </div>
+
+                        <div class="nav-card sales-card" [class.blocked]="!isAdmin && statusCaixa && !statusCaixa.aberto"
+                 (click)="handlePontoVendaClick()">
+                <div class="card-header">
+                    <div class="nav-icon">💰</div>
+                    <h3>Ponto de Venda</h3>
+                </div>
+                <div class="card-body">
+                    <p>Realizar vendas</p>
+                    <div class="card-accent"></div>
+                </div>
+
+                <!-- Overlay de bloqueio quando caixa fechado -->
+                <div class="caixa-blocked-overlay" *ngIf="!isAdmin && statusCaixa && !statusCaixa.aberto">
+                    <div class="overlay-content">
+                        <div class="lock-icon">🔒</div>
+                        <span class="blocked-text">Caixa Fechado</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="nav-card reports-card" (click)="navigateTo('/relatorios')">
+                <div class="card-header">
+                    <div class="nav-icon">📊</div>
+                    <h3>Relatórios</h3>
+                </div>
+                <div class="card-body">
+                    <p>Visualizar relatórios de vendas</p>
+                    <div class="card-accent"></div>
+                </div>
+            </div>
+
+            <div class="nav-card admin-card" *ngIf="isAdmin" (click)="navigateTo('/produtos/estoque')">
+                <div class="card-header">
+                    <div class="nav-icon">📋</div>
+                    <h3>Gerenciar Estoque</h3>
+                </div>
+                <div class="card-body">
+                    <p>Ajustar quantidades</p>
+                    <div class="card-accent admin-accent"></div>
+                </div>
+            </div>
+
+            <div class="nav-card admin-card" *ngIf="isAdmin" (click)="navigateTo('/vendas/historico')">
+                <div class="card-header">
+                    <div class="nav-icon">📈</div>
+                    <h3>Histórico de Vendas</h3>
+                </div>
+                <div class="card-body">
+                    <p>Ver todas as vendas</p>
+                    <div class="card-accent admin-accent"></div>
+                </div>
+            </div>
+
+            <div class="nav-card admin-card" *ngIf="isAdmin" (click)="navigateTo('/logs')">
+                <div class="card-header">
+                    <div class="nav-icon">📋</div>
+                    <h3>Logs do Sistema</h3>
+                </div>
+                <div class="card-body">
+                    <p>Monitorar atividades</p>
+                    <div class="card-accent admin-accent"></div>
+                </div>
+            </div>
+
+            <div class="nav-card admin-card" *ngIf="isAdmin" (click)="navigateTo('/administracao')">
+                <div class="card-header">
+                    <div class="nav-icon">⚙️</div>
+                    <h3>Administração</h3>
+                </div>
+                <div class="card-body">
+                    <p>Gerenciar usuários e sistema</p>
+                    <div class="card-accent admin-accent"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="dashboard-info">
+            <div class="info-card">
+                <div class="card-header">
+                    <h3>📋 Informações do Sistema</h3>
+                </div>
+                <div class="card-body">
+                    <div class="info-grid">
+                        <div class="info-item">
+                            <span class="info-label">Usuário:</span>
+                            <span class="info-value">{{ currentUser?.username }}</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Perfil:</span>
+                            <span class="info-value">{{ currentUser?.role === 'admin' ? 'Administrador' : 'Operador'
+                                }}</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Permissões:</span>
+                            <span class="info-value">{{ isAdmin ? 'Completas' : 'Limitadas' }}</span>
+                        </div>
+                        <div class="info-item caixa-control" *ngIf="podeControlarCaixa">
+                            <span class="info-label">Status do Caixa:</span>
+                            <span class="info-value" [class.caixa-aberto]="statusCaixa?.aberto"
+                                [class.caixa-fechado]="!statusCaixa?.aberto">
+                                {{ statusCaixa?.aberto ? 'Aberto' : 'Fechado' }}
+                                <span class="status-dot" [class.aberto]="statusCaixa?.aberto"
+                                    [class.fechado]="!statusCaixa?.aberto"></span>
+                            </span>
+                            <div class="caixa-actions">
+                                <button (click)="abrirCaixa()" class="action-btn open-btn"
+                                    [disabled]="loading || statusCaixa?.aberto" title="Abrir Caixa">
+                                    <span *ngIf="loading">⏳</span>
+                                    <span *ngIf="!loading">📂</span>
+                                    Abrir Caixa
+                                </button>
+                                <button (click)="fecharCaixa()" class="action-btn close-btn"
+                                    [disabled]="loading || !statusCaixa?.aberto" title="Fechar Caixa">
+                                    <span *ngIf="loading">⏳</span>
+                                    <span *ngIf="!loading">🔒</span>
+                                    Fechar Caixa
+                                </button>
+                                <button *ngIf="isAdmin" (click)="toggleHorariosConfig()" class="action-btn config-btn"
+                                    title="Configurar Horários">
+                                    ⚙️ Horários
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Configuração de Horários (apenas admin) -->
+            <div *ngIf="showHorariosConfig && isAdmin" class="info-card config-card">
+                <div class="card-header">
+                    <h3>⏰ Configuração de Horários Automáticos</h3>
+                    <button (click)="toggleHorariosConfig()" class="close-config-btn">×</button>
+                </div>
+                <div class="card-body">
+                    <div class="horarios-form">
+                        <div class="form-group">
+                            <label for="horarioAbertura">Horário de Abertura Obrigatório:</label>
+                            <input type="time" id="horarioAbertura" [(ngModel)]="horarioAbertura" class="time-input">
+                        </div>
+                        <div class="form-group">
+                            <label for="horarioFechamento">Horário de Fechamento Obrigatório:</label>
+                            <input type="time" id="horarioFechamento" [(ngModel)]="horarioFechamento"
+                                class="time-input">
+                        </div>
+                        <div class="form-actions">
+                            <button (click)="salvarHorarios()" class="save-btn" [disabled]="loading">
+                                <span *ngIf="loading">⏳</span>
+                                <span *ngIf="!loading">💾</span>
+                                Salvar Horários
+                            </button>
+                        </div>
+                        <p class="info-text">
+                            <strong>Nota:</strong> Quando configurados, o caixa será aberto/fechado automaticamente nos
+                            horários definidos.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+</div>

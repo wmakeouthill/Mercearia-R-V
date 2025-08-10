@@ -1,0 +1,179 @@
+<div class="relatorio-container">
+    <div class="relatorio-header">
+        <h1>Relatório de Vendas</h1>
+        <button (click)="voltarAoDashboard()" class="btn-voltar">← Voltar ao Dashboard</button>
+    </div>
+
+    <div class="error-message" *ngIf="error">
+        {{ error }}
+    </div>
+
+    <!-- Estatísticas Gerais -->
+    <div class="estatisticas-grid">
+        <div class="estatistica-card">
+            <div class="card-icon">📊</div>
+            <div class="card-content">
+                <h3>Total de Vendas</h3>
+                <p class="estatistica-valor">{{ totalVendas }}</p>
+            </div>
+        </div>
+        <div class="estatistica-card">
+            <div class="card-icon">💰</div>
+            <div class="card-content">
+                <h3>Receita Total</h3>
+                <p class="estatistica-valor">R$ {{ receitaTotal.toFixed(2) }}</p>
+            </div>
+        </div>
+        <div class="estatistica-card">
+            <div class="card-icon">📈</div>
+            <div class="card-content">
+                <h3>Média por Venda</h3>
+                <p class="estatistica-valor">R$ {{ mediaVendas.toFixed(2) }}</p>
+            </div>
+        </div>
+        <div class="estatistica-card">
+            <div class="card-icon">🏆</div>
+            <div class="card-content">
+                <h3>Melhor Dia</h3>
+                <p class="estatistica-valor-pequeno">{{ formatarMelhorDia(melhorDia) }}</p>
+                <p class="estatistica-sub">R$ {{ melhorDiaReceita.toFixed(2) }}</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filtros -->
+    <div class="filtros-section">
+        <div class="filtros-content">
+            <div class="filtros-linha-superior">
+                <div class="filtros-grupo">
+                    <div class="filtro-item">
+                        <label for="periodo">Período:</label>
+                        <select id="periodo" [(ngModel)]="filtroPeriodo" class="select-filtro">
+                            <option value="dia">Diário</option>
+                            <option value="mes">Mensal</option>
+                        </select>
+                    </div>
+                    <div class="filtro-item">
+                        <label for="data">Data:</label>
+                        <input type="date" id="data" [(ngModel)]="filtroData" class="input-filtro">
+                    </div>
+                </div>
+                <div class="filtro-acoes">
+                    <button (click)="aplicarFiltros()" class="btn-filtrar">🔍 Filtrar</button>
+                    <button (click)="limparFiltros()" class="btn-limpar">🔄 Limpar</button>
+                    <button (click)="exportarRelatorio()" class="btn-exportar">📊 Exportar</button>
+                </div>
+            </div>
+
+            <!-- Nova linha de filtros -->
+            <div class="filtros-linha-inferior">
+                <div class="filtros-grupo-detalhado">
+                    <div class="filtro-item">
+                        <label for="nomeProduto">🔍 Buscar Produto:</label>
+                        <input type="text" id="nomeProduto" [(ngModel)]="filtroNomeProduto"
+                            placeholder="Digite o nome do produto..." class="input-filtro input-busca"
+                            (input)="aplicarFiltros()">
+                    </div>
+                    <div class="filtro-item">
+                        <label for="metodoPagamento">💳 Método de Pagamento:</label>
+                        <select id="metodoPagamento" [(ngModel)]="filtroMetodoPagamento" class="select-filtro"
+                            (change)="aplicarFiltros()">
+                            <option value="">Todos os métodos</option>
+                            <option value="dinheiro">💵 Dinheiro</option>
+                            <option value="cartao_credito">💳 Cartão de Crédito</option>
+                            <option value="cartao_debito">🏧 Cartão de Débito</option>
+                            <option value="pix">📱 PIX</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Relatório Detalhado -->
+    <div class="relatorio-content">
+        <h2>Relatório {{ filtroPeriodo === 'dia' ? 'Diário' : 'Mensal' }}</h2>
+
+        <div class="loading" *ngIf="loading">
+            Carregando relatório...
+        </div>
+
+        <div class="relatorio-tabela" *ngIf="!loading">
+            <table class="tabela-relatorio">
+                <thead>
+                    <tr>
+                        <th>Data</th>
+                        <th>Total de Vendas</th>
+                        <th>Quantidade Vendida</th>
+                        <th>Receita Total</th>
+                        <th>Média por Venda</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr *ngFor="let item of (filtroPeriodo === 'dia' ? relatorioDiario : relatorioMensal)">
+                        <td>{{ formatarData(item.data) }}</td>
+                        <td>{{ item.total_vendas }}</td>
+                        <td>{{ item.quantidade_vendida }}</td>
+                        <td>R$ {{ item.receita_total.toFixed(2) }}</td>
+                        <td>R$ {{ (item.receita_total / item.total_vendas).toFixed(2) }}</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Lista de Vendas Detalhada -->
+    <div class="vendas-detalhadas">
+        <h2>📋 Vendas Detalhadas</h2>
+
+        <div class="vendas-tabela" *ngIf="getVendasFiltradas().length > 0">
+            <table class="tabela-vendas">
+                <thead>
+                    <tr>
+                        <th class="col-numero">Nº</th>
+                        <th class="col-data-hora">Data/Hora</th>
+                        <th class="col-imagem">Img</th>
+                        <th class="col-produto">Produto</th>
+                        <th class="col-qtd">Qtd</th>
+                        <th class="col-metodo">Método</th>
+                        <th class="col-total">Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr *ngFor="let venda of getVendasFiltradas(); let i = index" class="venda-row">
+                        <td class="venda-numero">{{ getVendasFiltradas().length - i }}</td>
+                        <td class="venda-data">
+                            <span class="data-hora-inline">
+                                {{ formatarData(venda.data_venda) }} {{ formatarHora(venda.data_venda) }}
+                            </span>
+                        </td>
+                        <td class="venda-imagem">
+                            <div class="venda-imagem-container">
+                                <img [src]="getImageUrl(venda.produto_imagem)" [alt]="venda.produto_nome"
+                                    class="venda-imagem-thumb" (error)="onImageError($event)">
+                            </div>
+                        </td>
+                        <td class="produto-info">
+                            <div class="produto-nome">{{ venda.produto_nome || 'Produto #' + venda.produto_id }}</div>
+                        </td>
+                        <td class="quantidade">{{ venda.quantidade_vendida }}</td>
+                        <td class="metodo-pagamento">
+                            <div class="metodo-badge">
+                                <span class="metodo-icone">{{ getMetodoPagamentoIcone(venda.metodo_pagamento) }}</span>
+                                <span class="metodo-nome">{{ getMetodoPagamentoNome(venda.metodo_pagamento) }}</span>
+                            </div>
+                        </td>
+                        <td class="valor-total">R$ {{ venda.preco_total.toFixed(2) }}</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="vendas-vazias" *ngIf="getVendasFiltradas().length === 0">
+            <div class="vazio-icon">📊</div>
+            <p>Nenhuma venda encontrada para o período selecionado.</p>
+        </div>
+    </div>
+
+
+</div>

@@ -1,0 +1,144 @@
+<div class="historico-container">
+    <div class="historico-header">
+        <h1>📈 Histórico de Vendas</h1>
+        <button (click)="voltarAoDashboard()" class="btn-voltar">← Voltar ao Dashboard</button>
+    </div>
+
+    <div class="error-message" *ngIf="error">
+        {{ error }}
+    </div>
+
+    <!-- Estatísticas Gerais -->
+    <div class="estatisticas-grid">
+        <div class="estatistica-card">
+            <div class="card-icon">📊</div>
+            <div class="card-content">
+                <h3>Total de Vendas</h3>
+                <p class="estatistica-valor">{{ vendasFiltradas.length }}</p>
+            </div>
+        </div>
+        <div class="estatistica-card">
+            <div class="card-icon">💰</div>
+            <div class="card-content">
+                <h3>Receita Total</h3>
+                <p class="estatistica-valor">R$ {{ getReceitaTotal().toFixed(2) }}</p>
+            </div>
+        </div>
+        <div class="estatistica-card">
+            <div class="card-icon">📦</div>
+            <div class="card-content">
+                <h3>Quantidade Total</h3>
+                <p class="estatistica-valor">{{ getQuantidadeTotal() }}</p>
+            </div>
+        </div>
+        <div class="estatistica-card">
+            <div class="card-icon">🎯</div>
+            <div class="card-content">
+                <h3>Ticket Médio</h3>
+                <p class="estatistica-valor">R$ {{ getTicketMedio().toFixed(2) }}</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filtros -->
+    <div class="filtros-section">
+        <div class="filtros-content">
+            <div class="filtros-linha-superior">
+                <div class="filtros-grupo">
+                    <div class="filtro-item">
+                        <label for="data">📅 Data:</label>
+                        <input type="date" id="data" [(ngModel)]="dataFiltro" (change)="filterVendas()"
+                            class="input-filtro">
+                    </div>
+                    <div class="filtro-item">
+                        <label for="produto">🔍 Produto:</label>
+                        <input type="text" id="produto" [(ngModel)]="produtoFiltro" (input)="filterVendas()"
+                            placeholder="Nome do produto..." class="input-filtro input-busca">
+                    </div>
+                </div>
+                <div class="filtro-acoes">
+                    <button (click)="filterVendas()" class="btn-filtrar">🔍 Filtrar</button>
+                    <button (click)="limparFiltros()" class="btn-limpar">🔄 Limpar</button>
+                </div>
+            </div>
+
+            <!-- Nova linha de filtros -->
+            <div class="filtros-linha-inferior">
+                <div class="filtros-grupo-detalhado">
+                    <div class="filtro-item">
+                        <label for="metodoPagamento">💳 Método de Pagamento:</label>
+                        <select id="metodoPagamento" [(ngModel)]="metodoPagamentoFiltro" class="select-filtro"
+                            (change)="filterVendas()">
+                            <option value="">Todos os métodos</option>
+                            <option value="dinheiro">💵 Dinheiro</option>
+                            <option value="cartao_credito">💳 Cartão de Crédito</option>
+                            <option value="cartao_debito">🏧 Cartão de Débito</option>
+                            <option value="pix">📱 PIX</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tabela de Vendas -->
+    <div class="vendas-detalhadas">
+        <h2>📋 Vendas Registradas</h2>
+
+        <div class="loading" *ngIf="loading">
+            Carregando vendas...
+        </div>
+
+        <div class="vendas-tabela" *ngIf="!loading && vendasFiltradas.length > 0">
+            <table class="tabela-vendas">
+                <thead>
+                    <tr>
+                        <th class="col-numero">Nº</th>
+                        <th class="col-imagem">Img</th>
+                        <th class="col-produto">Produto</th>
+                        <th class="col-qtd">Qtd</th>
+                        <th class="col-metodo">Método</th>
+                        <th class="col-total">Total</th>
+                        <th class="col-data">Data/Hora</th>
+                        <th class="col-acoes">Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr *ngFor="let venda of vendasFiltradas; let i = index" class="venda-row">
+                        <td class="venda-numero">{{ vendasFiltradas.length - i }}</td>
+                        <td class="venda-imagem">
+                            <div class="venda-imagem-container">
+                                <img [src]="getImageUrl(venda.produto_imagem)" [alt]="venda.produto_nome"
+                                    class="venda-imagem-thumb" (error)="onImageError($event)">
+                            </div>
+                        </td>
+                        <td class="produto-info">
+                            <div class="produto-nome">{{ venda.produto_nome || 'Produto #' + venda.produto_id }}</div>
+                        </td>
+                        <td class="quantidade">{{ venda.quantidade_vendida }}</td>
+                        <td class="metodo-pagamento">
+                            <div class="metodo-badge">
+                                <span class="metodo-icone">{{ getMetodoPagamentoIcone(venda.metodo_pagamento) }}</span>
+                                <span class="metodo-nome">{{ getMetodoPagamentoNome(venda.metodo_pagamento) }}</span>
+                            </div>
+                        </td>
+                        <td class="valor-total">R$ {{ venda.preco_total.toFixed(2) }}</td>
+                        <td class="venda-data">
+                            <span class="data-hora-inline">{{ formatarData(venda.data_venda) }}</span>
+                        </td>
+                        <td class="acoes">
+                            <button (click)="excluirVenda(venda.id!)" class="btn-excluir" title="Excluir venda">
+                                🗑️
+                            </button>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="vendas-vazias" *ngIf="!loading && vendasFiltradas.length === 0">
+            <div class="vazio-icon">📊</div>
+            <p>Nenhuma venda encontrada para os filtros aplicados.</p>
+        </div>
+    </div>
+</div>

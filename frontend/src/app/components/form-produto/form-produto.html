@@ -1,0 +1,100 @@
+<div class="form-produto-container">
+    <div class="form-produto-header">
+        <h1>{{ isEditing ? 'Editar Produto' : 'Novo Produto' }}</h1>
+        <button (click)="cancelar()" class="btn-voltar">← Voltar ao Dashboard</button>
+    </div>
+
+    <div class="error-message" *ngIf="error">
+        {{ error }}
+    </div>
+
+    <div class="success-message" *ngIf="sucesso">
+        {{ sucesso }}
+    </div>
+
+    <div class="loading" *ngIf="loading">
+        {{ isEditing ? 'Carregando produto...' : 'Salvando produto...' }}
+    </div>
+
+    <form (ngSubmit)="onSubmit()" class="form-produto" *ngIf="!loading">
+        <!-- Seção de imagem do produto -->
+        <div class="form-group image-section">
+            <label>Imagem do Produto</label>
+            <div class="image-upload-container">
+                <!-- Sempre mostrar preview da imagem (com fallback para padrão) -->
+                <div class="image-preview">
+                    <img [src]="imagemPreview || getImageUrl(produto.imagem)" alt="Preview do produto"
+                        class="preview-image" (error)="onImageError($event)">
+                    <button type="button" *ngIf="imagemPreview || produto.imagem" (click)="removerImagem()" 
+                           class="btn-remove-image" title="Remover imagem">
+                        ❌
+                    </button>
+                </div>
+                
+                <!-- Botões de ação -->
+                <div class="image-actions">
+                    <input type="file" id="imagem" (change)="onImageSelected($event)" accept="image/*"
+                           class="file-input">
+                    <label for="imagem" class="file-label">
+                        {{ imagemPreview || produto.imagem ? '🔄 Alterar Imagem' : '📷 Escolher Imagem' }}
+                    </label>
+                    <p class="image-info">PNG, JPG, GIF até 5MB</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label for="nome">Nome do Produto *</label>
+            <input type="text" id="nome" [(ngModel)]="produto.nome" name="nome" placeholder="Digite o nome do produto"
+                class="form-control" required>
+        </div>
+
+        <div class="form-group">
+            <label for="codigo_barras">Código de Barras</label>
+            <div class="codigo-barras-group">
+                <input type="text" id="codigo_barras" [(ngModel)]="produto.codigo_barras" name="codigo_barras"
+                    placeholder="Digite o código de barras" class="form-control">
+                <button type="button" (click)="gerarCodigoBarras()" class="btn-gerar-codigo">
+                    🔢 Gerar
+                </button>
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label for="preco_venda">Preço de Venda (R$) *</label>
+                <input type="number" id="preco_venda" [(ngModel)]="produto.preco_venda" name="preco_venda"
+                    placeholder="0.00" class="form-control" step="0.01" min="0" required>
+            </div>
+
+            <div class="form-group">
+                <label for="quantidade_estoque">Quantidade em Estoque *</label>
+                <input type="number" id="quantidade_estoque" [(ngModel)]="produto.quantidade_estoque"
+                    name="quantidade_estoque" placeholder="0" class="form-control" min="0" required>
+            </div>
+        </div>
+
+        <div class="form-actions">
+            <button type="button" (click)="limparFormulario()" class="btn-limpar">
+                🗑️ Limpar
+            </button>
+            <button type="button" (click)="cancelar()" class="btn-cancelar">
+                ❌ Cancelar
+            </button>
+            <button type="submit" [disabled]="loading" class="btn-salvar">
+                <span *ngIf="loading">💾 Salvando...</span>
+                <span *ngIf="!loading">{{ isEditing ? '✏️ Atualizar' : '➕ Criar' }}</span>
+            </button>
+        </div>
+    </form>
+
+    <div class="form-info">
+        <h3>Informações</h3>
+        <ul>
+            <li>Campos marcados com * são obrigatórios</li>
+            <li>O código de barras pode ser gerado automaticamente</li>
+            <li>Preço de venda deve ser maior que zero</li>
+            <li>Quantidade em estoque não pode ser negativa</li>
+        </ul>
+    </div>
+</div>

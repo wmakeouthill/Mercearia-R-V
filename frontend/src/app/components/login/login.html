@@ -1,0 +1,51 @@
+<div class="login-container">
+    <div class="login-card">
+        <div class="login-header">
+            <div class="logo-section">
+                <h1>Mercearia R&V</h1>
+                <span class="logo-subtitle">Sistema de Gestão</span>
+            </div>
+            <p>Entre com suas credenciais para acessar o sistema</p>
+        </div>
+
+        <form class="login-form" (ngSubmit)="onSubmit()" #loginForm="ngForm">
+            <div class="error-message" *ngIf="error">
+                <span class="error-icon">⚠️</span>
+                {{ error }}
+            </div>
+
+            <div class="form-group">
+                <label for="username">Usuário</label>
+                <input type="text" id="username" name="username" class="form-control" [(ngModel)]="credentials.username"
+                    placeholder="Digite seu usuário" required #username="ngModel">
+            </div>
+
+            <div class="form-group">
+                <label for="password">Senha</label>
+                <input type="password" id="password" name="password" class="form-control"
+                    [(ngModel)]="credentials.password" placeholder="Digite sua senha" required #password="ngModel">
+            </div>
+
+            <button type="submit" class="login-button" [disabled]="!loginForm.form.valid || loading">
+                <span *ngIf="!loading">Entrar</span>
+                <span *ngIf="loading" class="loading-text">
+                    <span class="loading-spinner">⏳</span>
+                    Entrando...
+                </span>
+            </button>
+        </form>
+
+        <div class="login-info">
+            <h3>Faça login para acessar o sistema</h3>
+        </div>
+
+        <div class="debug-section" *ngIf="isDev">
+            <button (click)="testBackendConnection()" class="debug-button">
+                Testar Conexão Backend
+            </button>
+            <div class="backend-status" *ngIf="backendStatus">
+                {{ backendStatus }}
+            </div>
+        </div>
+    </div>
+</div>
