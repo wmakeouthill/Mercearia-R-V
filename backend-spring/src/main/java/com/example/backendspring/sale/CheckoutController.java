@@ -29,8 +29,7 @@ public class CheckoutController {
     private static final String DEFAULT_PAGAMENTO = "dinheiro";
     private static final String KEY_ERROR = "error";
     private static final Set<String> ALLOWED_PAYMENT_METHODS = Set.of(
-            DEFAULT_PAGAMENTO, "cartao_credito", "cartao_debito", "pix"
-    );
+            DEFAULT_PAGAMENTO, "cartao_credito", "cartao_debito", "pix");
     private static final Logger log = LoggerFactory.getLogger(CheckoutController.class);
 
     @PostMapping
@@ -104,6 +103,7 @@ public class CheckoutController {
     }
 
     @GetMapping
+    @Transactional(readOnly = true)
     public ResponseEntity<List<Map<String, Object>>> listAll() {
         List<Map<String, Object>> lista = saleOrderRepository.findAll().stream()
                 .sorted(Comparator.comparing(SaleOrder::getDataVenda).reversed())

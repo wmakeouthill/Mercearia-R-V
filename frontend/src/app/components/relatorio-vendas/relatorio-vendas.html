@@ -182,7 +182,7 @@
     <div class="vendas-detalhadas">
         <h2>📋 Vendas Detalhadas</h2>
 
-        <div class="vendas-tabela" *ngIf="getVendasFiltradas().length > 0">
+        <div class="vendas-tabela" *ngIf="vendasFiltradas.length > 0">
             <table class="tabela-vendas">
                 <thead>
                     <tr>
@@ -195,8 +195,8 @@
                     </tr>
                 </thead>
                 <tbody>
-                    <tr *ngFor="let venda of getVendasFiltradas(); let i = index" class="venda-row">
-                        <td class="venda-numero">{{ getVendasFiltradas().length - i }}</td>
+                    <tr *ngFor="let venda of vendasFiltradas; let i = index" class="venda-row">
+                        <td class="venda-numero">{{ vendasFiltradas.length - i }}</td>
                         <td class="venda-data">
                             <span class="data-hora-inline">
                                 {{ formatarData(venda.data_venda) }} {{ formatarHora(venda.data_venda) }}
@@ -210,7 +210,12 @@
                         </td>
                         <td class="quantidade">{{ venda.quantidade_vendida }}</td>
                         <td class="metodo-pagamento">
-                            <div class="pagamentos-resumo">{{ venda['pagamentos_resumo'] || getMetodoPagamentoNome(venda.metodo_pagamento) }}</div>
+                            <div class="pagamentos-resumo" *ngIf="venda['pagamentos_resumo']; else metodoSimplesRel">
+                                {{ venda['pagamentos_resumo'] }}
+                            </div>
+                            <ng-template #metodoSimplesRel>
+                                {{ getMetodoPagamentoNome(venda.metodo_pagamento) }}
+                            </ng-template>
                         </td>
                         <td class="valor-total">R$ {{ venda.preco_total.toFixed(2) }}</td>
                     </tr>
@@ -218,7 +223,7 @@
             </table>
         </div>
 
-        <div class="vendas-vazias" *ngIf="getVendasFiltradas().length === 0">
+        <div class="vendas-vazias" *ngIf="vendasFiltradas.length === 0">
             <div class="vazio-icon">📊</div>
             <p>Nenhuma venda encontrada para o período selecionado.</p>
         </div>

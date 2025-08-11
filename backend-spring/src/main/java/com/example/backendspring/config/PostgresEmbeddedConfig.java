@@ -20,6 +20,7 @@ public class PostgresEmbeddedConfig {
     private static final Logger log = LoggerFactory.getLogger(PostgresEmbeddedConfig.class);
     private static final String POSTGRES_USER = "postgres";
     private static final String POSTGRES_DB = "postgres";
+    private static final String TEMP_DIR_PREFIX = "embedded-pg-";
 
     @Value("${spring.datasource.url}")
     private String configuredUrl;
@@ -66,21 +67,48 @@ public class PostgresEmbeddedConfig {
                 } catch (IOException e) {
                     log.warn("Falha ao remover lock {} ({}). Usando diretório temporário nesta execução.", lockFile,
                             e.getMessage());
-                    dataDir = Files.createTempDirectory("embedded-pg-");
+                    dataDir = Files.createTempDirectory(TEMP_DIR_PREFIX);
                 }
             }
             if (dataDir == null) {
                 dataDir = persistentDir;
             }
         } else {
-            dataDir = Files.createTempDirectory("embedded-pg-");
+            dataDir = Files.createTempDirectory(TEMP_DIR_PREFIX);
         }
 
         log.info("Embedded Postgres data directory: {} (persist={})", dataDir, persist);
-        return EmbeddedPostgres.builder()
-                .setDataDirectory(dataDir)
-                .setCleanDataDirectory(!persist)
-                .start();
+
+        // Tentar iniciar com algumas tentativas extras (ambientes Windows podem
+        // demorar)
+        IOException lastError = null;
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            try {
+                log.info("Iniciando Embedded Postgres (tentativa {}/{})...", attempt, 3);
+                return EmbeddedPostgres.builder()
+                        .setDataDirectory(dataDir)
+                        .setCleanDataDirectory(!persist)
+                        .start();
+            } catch (IOException ex) {
+                lastError = ex;
+                log.warn("Falha ao iniciar Embedded Postgres (tentativa {}/{}): {}", attempt, 3, ex.getMessage());
+                // Na próxima tentativa, usar diretório temporário para evitar qualquer
+                // lock/cache
+                try {
+                    dataDir = Files.createTempDirectory(TEMP_DIR_PREFIX);
+                    log.info("Usando diretório temporário para próxima tentativa: {}", dataDir);
+                } catch (IOException ioe) {
+                    log.warn("Não foi possível criar diretório temporário para próxima tentativa: {}",
+                            ioe.getMessage());
+                }
+                try {
+                    Thread.sleep(1500);
+                } catch (InterruptedException ignored) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        }
+        throw lastError != null ? lastError : new IOException("Falha desconhecida ao iniciar Embedded Postgres");
     }
 
     @Bean

@@ -113,7 +113,12 @@
                         </td>
                         <td class="quantidade">{{ venda.quantidade_vendida }}</td>
                         <td class="metodo-pagamento">
-                            <div class="pagamentos-resumo">{{ venda['pagamentos_resumo'] || getMetodoPagamentoNome(venda.metodo_pagamento) }}</div>
+                            <div class="pagamentos-resumo" *ngIf="venda['pagamentos_resumo']; else metodoSimples">
+                                {{ venda['pagamentos_resumo'] }}
+                            </div>
+                            <ng-template #metodoSimples>
+                                {{ getMetodoPagamentoNome(venda.metodo_pagamento) }}
+                            </ng-template>
                         </td>
                         <td class="valor-total">R$ {{ venda.preco_total.toFixed(2) }}</td>
                         <td class="venda-data">

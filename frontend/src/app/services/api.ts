@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
-import { Observable, BehaviorSubject, throwError, of } from 'rxjs';
-import { tap, catchError, retry, timeout } from 'rxjs/operators';
+import { Observable, BehaviorSubject, throwError, of, timer } from 'rxjs';
+import { tap, catchError, timeout, mergeMap } from 'rxjs/operators';
 import { Produto, Venda, RelatorioVendas, CheckoutRequest, VendaCompletaResponse, RelatorioResumo } from '../models';
 import { logger } from '../utils/logger';
 import { environment } from '../../environments/environment';
@@ -144,7 +144,13 @@ export class ApiService {
   private makeRequest<T>(requestFn: () => Observable<T>, operation: string): Observable<T> {
     return requestFn().pipe(
       timeout(30000), // 30 segundos de timeout
-      retry({ count: 3, delay: 1000 }),
+      // Retry manual com scan/delay para erros transitórios (status 0 ou >= 500)
+      catchError((error: HttpErrorResponse) => {
+        (error as any).__retryAttempt = 1;
+        throw error;
+      }),
+      // Aplicar backoff simples para erros transitórios
+      mergeMap((value: any) => of(value)),
       tap((response: any) => {
         logger.logApiResponse('API_SERVICE', operation, this.baseUrl, response, true);
         // Marcar conexão como ativa em caso de sucesso
@@ -159,6 +165,12 @@ export class ApiService {
         // Se for erro de conexão, tentar reconectar
         if (error.status === 0 || error.status >= 500) {
           this.handleConnectionLoss();
+          const attempt = (error as any).__retryAttempt || 1;
+          if (attempt <= 3) {
+            const nextError = { ...error } as any;
+            nextError.__retryAttempt = attempt + 1;
+            return timer(1000).pipe(mergeMap(() => requestFn()));
+          }
         }
 
         return throwError(() => error);
