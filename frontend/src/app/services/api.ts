@@ -235,9 +235,9 @@ export class ApiService {
     return this.updateProduto(id, produto);
   }
 
-  updateEstoque(id: number, quantidade: number): Observable<Produto> {
+  updateEstoque(id: number, quantidade: number): Observable<any> {
     return this.makeRequest(
-      () => this.http.put<Produto>(`${this.baseUrl}/produtos/${id}/estoque`, { quantidade }),
+      () => this.http.put<any>(`${this.baseUrl}/produtos/${id}/estoque`, { quantidade_estoque: quantidade }),
       'UPDATE_ESTOQUE'
     );
   }
