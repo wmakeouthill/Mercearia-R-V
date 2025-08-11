@@ -73,7 +73,7 @@ export interface VendaCompletaResponse {
     desconto: number;
     acrescimo: number;
     total_final: number;
-    itens: Array<{ produto_id: number; produto_nome: string; quantidade: number; preco_unitario: number; preco_total: number }>
+    itens: Array<{ produto_id: number; produto_nome: string; produto_imagem?: string | null; quantidade: number; preco_unitario: number; preco_total: number }>
     pagamentos: Array<{ metodo: MetodoPagamento; valor: number; troco?: number }>
 }
 
