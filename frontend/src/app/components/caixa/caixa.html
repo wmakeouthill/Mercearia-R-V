@@ -49,15 +49,23 @@
   </div>
 
   <div class="mensagens">
-    <div class="erro" *ngIf="error" (click)="error = ''">{{ error }}</div>
-    <div class="sucesso" *ngIf="success" (click)="success = ''">{{ success }}</div>
+    <div class="erro" *ngIf="error" (click)="error = ''" (keydown.enter)="error = ''" (keydown.space)="error = ''">{{ error }}</div>
+    <div class="sucesso" *ngIf="success" (click)="success = ''" (keydown.enter)="success = ''" (keydown.space)="success = ''">{{ success }}</div>
   </div>
 
   <div class="lista">
     <h3>Movimentações do dia</h3>
     <div class="vazia" *ngIf="!movimentacoes || movimentacoes.length === 0">Sem movimentações</div>
     <div class="item" *ngFor="let m of movimentacoes">
-      <div class="col tipo" [class.entrada]="m.tipo === 'entrada'" [class.retirada]="m.tipo === 'retirada'">{{ m.tipo }}</div>
+      <div class="col tipo">
+        <span class="badge" [ngClass]="{entrada: m.tipo === 'entrada', retirada: m.tipo === 'retirada', venda: m.tipo === 'venda'}">
+          <span class="icon" *ngIf="m.tipo === 'entrada'">➕</span>
+          <span class="icon" *ngIf="m.tipo === 'retirada'">➖</span>
+          <span class="icon" *ngIf="m.tipo === 'venda'">🛒</span>
+          <span class="label">{{ m.tipo }}</span>
+        </span>
+      </div>
+      <div class="col produto">{{ m.produto_nome || '-' }}</div>
       <div class="col valor">R$ {{ m.valor | number:'1.2-2' }}</div>
       <div class="col descricao">{{ m.descricao || '-' }}</div>
       <div class="col usuario">{{ m.usuario || '-' }}</div>

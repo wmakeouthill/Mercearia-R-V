@@ -7,7 +7,8 @@ import { logger } from '../../utils/logger';
 import { forkJoin } from 'rxjs';
 import { RelatorioResumo } from '../../models';
 
-type TipoMov = 'entrada' | 'retirada';
+type TipoMovManual = 'entrada' | 'retirada';
+type TipoMovLista = 'entrada' | 'retirada' | 'venda';
 
 @Component({
   selector: 'app-caixa',
@@ -20,9 +21,9 @@ export class CaixaComponent implements OnInit {
   dataSelecionada = new Date().toISOString().substring(0, 10);
   resumo: { data: string; saldo_movimentacoes: number } | null = null;
   resumoVendasDia: RelatorioResumo | null = null;
-  movimentacoes: Array<{ id: number; tipo: TipoMov; valor: number; descricao?: string; usuario?: string; data_movimento: string }> = [];
+  movimentacoes: Array<{ id: number; tipo: TipoMovLista; valor: number; descricao?: string; usuario?: string; data_movimento: string; produto_nome?: string }> = [];
 
-  tipo: TipoMov = 'entrada';
+  tipo: TipoMovManual = 'entrada';
   valor: number | null = null;
   descricao = '';
   loading = false;

@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDate;
+import java.util.List;
 
 public interface SaleRepository extends JpaRepository<Sale, Long> {
 
@@ -16,4 +17,7 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
 
     @Query(value = "SELECT COALESCE(SUM(v.preco_total),0) FROM vendas v WHERE DATE(v.data_venda) = :dia", nativeQuery = true)
     double somaReceitaByDia(@Param("dia") LocalDate dia);
+
+    @Query(value = "SELECT * FROM vendas v WHERE DATE(v.data_venda) = :dia ORDER BY v.data_venda DESC", nativeQuery = true)
+    List<Sale> findByDia(@Param("dia") LocalDate dia);
 }

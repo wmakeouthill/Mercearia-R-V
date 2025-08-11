@@ -9,7 +9,7 @@
 .top-bar {
   display: flex;
   gap: 16px;
-  align-items: end;
+  align-items: stretch;
   margin-bottom: 12px;
 
   .filtros {
@@ -17,10 +17,11 @@
     border-radius: 12px;
     box-shadow: 0 4px 20px rgba(0, 46, 89, 0.08);
     border: 2px solid rgba(0, 46, 89, 0.1);
-    padding: 12px 16px;
+    padding: 16px 16px;
     display: flex;
     align-items: center;
     gap: 12px;
+    height: 100%;
 
     label { font-weight: 600; color: var(--primary-blue); font-size: 14px; }
     input[type="date"], select, input[type="number"], input[type="text"] {
@@ -36,12 +37,14 @@
     border-radius: 12px;
     box-shadow: 0 4px 20px rgba(0, 46, 89, 0.08);
     border: 2px solid rgba(219, 194, 125, 0.3);
-    padding: 12px 16px;
+    padding: 16px;
     display: flex;
-    align-items: end;
+    align-items: center;
     gap: 12px;
+    flex: 1;
+    min-width: 0;
 
-    h3 { margin: 0; font-size: 16px; color: var(--primary-blue); }
+    h3 { margin: 0 8px 0 0; font-size: 16px; color: var(--primary-blue); padding-left: 8px; }
     label { display: flex; flex-direction: column; font-size: 12px; color: var(--primary-blue); }
     .flex-1 { flex: 1; }
     button { background: var(--primary-blue); color: var(--white); border: none; padding: 10px 16px; border-radius: 8px; font-weight: 600; }
@@ -82,16 +85,22 @@
   border: 2px solid rgba(0, 46, 89, 0.1);
   padding: 8px 0;
 
+  h3 { padding: 8px 16px; margin: 0 0 4px; }
+
   .item {
     display: grid;
-    grid-template-columns: 100px 120px 1fr 160px 200px;
+    grid-template-columns: 120px 220px 120px 1fr 160px 200px;
     gap: 12px;
     padding: 10px 16px;
     border-bottom: 1px solid var(--light-gray);
   }
   .item:last-child { border-bottom: none; }
-  .item .tipo.entrada { color: #16a34a; }
-  .item .tipo.retirada { color: #dc2626; }
+  .item .tipo { display: flex; align-items: center; }
+  .badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 999px; font-weight: 600; font-size: 12px; }
+  .badge .icon { font-size: 14px; line-height: 1; }
+  .badge.entrada { background: rgba(22,163,74,0.12); color: #166534; border: 1px solid rgba(22,163,74,0.3); }
+  .badge.retirada { background: rgba(220,38,38,0.12); color: #7f1d1d; border: 1px solid rgba(220,38,38,0.3); }
+  .badge.venda { background: rgba(14,165,233,0.12); color: #0c4a6e; border: 1px solid rgba(14,165,233,0.3); }
 }
 
 

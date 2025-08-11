@@ -19,9 +19,11 @@ public class CaixaController {
     private final CaixaStatusRepository caixaStatusRepository;
     private final CaixaMovimentacaoRepository movimentacaoRepository;
     private final UserRepository userRepository;
+    private final com.example.backendspring.sale.SaleRepository saleRepository;
 
     private static final String KEY_ERROR = "error";
     private static final String KEY_MESSAGE = "message";
+    private static final String KEY_DATA_MOVIMENTO = "data_movimento";
     private static final String MSG_NAO_AUTENTICADO = "Usuário não autenticado";
     private static final String TIPO_ENTRADA = "entrada";
     private static final String TIPO_RETIRADA = "retirada";
@@ -69,19 +71,41 @@ public class CaixaController {
             @RequestParam(value = "data", required = false) String data) {
         try {
             var dia = data == null ? java.time.LocalDate.now() : java.time.LocalDate.parse(data);
-            var lista = movimentacaoRepository.findByDia(dia).stream().map(m -> {
+            var lista = new java.util.ArrayList<java.util.Map<String, Object>>();
+
+            // Movimentações manuais (entrada/retirada)
+            lista.addAll(movimentacaoRepository.findByDia(dia).stream().map(m -> {
                 java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
                 row.put("id", m.getId());
                 row.put("tipo", m.getTipo());
                 row.put("valor", m.getValor());
                 row.put("descricao", m.getDescricao());
                 row.put("usuario", m.getUsuario() != null ? m.getUsuario().getUsername() : null);
-                row.put("data_movimento", m.getDataMovimento());
+                row.put(KEY_DATA_MOVIMENTO, m.getDataMovimento());
                 return row;
-            }).toList();
+            }).toList());
+
+            // Vendas do dia como movimentação de tipo 'venda'
+            lista.addAll(saleRepository.findByDia(dia).stream().map(v -> {
+                java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
+                row.put("id", v.getId());
+                row.put("tipo", "venda");
+                row.put("valor", v.getPrecoTotal());
+                row.put("descricao", "Venda - " + (v.getProduto() != null ? v.getProduto().getNome() : "Produto") +
+                        " x" + v.getQuantidadeVendida() + " (" + v.getMetodoPagamento() + ")");
+                row.put("produto_nome", v.getProduto() != null ? v.getProduto().getNome() : null);
+                row.put("usuario", null);
+                row.put(KEY_DATA_MOVIMENTO, v.getDataVenda());
+                return row;
+            }).toList());
+
+            // Ordenar por data_movimento desc
+            lista.sort((a, b) -> java.time.OffsetDateTime.parse(b.get(KEY_DATA_MOVIMENTO).toString())
+                    .compareTo(java.time.OffsetDateTime.parse(a.get(KEY_DATA_MOVIMENTO).toString())));
+
             return ResponseEntity.ok(lista);
         } catch (Exception e) {
-            return ResponseEntity.ok(java.util.List.of());
+            return ResponseEntity.status(500).body(java.util.List.of());
         }
     }
 
