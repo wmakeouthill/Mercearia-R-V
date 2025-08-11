@@ -42,9 +42,10 @@
             <div class="lista-produtos">
                 <h3>Produtos Disponíveis</h3>
                 <div class="produtos-grid">
-                    <a href="#" *ngFor="let produto of produtosFiltrados" class="produto-card"
+                    <button type="button" *ngFor="let produto of produtosFiltrados" class="produto-card"
                         [class.selecionado]="produtoSelecionado?.id === produto.id"
-                        (click)="selecionarProduto(produto); $event.preventDefault()">
+                        (click)="selecionarProduto(produto)"
+                        (keydown.enter)="selecionarProduto(produto)">
                         <div class="produto-imagem-card">
                             <img [src]="getImageUrl(produto.imagem)"
                                  [alt]="produto.nome"
@@ -62,12 +63,12 @@
                         <div class="produto-actions" *ngIf="produtoSelecionado?.id === produto.id">
                             <div class="quantidade-inline">
                                 <input type="number" [(ngModel)]="quantidade" min="1" [max]="produto.quantidade_estoque"
-                                    class="input-qtd-inline">
+                                    class="input-qtd-inline" (click)="$event.stopPropagation()" (mousedown)="$event.stopPropagation()">
                                 <button (click)="adicionarAoCarrinho(false); $event.stopPropagation()"
                                     class="btn-add-inline">+ Carrinho</button>
                             </div>
                         </div>
-                    </a>
+                    </button>
                 </div>
             </div>
 
