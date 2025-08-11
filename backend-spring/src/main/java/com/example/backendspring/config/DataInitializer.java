@@ -17,15 +17,14 @@ public class DataInitializer {
     private static final String ROLE_ADMIN = "admin";
     private static final String ROLE_USER = "user";
 
-    private static String generateDevPassword() {
-        return java.util.UUID.randomUUID().toString().replace("-", "");
-    }
+    // Senhas padrão para desenvolvimento quando variáveis de ambiente não estiverem
+    // definidas
 
     @Bean
     CommandLineRunner initUsers(UserRepository userRepository) {
         return args -> {
             if (userRepository.findByUsername(ROLE_ADMIN).isEmpty()) {
-                String adminPass = System.getenv().getOrDefault("DEFAULT_ADMIN_PASSWORD", generateDevPassword());
+                String adminPass = System.getenv().getOrDefault("DEFAULT_ADMIN_PASSWORD", "admin123");
                 userRepository.save(User.builder()
                         .username(ROLE_ADMIN)
                         .password(passwordEncoder.encode(adminPass))
@@ -34,7 +33,7 @@ public class DataInitializer {
                         .build());
             }
             if (userRepository.findByUsername(ROLE_USER).isEmpty()) {
-                String userPass = System.getenv().getOrDefault("DEFAULT_USER_PASSWORD", generateDevPassword());
+                String userPass = System.getenv().getOrDefault("DEFAULT_USER_PASSWORD", "user123");
                 userRepository.save(User.builder()
                         .username(ROLE_USER)
                         .password(passwordEncoder.encode(userPass))

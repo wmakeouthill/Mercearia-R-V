@@ -6,6 +6,7 @@ import { ApiService } from '../../services/api';
 import { AuthService } from '../../services/auth';
 import { ImageService } from '../../services/image.service';
 import { Produto } from '../../models';
+import { logger } from '../../utils/logger';
 
 @Component({
   selector: 'app-form-produto',
@@ -33,11 +34,11 @@ export class FormProdutoComponent implements OnInit {
   imagemBase64: string | null = null;
 
   constructor(
-    private apiService: ApiService,
-    private authService: AuthService,
-    private imageService: ImageService,
-    private router: Router,
-    private route: ActivatedRoute
+    private readonly apiService: ApiService,
+    private readonly authService: AuthService,
+    private readonly imageService: ImageService,
+    private readonly router: Router,
+    private readonly route: ActivatedRoute
   ) { }
 
   ngOnInit(): void {
@@ -45,7 +46,10 @@ export class FormProdutoComponent implements OnInit {
       if (params['id']) {
         this.produtoId = +params['id'];
         this.isEditing = true;
+        logger.info('FORM_PRODUTO', 'INIT_EDIT', 'Modo edição', { id: this.produtoId });
         this.loadProduto();
+      } else {
+        logger.info('FORM_PRODUTO', 'INIT_CREATE', 'Modo criação');
       }
     });
   }
@@ -60,11 +64,12 @@ export class FormProdutoComponent implements OnInit {
       next: (produto: Produto) => {
         this.produto = produto;
         this.loading = false;
+        logger.info('FORM_PRODUTO', 'LOAD_PRODUTO', 'Produto carregado', { id: this.produtoId });
       },
       error: (error: any) => {
         this.error = 'Erro ao carregar produto';
         this.loading = false;
-        console.error('Erro na API:', error);
+        logger.error('FORM_PRODUTO', 'LOAD_PRODUTO', 'Erro ao carregar produto', error);
       }
     });
   }
@@ -83,6 +88,7 @@ export class FormProdutoComponent implements OnInit {
     } else {
       this.criarProduto();
     }
+    logger.info('FORM_PRODUTO', 'SUBMIT', this.isEditing ? 'Atualizando produto' : 'Criando produto');
   }
 
   private validarFormulario(): boolean {
@@ -106,7 +112,17 @@ export class FormProdutoComponent implements OnInit {
 
   private criarProduto(): void {
     // Incluir imagem se houver
-    const produtoData = { ...this.produto };
+    const produtoData: any = { ...this.produto };
+
+    // Normalizar código de barras: enviar null/omitido se vazio
+    if (typeof produtoData.codigo_barras === 'string') {
+      const trimmed = produtoData.codigo_barras.trim();
+      if (!trimmed) {
+        delete produtoData.codigo_barras;
+      } else {
+        produtoData.codigo_barras = trimmed;
+      }
+    }
     if (this.imagemBase64) {
       produtoData.imagem = this.imagemBase64;
     }
@@ -115,6 +131,7 @@ export class FormProdutoComponent implements OnInit {
       next: () => {
         this.sucesso = 'Produto criado com sucesso!';
         this.loading = false;
+        logger.info('FORM_PRODUTO', 'CREATE', 'Produto criado com sucesso');
 
         setTimeout(() => {
           this.router.navigate(['/produtos']);
@@ -123,7 +140,7 @@ export class FormProdutoComponent implements OnInit {
       error: (error: any) => {
         this.error = 'Erro ao criar produto';
         this.loading = false;
-        console.error('Erro na API:', error);
+        logger.error('FORM_PRODUTO', 'CREATE', 'Erro ao criar produto', error);
       }
     });
   }
@@ -143,6 +160,7 @@ export class FormProdutoComponent implements OnInit {
       next: () => {
         this.sucesso = 'Produto atualizado com sucesso!';
         this.loading = false;
+        logger.info('FORM_PRODUTO', 'UPDATE', 'Produto atualizado com sucesso', { id: this.produtoId });
 
         setTimeout(() => {
           this.router.navigate(['/produtos']);
@@ -151,7 +169,7 @@ export class FormProdutoComponent implements OnInit {
       error: (error: any) => {
         this.error = 'Erro ao atualizar produto';
         this.loading = false;
-        console.error('Erro na API:', error);
+        logger.error('FORM_PRODUTO', 'UPDATE', 'Erro ao atualizar produto', error);
       }
     });
   }
@@ -184,15 +202,10 @@ export class FormProdutoComponent implements OnInit {
   onImageSelected(event: any): void {
     const file = event.target.files[0];
     if (file) {
-      // Validar tamanho (5MB)
-      if (file.size > 5 * 1024 * 1024) {
-        this.error = 'Imagem muito grande. Máximo 5MB.';
-        return;
-      }
-
-      // Validar tipo
-      if (!file.type.startsWith('image/')) {
-        this.error = 'Arquivo deve ser uma imagem.';
+      // Validar usando serviço (tipos e tamanho)
+      const validation = this.imageService.validateImageFile(file);
+      if (!validation.valid) {
+        this.error = validation.error || 'Imagem inválida';
         return;
       }
 

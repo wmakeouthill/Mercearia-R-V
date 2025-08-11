@@ -6,8 +6,9 @@ import { ApiService } from '../../services/api';
 import { AuthService } from '../../services/auth';
 import { CaixaService } from '../../services/caixa.service';
 import { ImageService } from '../../services/image.service';
-import { Produto, Venda, ItemVenda, MetodoPagamento, StatusCaixa } from '../../models';
+import { Produto, ItemVenda, MetodoPagamento, StatusCaixa } from '../../models';
 import { Subject, debounceTime, distinctUntilChanged, Subscription } from 'rxjs';
+import { logger } from '../../utils/logger';
 
 @Component({
   selector: 'app-ponto-venda',
@@ -37,7 +38,7 @@ export class PontoVendaComponent implements OnInit, OnDestroy {
     { valor: 'pix', nome: 'PIX', icone: '📱' }
   ];
 
-  private searchSubject = new Subject<string>();
+  private readonly searchSubject = new Subject<string>();
   private statusCaixaSubscription?: Subscription;
   private periodicCheckInterval?: any;
   statusCaixa: StatusCaixa | null = null;
@@ -45,14 +46,15 @@ export class PontoVendaComponent implements OnInit, OnDestroy {
   podeControlarCaixa = false;
 
   constructor(
-    private apiService: ApiService,
-    private authService: AuthService,
-    private caixaService: CaixaService,
-    private imageService: ImageService,
-    private router: Router
+    private readonly apiService: ApiService,
+    private readonly authService: AuthService,
+    private readonly caixaService: CaixaService,
+    private readonly imageService: ImageService,
+    private readonly router: Router
   ) { }
 
   ngOnInit(): void {
+    logger.info('PONTO_VENDA', 'INIT', 'Componente iniciado');
     this.isAdmin = this.authService.isAdmin();
     this.podeControlarCaixa = this.authService.podeControlarCaixa();
     this.checkCaixaStatus();
@@ -89,7 +91,7 @@ export class PontoVendaComponent implements OnInit, OnDestroy {
         }
       },
       error: (error) => {
-        console.error('Erro ao verificar status do caixa:', error);
+        logger.error('PONTO_VENDA', 'CHECK_CAIXA', 'Erro ao verificar status do caixa', error);
         this.redirectToDashboard('Erro ao verificar status do caixa. Você foi redirecionado para o dashboard.');
       }
     });
@@ -133,7 +135,7 @@ export class PontoVendaComponent implements OnInit, OnDestroy {
           }
         },
         error: (error) => {
-          console.warn('Erro na verificação periódica do caixa:', error);
+          logger.warn('PONTO_VENDA', 'CHECK_CAIXA_PERIODICO', 'Erro na verificação periódica do caixa', error);
         }
       });
     }, 30000); // Verificar a cada 30 segundos
@@ -191,11 +193,12 @@ export class PontoVendaComponent implements OnInit, OnDestroy {
         this.produtos = produtos;
         this.produtosFiltrados = produtos; // Inicializa com todos os produtos
         this.loading = false;
+        logger.info('PONTO_VENDA', 'LOAD_PRODUTOS', 'Produtos carregados', { count: produtos.length });
       },
       error: (error) => {
         this.error = 'Erro ao carregar produtos';
         this.loading = false;
-        console.error('Erro na API:', error);
+        logger.error('PONTO_VENDA', 'LOAD_PRODUTOS', 'Erro ao carregar produtos', error);
       }
     });
   }
@@ -213,7 +216,7 @@ export class PontoVendaComponent implements OnInit, OnDestroy {
     const termoLower = termo.toLowerCase();
     this.produtosFiltrados = this.produtos.filter(produto =>
       produto.nome.toLowerCase().includes(termoLower) ||
-      (produto.codigo_barras && produto.codigo_barras.toLowerCase().includes(termoLower))
+      produto.codigo_barras?.toLowerCase().includes(termoLower)
     );
   }
 
@@ -274,6 +277,10 @@ export class PontoVendaComponent implements OnInit, OnDestroy {
     this.error = '';
     this.sucesso = 'Produto adicionado ao carrinho';
     setTimeout(() => this.sucesso = '', 2000);
+    logger.info('PONTO_VENDA', 'ADD_CARRINHO', 'Produto adicionado ao carrinho', {
+      produto_id: this.produtoSelecionado?.id,
+      quantidade: this.quantidade
+    });
   }
 
   removerDoCarrinho(index: number): void {
@@ -360,16 +367,16 @@ export class PontoVendaComponent implements OnInit, OnDestroy {
         this.apiService.createVenda(venda).subscribe({
           next: () => {
             processadas++;
-            console.log(`Venda ${index + 1}/${total} processada com sucesso`);
+            logger.info('PONTO_VENDA', 'VENDA_ITEM_OK', `Item ${index + 1}/${total} processado com sucesso`);
             processarVenda(index + 1);
           },
           error: (error: any) => {
             erros++;
-            console.error(`Erro na venda ${index + 1}:`, error);
+            logger.error('PONTO_VENDA', 'VENDA_ITEM_FAIL', `Erro no item ${index + 1}/${total}`, error);
 
             // Tentar próxima venda mesmo com erro
             if (error.status === 0 || error.message?.includes('ERR_CONNECTION')) {
-              console.log('Erro de conexão, tentando próxima venda...');
+              logger.warn('PONTO_VENDA', 'VENDA_ITEM_RETRY', 'Erro de conexão, tentando próxima...');
             }
 
             processarVenda(index + 1);

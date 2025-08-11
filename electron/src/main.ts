@@ -1,4 +1,6 @@
 import { app, BrowserWindow, Menu, ipcMain } from 'electron';
+import type { Input, OnHeadersReceivedListenerDetails, HeadersReceivedResponse, MenuItemConstructorOptions } from 'electron';
+import { inspect } from 'util';
 import * as path from 'path';
 import * as childProcess from 'child_process';
 import { execSync } from 'child_process';
@@ -12,6 +14,38 @@ let isBackendReady = false;
 let backendRestartAttempts = 0;
 const maxBackendRestartAttempts = 5; // Aumentar tentativas
 let backendShouldBeRunning = false; // Flag para saber se backend deveria estar rodando
+
+// ==== LOG EM ARQUIVO (FRONTEND VIA IPC) ====
+function getLogsDirectory(): string {
+    // Em desenvolvimento, gravar na raiz do workspace (do projeto mono-repo)
+    if (!app.isPackaged) {
+        // __dirname aponta para electron/dist em dev; subir 2 níveis até electron/, depois voltar 1 para raiz
+        // Melhor: usar process.cwd() que em dev será electron/; subir um diretório
+        try {
+            const cwd = process.cwd();
+            const root = path.resolve(cwd, '..');
+            return root;
+        } catch {
+            return path.resolve(__dirname, '..');
+        }
+    }
+    // Em produção, usar diretório de dados do app do usuário
+    return app.getPath('userData');
+}
+
+function getFrontendLogFilePath(): string {
+    const dir = getLogsDirectory();
+    return path.join(dir, 'frontend.log');
+}
+
+function appendLogLine(line: string): void {
+    const filePath = getFrontendLogFilePath();
+    try {
+        fs.appendFileSync(filePath, line + '\n');
+    } catch (err) {
+        console.error('Erro ao escrever log de frontend:', err);
+    }
+}
 
 // CONFIGURAÇÃO: Aguardar tudo estar pronto antes de mostrar? (APENAS EM PRODUÇÃO)
 // Em desenvolvimento sempre mostra imediatamente independente desta configuração
@@ -55,7 +89,7 @@ function createWindow(): void {
     });
 
     // Configurar CSP para permitir conexões com o backend local
-    mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+    mainWindow.webContents.session.webRequest.onHeadersReceived((details: OnHeadersReceivedListenerDetails, callback: (response: HeadersReceivedResponse) => void) => {
         callback({
             responseHeaders: {
                 ...details.responseHeaders,
@@ -143,7 +177,7 @@ function createWindow(): void {
     });
 
     // Adicionar atalhos de teclado globais
-    mainWindow.webContents.on('before-input-event', (event, input) => {
+    mainWindow.webContents.on('before-input-event', (event: Electron.Event, input: Input) => {
         // F5 - Recarregar
         if (input.key === 'F5' && !input.control && !input.alt && !input.shift) {
             console.log('🔄 Recarregando via F5...');
@@ -220,34 +254,40 @@ function waitForAngularDev(): void {
     let attempts = 0;
     const maxAttempts = 60; // 60 segundos máximo
 
-    const checkAngular = () => {
+    const showDevWindowFallback = (): void => {
+        setTimeout(() => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.show();
+                mainWindow.focus();
+            }
+        }, 500);
+    };
+
+    const checkAngular = (): void => {
         attempts++;
         console.log(`🔍 Verificando Angular (tentativa ${attempts}/${maxAttempts})...`);
 
-        const http = require('http');
-        const req = http.get(angularUrl, (res: any) => {
-            if (res.statusCode === 200) {
-                console.log('✅ Angular pronto! Carregando aplicação...');
+        const http: typeof import('http') = require('http');
+        const req = http.get(angularUrl, (res: { statusCode?: number }) => {
+            if (res.statusCode !== 200) {
+                retryAngularCheck();
+                return;
+            }
 
-                // Carregar URL e aguardar que esteja completamente pronta
-                mainWindow?.loadURL(angularUrl).then(() => {
+            console.log('✅ Angular pronto! Carregando aplicação...');
+            // Carregar URL e aguardar que esteja completamente pronta
+            mainWindow?.loadURL(angularUrl)
+                .then(() => {
                     console.log('🎯 URL carregada com sucesso em desenvolvimento');
-                }).catch((err: Error) => {
+                })
+                .catch((err: Error) => {
                     console.error('❌ Erro ao carregar URL de desenvolvimento:', err);
                     // Mostrar janela mesmo com erro para não travar
-                    setTimeout(() => {
-                        if (mainWindow && !mainWindow.isDestroyed()) {
-                            mainWindow.show();
-                            mainWindow.focus();
-                        }
-                    }, 500);
+                    showDevWindowFallback();
                 });
-            } else {
-                retryAngularCheck();
-            }
         });
 
-        req.on('error', () => {
+        req.on('error', (_err: unknown) => {
             retryAngularCheck();
         });
 
@@ -296,17 +336,16 @@ function waitForProductionReady(): void {
         };
         const scheduleRecheck = () => setTimeout(runCheckReady, 500);
         const runCheckReady = () => {
-            mainWindow!.webContents.executeJavaScript(
-                "document.readyState === 'complete' && window.angular && document.querySelector('app-root')"
-            ).then((ready: boolean) => {
-                if (ready) {
+            const webContents = mainWindow.webContents;
+            const script = "(document.readyState === 'complete' && window.angular && document.querySelector('app-root')) ? true : (() => { throw new Error('not ready') })()";
+            webContents
+                .executeJavaScript(script)
+                .then(() => {
                     markFrontendReady();
-                } else {
+                })
+                .catch(() => {
                     scheduleRecheck();
-                }
-            }).catch(() => {
-                scheduleRecheck();
-            });
+                });
         };
         // Aguardar um pouco antes de verificar
         setTimeout(runCheckReady, 2000);
@@ -325,23 +364,19 @@ function waitForProductionReady(): void {
         setTimeout(checkBackendReady, 2000);
     };
 
-    const handleBackendCheckResult = (isHealthy: boolean) => {
-        if (isHealthy) {
-            onBackendHealthy();
-        } else {
-            onBackendNotReady();
-        }
-    };
-
     const checkBackendReady = () => {
         if (isBackendReady) {
             console.log('✅ Backend já está pronto!');
             backendReady = true;
             checkIfAllReady();
         } else {
-            testBackendConnection().then(handleBackendCheckResult).catch(() => {
-                setTimeout(checkBackendReady, 2000);
-            });
+            testBackendConnection()
+                .then((status) => {
+                    return status === 'healthy' ? onBackendHealthy() : onBackendNotReady();
+                })
+                .catch(() => {
+                    setTimeout(checkBackendReady, 2000);
+                });
         }
     };
 
@@ -467,7 +502,7 @@ function loadErrorPage(path1: string, path2: string): void {
 }
 
 function createMenu(): void {
-    const template: any[] = [
+    const template: MenuItemConstructorOptions[] = [
         {
             label: 'Arquivo',
             submenu: [
@@ -615,10 +650,16 @@ function startBackend(): void {
     }
 
     // Configurar variáveis de ambiente para o backend Spring (mínimas)
+    // Em produção, persistir dados do Postgres embutido na pasta do usuário (userData)
+    const userDataDir = app.getPath('userData');
+    const pgDataDir = path.join(userDataDir, 'data', 'pg');
+    try { fs.mkdirSync(pgDataDir, { recursive: true }); } catch { }
     const env = {
         ...process.env,
-        NODE_ENV: 'production'
-    };
+        NODE_ENV: 'production',
+        PG_DATA_DIR: pgDataDir,
+        PERSIST_EMBEDDED_PG: 'true'
+    } as NodeJS.ProcessEnv;
 
     try {
         console.log('🚀 Iniciando processo do backend (Java)...');
@@ -738,7 +779,8 @@ function startBackendHealthCheck(): void {
     backendHealthCheckInterval = setInterval(() => {
         // Só verificar se deveria estar rodando
         if (backendShouldBeRunning) {
-            testBackendConnection().then((isHealthy) => {
+            testBackendConnection().then((status) => {
+                const isHealthy = status === 'healthy';
                 if (!isHealthy && isBackendReady) {
                     console.log('❌ Backend não está respondendo no health check, reiniciando...');
                     isBackendReady = false;
@@ -762,11 +804,13 @@ function startBackendHealthCheck(): void {
     }, 15000); // Verificar a cada 15 segundos
 }
 
-function testBackendConnection(): Promise<boolean> {
+type BackendStatus = 'healthy' | 'unhealthy';
+
+function testBackendConnection(): Promise<BackendStatus> {
     return new Promise((resolve) => {
         console.log('🧪 Testando conexão com o backend...');
 
-        const http = require('http');
+        const http: typeof import('http') = require('http');
         const options = {
             hostname: '127.0.0.1',
             port: 3000,
@@ -775,26 +819,39 @@ function testBackendConnection(): Promise<boolean> {
             timeout: 5000
         };
 
-        const req = http.request(options, (res: any) => {
+        const req = http.request(options, (res: import('http').IncomingMessage) => {
             let data = '';
-            res.on('data', (chunk: any) => {
-                data += chunk;
+            res.on('data', (chunk: Buffer) => {
+                data += chunk.toString();
             });
             res.on('end', () => {
-                console.log('✅ Backend está respondendo!');
-                resolve(true);
+                const ok = res.statusCode && res.statusCode >= 200 && res.statusCode < 400;
+                if (ok) {
+                    console.log('✅ Backend está respondendo!');
+                    resolve('healthy');
+                } else {
+                    resolve('unhealthy');
+                }
             });
         });
 
-        req.on('error', (error: any) => {
-            console.error('❌ Erro ao conectar com backend:', error.message);
-            resolve(false);
+        req.on('error', (error: unknown) => {
+            let message: string;
+            if (error instanceof Error) {
+                message = `${error.name}: ${error.message}`;
+            } else if (typeof error === 'object' && error !== null) {
+                message = inspect(error, { depth: 2, breakLength: Infinity });
+            } else {
+                message = inspect(error, { depth: 2, breakLength: Infinity });
+            }
+            console.error('❌ Erro ao conectar com backend:', message);
+            resolve('unhealthy');
         });
 
         req.on('timeout', () => {
             console.error('❌ Timeout ao conectar com backend');
             req.destroy();
-            resolve(false);
+            resolve('unhealthy');
         });
 
         req.end();
@@ -1016,11 +1073,11 @@ ipcMain.handle('get-app-name', () => {
 
 ipcMain.handle('test-backend-connection', async () => {
     try {
-        const isHealthy = await testBackendConnection();
+        const status = await testBackendConnection();
         return {
-            status: isHealthy ? 200 : 500,
+            status: status === 'healthy' ? 200 : 500,
             data: {
-                status: isHealthy ? 'ok' : 'error',
+                status: status === 'healthy' ? 'ok' : 'error',
                 ready: isBackendReady,
                 attempts: backendRestartAttempts
             }
@@ -1063,6 +1120,17 @@ ipcMain.handle('clear-cache-and-reload', async () => {
     } catch (error) {
         console.error('Erro ao limpar cache e recarregar:', error);
         return { success: false, error: error.message };
+    }
+});
+
+// IPC para receber logs do frontend e salvar em arquivo
+ipcMain.handle('write-log', async (_event, line: string) => {
+    try {
+        const timestamp = new Date().toISOString();
+        const normalized = typeof line === 'string' ? line : JSON.stringify(line);
+        appendLogLine(`[${timestamp}] ${normalized}`);
+    } catch (error: any) {
+        console.error('Erro ao gravar log via IPC:', error?.message || error);
     }
 });
 

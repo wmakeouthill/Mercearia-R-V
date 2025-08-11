@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { AuthService } from '../../services/auth';
 import { LoginRequest } from '../../models';
+import { logger } from '../../utils/logger';
 
 @Component({
   selector: 'app-login',
@@ -29,6 +30,7 @@ export class LoginComponent {
   ) {
     // Verificar se está em modo de desenvolvimento
     this.isDev = (window as any).electronAPI?.isDev || false;
+    logger.info('LOGIN', 'INIT', 'Componente iniciado', { isDev: this.isDev });
   }
 
   async testBackendConnection(): Promise<void> {
@@ -36,8 +38,10 @@ export class LoginComponent {
       this.backendStatus = 'Testando conexão...';
       const result = await (window as any).electronAPI?.testBackendConnection();
       this.backendStatus = `Backend OK - Status: ${result.status}`;
+      logger.info('LOGIN', 'TEST_BACKEND', 'Backend ok', { status: result?.status, ready: result?.data?.ready });
     } catch (error: any) {
       this.backendStatus = `Erro: ${error.message}`;
+      logger.error('LOGIN', 'TEST_BACKEND', 'Erro ao testar backend', error);
     }
   }
 
@@ -47,10 +51,12 @@ export class LoginComponent {
 
     this.authService.login(this.credentials)
       .then(() => {
+        logger.info('LOGIN', 'LOGIN_OK', 'Login realizado com sucesso', { username: this.credentials.username });
         this.router.navigate(['/dashboard']);
       })
       .catch((error) => {
         this.error = error.message || 'Erro ao fazer login';
+        logger.error('LOGIN', 'LOGIN_FAIL', 'Erro no login', error);
       })
       .finally(() => {
         this.loading = false;

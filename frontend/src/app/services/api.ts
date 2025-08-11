@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
-import { Observable, BehaviorSubject, timer, throwError, of } from 'rxjs';
-import { tap, catchError, switchMap, first, retry, retryWhen, delay, take, timeout } from 'rxjs/operators';
+import { Observable, BehaviorSubject, throwError, of } from 'rxjs';
+import { tap, catchError, retry, timeout } from 'rxjs/operators';
 import { Produto, Venda, RelatorioVendas } from '../models';
 import { logger } from '../utils/logger';
 import { environment } from '../../environments/environment';
@@ -12,16 +12,18 @@ import { BackendDetectorService } from './backend-detector';
 })
 export class ApiService {
   private baseUrl = environment.apiUrl;
-  private backendUrlSubject = new BehaviorSubject<string>(environment.apiUrl);
+  private readonly backendUrlSubject = new BehaviorSubject<string>(environment.apiUrl);
   private isDetecting = false;
-  private connectionStatus = new BehaviorSubject<boolean>(true);
+  private readonly connectionStatus = new BehaviorSubject<boolean>(true);
   private reconnectionAttempts = 0;
-  private maxReconnectionAttempts = 5;
+  private readonly maxReconnectionAttempts = 5;
   private connectionCheckInterval: any;
+  private consecutiveHealthFailures = 0;
+  private readonly healthFailureThreshold = 2; // só considerar queda após 2 falhas seguidas
 
   constructor(
-    private http: HttpClient,
-    private backendDetector: BackendDetectorService
+    private readonly http: HttpClient,
+    private readonly backendDetector: BackendDetectorService
   ) {
     // Em produção, tentar detectar o backend automaticamente
     if (environment.production) {
@@ -61,38 +63,40 @@ export class ApiService {
   }
 
   private startConnectionMonitoring(): void {
-    // Verificar conexão a cada 30 segundos
-    this.connectionCheckInterval = setInterval(() => {
-      this.checkConnection();
-    }, 30000);
+    // Evitar health check logo ao iniciar; dar tempo do backend subir
+    setTimeout(() => {
+      this.connectionCheckInterval = setInterval(() => {
+        this.checkConnection();
+      }, 30000);
+    }, 4000);
   }
 
   private checkConnection(): void {
-    // Fazer uma requisição leve para verificar se o backend está respondendo
-    this.http.get(`${this.baseUrl.replace('/api', '')}/health`).pipe(
-      timeout(5000),
-      catchError(() => {
-        // Se health check falhar, tentar endpoint de teste
-        return this.http.get(`${this.baseUrl.replace('/api', '')}/test`).pipe(
-          timeout(5000),
-          catchError(() => of(null))
-        );
-      })
+    const base = this.baseUrl.replace('/api', '');
+    this.http.get(`${base}/health`).pipe(
+      timeout(8000),
+      catchError(() => this.http.get(`${base}/test`).pipe(timeout(8000), catchError(() => of(null))))
     ).subscribe({
       next: (response) => {
         if (response) {
-          // Conexão está funcionando
+          this.consecutiveHealthFailures = 0;
           if (!this.connectionStatus.value) {
             console.log('✅ Conexão com backend restaurada!');
             this.connectionStatus.next(true);
             this.reconnectionAttempts = 0;
           }
         } else {
-          this.handleConnectionLoss();
+          this.consecutiveHealthFailures++;
+          if (this.consecutiveHealthFailures >= this.healthFailureThreshold) {
+            this.handleConnectionLoss();
+          }
         }
       },
       error: () => {
-        this.handleConnectionLoss();
+        this.consecutiveHealthFailures++;
+        if (this.consecutiveHealthFailures >= this.healthFailureThreshold) {
+          this.handleConnectionLoss();
+        }
       }
     });
   }
@@ -140,12 +144,7 @@ export class ApiService {
   private makeRequest<T>(requestFn: () => Observable<T>, operation: string): Observable<T> {
     return requestFn().pipe(
       timeout(30000), // 30 segundos de timeout
-      retryWhen(errors =>
-        errors.pipe(
-          take(3), // Máximo 3 tentativas
-          delay(1000) // 1 segundo entre tentativas
-        )
-      ),
+      retry({ count: 3, delay: 1000 }),
       tap((response: any) => {
         logger.logApiResponse('API_SERVICE', operation, this.baseUrl, response, true);
         // Marcar conexão como ativa em caso de sucesso
@@ -258,20 +257,21 @@ export class ApiService {
     );
   }
 
-  // Método para a nova estrutura de vendas (com itens)
-  createVendaWithItens(venda: { itens: Array<{ produtoId: number, quantidade: number, precoUnitario: number }>, metodoPagamento: string }): Observable<Venda> {
+  private postVenda(payload: any): Observable<Venda> {
     return this.makeRequest(
-      () => this.http.post<Venda>(`${this.baseUrl}/vendas`, venda),
+      () => this.http.post<Venda>(`${this.baseUrl}/vendas`, payload),
       'CREATE_VENDA'
     );
   }
 
+  // Método para a nova estrutura de vendas (com itens)
+  createVendaWithItens(venda: { itens: Array<{ produtoId: number, quantidade: number, precoUnitario: number }>, metodoPagamento: string }): Observable<Venda> {
+    return this.postVenda(venda);
+  }
+
   // Método para a estrutura atual de vendas (individual)
   createVenda(venda: { produto_id: number, quantidade_vendida: number, preco_total: number, data_venda: string, metodo_pagamento: string }): Observable<Venda> {
-    return this.makeRequest(
-      () => this.http.post<Venda>(`${this.baseUrl}/vendas`, venda),
-      'CREATE_VENDA'
-    );
+    return this.postVenda(venda);
   }
 
   deleteVenda(id: number): Observable<void> {

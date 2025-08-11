@@ -5,6 +5,7 @@ import { ApiService } from '../../services/api';
 import { AuthService } from '../../services/auth';
 import { ImageService } from '../../services/image.service';
 import { Produto } from '../../models';
+import { logger } from '../../utils/logger';
 
 @Component({
   selector: 'app-lista-produtos',
@@ -29,6 +30,7 @@ export class ListaProdutosComponent implements OnInit {
   ngOnInit(): void {
     this.isAdmin = this.authService.isAdmin();
     this.loadProdutos();
+    logger.info('LISTA_PRODUTOS', 'INIT', 'Componente iniciado', { isAdmin: this.isAdmin });
   }
 
   loadProdutos(): void {
@@ -39,11 +41,12 @@ export class ListaProdutosComponent implements OnInit {
       next: (produtos) => {
         this.produtos = produtos;
         this.loading = false;
+        logger.info('LISTA_PRODUTOS', 'LOAD_PRODUTOS', 'Produtos carregados', { count: produtos.length });
       },
       error: (error) => {
         this.error = 'Erro ao carregar produtos';
         this.loading = false;
-        console.error('Erro na API:', error);
+        logger.error('LISTA_PRODUTOS', 'LOAD_PRODUTOS', 'Erro ao carregar produtos', error);
       }
     });
   }
@@ -61,11 +64,12 @@ export class ListaProdutosComponent implements OnInit {
         next: () => {
           this.produtos = this.produtos.filter(p => p.id !== id);
           this.loading = false;
+          logger.info('LISTA_PRODUTOS', 'DELETE_PRODUTO', 'Produto deletado', { id });
         },
         error: (error: any) => {
           this.error = 'Erro ao excluir produto';
           this.loading = false;
-          console.error('Erro na API:', error);
+          logger.error('LISTA_PRODUTOS', 'DELETE_PRODUTO', 'Erro ao excluir produto', error);
         }
       });
     }
@@ -82,11 +86,12 @@ export class ListaProdutosComponent implements OnInit {
           produto.quantidade_estoque = novaQuantidade;
         }
         this.loading = false;
+        logger.info('LISTA_PRODUTOS', 'UPDATE_ESTOQUE', 'Estoque atualizado', { id, quantidade: novaQuantidade });
       },
       error: (error: any) => {
         this.error = 'Erro ao atualizar estoque';
         this.loading = false;
-        console.error('Erro na API:', error);
+        logger.error('LISTA_PRODUTOS', 'UPDATE_ESTOQUE', 'Erro ao atualizar estoque', error);
       }
     });
   }

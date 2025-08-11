@@ -5,9 +5,9 @@ const { showNetworkInfo } = require('./show-network-info');
 console.log('⏳ Aguardando serviços ficarem prontos...');
 
 // Função para testar se um serviço está disponível
-function testService(host, port, name) {
+function testService(host, port, name, path = '/') {
     return new Promise((resolve) => {
-        const req = http.get(`http://${host}:${port}`, (res) => {
+        const req = http.get(`http://${host}:${port}${path}`, (res) => {
             console.log(`✅ ${name} está pronto!`);
             resolve(true);
         });
@@ -26,14 +26,17 @@ function testService(host, port, name) {
 // Função para aguardar até todos os serviços estarem prontos
 async function waitForServices() {
     let attempts = 0;
-    const maxAttempts = 30; // 30 tentativas = 30 segundos
+    // Tornar a espera mais resiliente: alguns ambientes demoram mais para o backend subir
+    const maxAttempts = 120; // 120 tentativas = 120 segundos
 
     while (attempts < maxAttempts) {
         attempts++;
         console.log(`🔍 Verificação ${attempts}/${maxAttempts}...`);
 
-        const backendReady = await testService('localhost', 3000, 'Backend');
-        const frontendReady = await testService('localhost', 4200, 'Frontend Angular');
+        const backendReady = await testService('127.0.0.1', 3000, 'Backend', '/health');
+        const frontendReadyLocalhost = await testService('localhost', 4200, 'Frontend Angular', '/');
+        const frontendReady127 = frontendReadyLocalhost ? true : await testService('127.0.0.1', 4200, 'Frontend Angular', '/');
+        const frontendReady = frontendReadyLocalhost || frontendReady127;
 
         if (backendReady && frontendReady) {
             console.log('🎉 Todos os serviços prontos! Iniciando Electron...');
@@ -43,6 +46,17 @@ async function waitForServices() {
                 showNetworkInfo();
             }
 
+            return true;
+        }
+
+        // Em desenvolvimento, se qualquer um dos serviços já estiver pronto após breve espera,
+        // inicie o Electron para não atrasar a UX.
+        if (attempts >= 2 && (frontendReady || backendReady)) {
+            if (frontendReady && !backendReady) {
+                console.log('⚡ Frontend pronto. Iniciando Electron enquanto o Backend finaliza...');
+            } else if (backendReady && !frontendReady) {
+                console.log('⚡ Backend pronto. Iniciando Electron enquanto o Frontend finaliza...');
+            }
             return true;
         }
 
@@ -58,7 +72,7 @@ async function waitForServices() {
 
 // Iniciar Electron após aguardar serviços
 async function startElectron() {
-    await waitForServices();
+    const ready = await waitForServices();
 
     console.log('🚀 Iniciando Electron...');
     const electronProcess = spawn('npm', ['run', 'dev'], {

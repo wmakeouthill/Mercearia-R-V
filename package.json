@@ -17,7 +17,7 @@
         "dist": "npm run build:prod && cd electron && npm run dist",
         "dist:win": "npm run build:prod && cd electron && npm run dist:win",
         "dist:standalone": "npx ts-node scripts/build-standalone.ts",
-        "dev": "concurrently \"cd backend-spring && mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=3000\" \"cd frontend && npm start\" \"node scripts/wait-and-start-electron.js\"",
+        "dev": "concurrently \"cd backend-spring && mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=3000 --define spring.devtools.restart.enabled=false\" \"cd frontend && npm start\" \"node scripts/wait-and-start-electron.js\"",
         "dev:fast": "concurrently \"cd backend-spring && mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=3000\" \"cd frontend && npm start\" \"cd electron && npm run dev\"",
         "dev:network": "concurrently \"cd backend-spring && mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=3000\" \"cd frontend && npm run start:network\" \"node scripts/wait-and-start-electron.js\"",
         "dev:ip": "concurrently \"cd backend-spring && mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=3000\" \"cd frontend && npm run start:ip\" \"node scripts/wait-and-start-electron.js\"",

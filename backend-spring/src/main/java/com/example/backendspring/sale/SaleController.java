@@ -2,6 +2,7 @@ package com.example.backendspring.sale;
 
 import com.example.backendspring.product.Product;
 import com.example.backendspring.product.ProductRepository;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -50,8 +51,9 @@ public class SaleController {
                     .body(Map.of(KEY_ERROR, "Produto, quantidade e preço total são obrigatórios"));
         }
 
-        String metodo = switch (req.getMetodoPagamento() == null ? DEFAULT_PAGAMENTO : req.getMetodoPagamento()) {
-            case DEFAULT_PAGAMENTO, "cartao_credito", "cartao_debito", "pix" -> req.getMetodoPagamento();
+        String metodoValue = req.getMetodoPagamento() == null ? DEFAULT_PAGAMENTO : req.getMetodoPagamento();
+        String metodo = switch (metodoValue) {
+            case DEFAULT_PAGAMENTO, "cartao_credito", "cartao_debito", "pix" -> metodoValue;
             default -> DEFAULT_PAGAMENTO;
         };
 
@@ -133,9 +135,16 @@ public class SaleController {
 
     @Data
     public static class CreateSaleRequest {
+        @JsonProperty("produto_id")
         private Long produtoId;
+
+        @JsonProperty("quantidade_vendida")
         private Integer quantidadeVendida;
+
+        @JsonProperty("preco_total")
         private Double precoTotal;
+
+        @JsonProperty("metodo_pagamento")
         private String metodoPagamento;
     }
 }

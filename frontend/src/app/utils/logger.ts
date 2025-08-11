@@ -13,10 +13,17 @@ class Logger {
     private maxLogs = 500; // Reduzir limite para melhor performance
     private maxStorageSize = 2 * 1024 * 1024; // 2MB máximo no localStorage
     private autoCleanupInterval: number | null = null;
+    private ipcWriteAvailable: boolean = false;
 
     constructor() {
         this.loadFromStorage();
         this.startAutoCleanup();
+        // Detectar API do Electron para escrita em arquivo
+        try {
+            this.ipcWriteAvailable = Boolean((window as any)?.electronAPI?.writeLog);
+        } catch {
+            this.ipcWriteAvailable = false;
+        }
     }
 
     private addLog(entry: LogEntry): void {
@@ -32,6 +39,17 @@ class Logger {
 
         // Log no console para desenvolvimento
         console.log(`[${entry.level}] ${entry.component}: ${entry.message}`, entry.data || '');
+
+        // Encaminhar para arquivo via Electron (se disponível)
+        if (this.ipcWriteAvailable) {
+            try {
+                const line = JSON.stringify(entry);
+                (window as any).electronAPI.writeLog(line);
+            } catch (err) {
+                // Se falhar uma vez, evitar tentar em excesso
+                this.ipcWriteAvailable = false;
+            }
+        }
     }
 
     private startAutoCleanup(): void {
@@ -251,4 +269,4 @@ class Logger {
     }
 }
 
-export const logger = new Logger(); 
+export const logger = new Logger();

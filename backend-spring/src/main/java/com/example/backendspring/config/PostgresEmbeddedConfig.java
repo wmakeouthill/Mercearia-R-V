@@ -32,18 +32,54 @@ public class PostgresEmbeddedConfig {
 
     @Bean(destroyMethod = "close")
     public EmbeddedPostgres embeddedPostgres() throws IOException {
-        // Persistência local: usa pasta fixa no projeto
-        Path dataDir = Paths.get("backend-spring", "data", "pg").toAbsolutePath();
-        try {
-            Files.createDirectories(dataDir);
-        } catch (IOException ignored) {
-            // Diretório pode já existir ou não ser criável agora. Continuamos e deixamos o
-            // EmbeddedPostgres falhar se for realmente um problema.
-            log.debug("Ignorando falha ao garantir diretório {}: {}", dataDir, ignored.getMessage());
+        // Em dev, por padrão, usar diretório TEMPORÁRIO único por execução para evitar
+        // conflitos de postmaster.pid quando um processo anterior não terminou
+        // corretamente.
+        // Para persistir dados entre execuções, defina PERSIST_EMBEDDED_PG=true.
+
+        // Persistência por padrão; defina PERSIST_EMBEDDED_PG=false para usar diretório
+        // temporário
+        boolean persist = !"false".equalsIgnoreCase(System.getenv("PERSIST_EMBEDDED_PG"));
+
+        Path dataDir = null;
+        if (persist) {
+            // Permitir sobrescrever diretório de dados via variável de ambiente
+            // (recomendado em produção)
+            String pgDataDirEnv = System.getenv("PG_DATA_DIR");
+            Path persistentDir = (pgDataDirEnv != null && !pgDataDirEnv.isBlank())
+                    ? Paths.get(pgDataDirEnv).toAbsolutePath()
+                    : Paths.get("data", "pg").toAbsolutePath();
+            try {
+                Files.createDirectories(persistentDir);
+            } catch (IOException ignored) {
+                log.debug("Ignorando falha ao garantir diretório {}: {}", persistentDir, ignored.getMessage());
+            }
+
+            // Se existir lock (postmaster.pid), tentar remover (stale) antes de decidir por
+            // fallback
+            Path lockFile = persistentDir.resolve("postmaster.pid");
+            if (Files.exists(lockFile)) {
+                try {
+                    log.warn("Lock do Postgres encontrado em {}. Tentando remover lock obsoleto...", lockFile);
+                    Files.deleteIfExists(lockFile);
+                    log.info("Lock removido com sucesso. Prosseguindo com diretório persistente.");
+                } catch (IOException e) {
+                    log.warn("Falha ao remover lock {} ({}). Usando diretório temporário nesta execução.", lockFile,
+                            e.getMessage());
+                    dataDir = Files.createTempDirectory("embedded-pg-");
+                }
+            }
+            if (dataDir == null) {
+                dataDir = persistentDir;
+            }
+        } else {
+            dataDir = Files.createTempDirectory("embedded-pg-");
         }
+
+        log.info("Embedded Postgres data directory: {} (persist={})", dataDir, persist);
         return EmbeddedPostgres.builder()
                 .setDataDirectory(dataDir)
-                .setCleanDataDirectory(false)
+                .setCleanDataDirectory(!persist)
                 .start();
     }
 

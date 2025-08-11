@@ -41,27 +41,33 @@ public class ProductController {
     @GetMapping("/{id}")
     public ResponseEntity<Map<String, Object>> getById(@PathVariable Long id) {
         return productRepository.findById(id)
-                .<ResponseEntity<Map<String, Object>>>map(p -> ResponseEntity.ok(Map.of(
-                        KEY_ID, p.getId(),
-                        KEY_NOME, p.getNome(),
-                        KEY_CODIGO_BARRAS, p.getCodigoBarras(),
-                        KEY_PRECO_VENDA, p.getPrecoVenda(),
-                        KEY_QTD_ESTOQUE, p.getQuantidadeEstoque(),
-                        KEY_IMAGEM, p.getImagem())))
-                .orElse(ResponseEntity.status(404).body(Map.of(KEY_ERROR, MSG_PRODUTO_NAO_ENCONTRADO)));
+                .<ResponseEntity<Map<String, Object>>>map(p -> {
+                    java.util.Map<String, Object> body = new java.util.LinkedHashMap<>();
+                    body.put(KEY_ID, p.getId());
+                    body.put(KEY_NOME, p.getNome());
+                    body.put(KEY_CODIGO_BARRAS, p.getCodigoBarras());
+                    body.put(KEY_PRECO_VENDA, p.getPrecoVenda());
+                    body.put(KEY_QTD_ESTOQUE, p.getQuantidadeEstoque());
+                    body.put(KEY_IMAGEM, p.getImagem()); // pode ser null
+                    return ResponseEntity.ok(body);
+                })
+                .orElse(ResponseEntity.status(404).body(java.util.Map.of(KEY_ERROR, MSG_PRODUTO_NAO_ENCONTRADO)));
     }
 
     @GetMapping("/codigo/{codigo}")
     public ResponseEntity<Map<String, Object>> getByCodigo(@PathVariable("codigo") String codigo) {
         return productRepository.findByCodigoBarras(codigo)
-                .<ResponseEntity<Map<String, Object>>>map(p -> ResponseEntity.ok(Map.of(
-                        KEY_ID, p.getId(),
-                        KEY_NOME, p.getNome(),
-                        KEY_CODIGO_BARRAS, p.getCodigoBarras(),
-                        KEY_PRECO_VENDA, p.getPrecoVenda(),
-                        KEY_QTD_ESTOQUE, p.getQuantidadeEstoque(),
-                        KEY_IMAGEM, p.getImagem())))
-                .orElse(ResponseEntity.status(404).body(Map.of(KEY_ERROR, MSG_PRODUTO_NAO_ENCONTRADO)));
+                .<ResponseEntity<Map<String, Object>>>map(p -> {
+                    java.util.Map<String, Object> body = new java.util.LinkedHashMap<>();
+                    body.put(KEY_ID, p.getId());
+                    body.put(KEY_NOME, p.getNome());
+                    body.put(KEY_CODIGO_BARRAS, p.getCodigoBarras());
+                    body.put(KEY_PRECO_VENDA, p.getPrecoVenda());
+                    body.put(KEY_QTD_ESTOQUE, p.getQuantidadeEstoque());
+                    body.put(KEY_IMAGEM, p.getImagem()); // pode ser null
+                    return ResponseEntity.ok(body);
+                })
+                .orElse(ResponseEntity.status(404).body(java.util.Map.of(KEY_ERROR, MSG_PRODUTO_NAO_ENCONTRADO)));
     }
 
     @PostMapping
@@ -69,7 +75,8 @@ public class ProductController {
         if (!StringUtils.hasText(req.getNome()) || req.getPrecoVenda() == null) {
             return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, "Nome e preço de venda são obrigatórios"));
         }
-        if (req.getCodigoBarras() != null && productRepository.findByCodigoBarras(req.getCodigoBarras()).isPresent()) {
+        if (StringUtils.hasText(req.getCodigoBarras())
+                && productRepository.findByCodigoBarras(req.getCodigoBarras()).isPresent()) {
             return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, "Código de barras já existe"));
         }
         Product p = productRepository.save(Product.builder()
@@ -85,13 +92,14 @@ public class ProductController {
             p.setImagem(nomeImagem);
             productRepository.save(p);
         }
-        return ResponseEntity.status(201).body(Map.of(
-                KEY_ID, p.getId(),
-                KEY_NOME, p.getNome(),
-                KEY_CODIGO_BARRAS, p.getCodigoBarras(),
-                KEY_PRECO_VENDA, p.getPrecoVenda(),
-                KEY_QTD_ESTOQUE, p.getQuantidadeEstoque(),
-                KEY_IMAGEM, p.getImagem()));
+        java.util.Map<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put(KEY_ID, p.getId());
+        body.put(KEY_NOME, p.getNome());
+        body.put(KEY_CODIGO_BARRAS, p.getCodigoBarras());
+        body.put(KEY_PRECO_VENDA, p.getPrecoVenda());
+        body.put(KEY_QTD_ESTOQUE, p.getQuantidadeEstoque());
+        body.put(KEY_IMAGEM, p.getImagem()); // pode ser null
+        return ResponseEntity.status(201).body(body);
     }
 
     @PutMapping("/{id}")
@@ -141,7 +149,7 @@ public class ProductController {
 
     // Servir imagens
     @GetMapping(value = "/imagem/{fileName}")
-    public ResponseEntity<byte[]> getImage(@PathVariable String fileName) throws IOException {
+    public ResponseEntity<byte[]> getImage(@PathVariable("fileName") String fileName) throws IOException {
         if (DEFAULT_IMAGE.equals(fileName)) {
             Path defaultPath = Paths.get(UPLOADS_DIR, PRODUTOS_DIR, DEFAULT_IMAGE);
             if (!Files.exists(defaultPath)) {

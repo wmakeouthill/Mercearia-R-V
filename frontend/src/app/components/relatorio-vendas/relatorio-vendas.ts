@@ -7,6 +7,7 @@ import { AuthService } from '../../services/auth';
 import { ImageService } from '../../services/image.service';
 import { extractLocalDate, extractYearMonth, formatDateBR, formatTimeBR, getCurrentDateForInput, formatDateYMD } from '../../utils/date-utils';
 import { RelatorioVendas, Venda, MetodoPagamento } from '../../models';
+import { logger } from '../../utils/logger';
 
 @Component({
   selector: 'app-relatorio-vendas',
@@ -35,13 +36,14 @@ export class RelatorioVendasComponent implements OnInit {
   melhorDiaReceita = 0;
 
   constructor(
-    private apiService: ApiService,
-    private authService: AuthService,
-    private imageService: ImageService,
-    private router: Router
+    private readonly apiService: ApiService,
+    private readonly authService: AuthService,
+    private readonly imageService: ImageService,
+    private readonly router: Router
   ) { }
 
   ngOnInit(): void {
+    logger.info('RELATORIO_VENDAS', 'INIT', 'Componente iniciado');
     this.isAdmin = this.authService.isAdmin();
     this.filtroData = this.getDataAtual();
     this.loadVendas();
@@ -61,11 +63,12 @@ export class RelatorioVendasComponent implements OnInit {
         this.calcularEstatisticas();
         this.gerarRelatorios();
         this.loading = false;
+        logger.info('RELATORIO_VENDAS', 'LOAD_VENDAS', 'Vendas carregadas', { count: vendas.length });
       },
       error: (error: any) => {
         this.error = 'Erro ao carregar vendas';
         this.loading = false;
-        console.error('Erro na API:', error);
+        logger.error('RELATORIO_VENDAS', 'LOAD_VENDAS', 'Erro ao carregar vendas', error);
       }
     });
   }
@@ -151,6 +154,12 @@ export class RelatorioVendasComponent implements OnInit {
     // Recalcular estatísticas e relatórios com todos os filtros
     this.calcularEstatisticas();
     this.gerarRelatorios();
+    logger.info('RELATORIO_VENDAS', 'APLICAR_FILTROS', 'Filtros aplicados', {
+      periodo: this.filtroPeriodo,
+      data: this.filtroData,
+      nome: this.filtroNomeProduto,
+      metodo: this.filtroMetodoPagamento
+    });
   }
 
   limparFiltros(): void {
@@ -200,7 +209,7 @@ export class RelatorioVendasComponent implements OnInit {
     }
 
     return this.vendas.filter(venda => {
-      if (!venda || !venda.data_venda) return false;
+      if (!venda?.data_venda) return false;
 
       // Filtro por data
       if (this.filtroData) {
@@ -209,14 +218,15 @@ export class RelatorioVendasComponent implements OnInit {
           if (vendaDataLocal !== this.filtroData) {
             return false;
           }
-        } catch (e) {
+        } catch (error) {
+          logger.warn('RELATORIO_VENDAS', 'FILTER_INVALID_DATE', 'Data de venda inválida ao aplicar filtro', { venda, error: String(error) });
           return false;
         }
       }
 
       // Filtro por nome do produto
-      if (this.filtroNomeProduto && this.filtroNomeProduto.trim()) {
-        const nomeProduto = (venda.produto_nome || '').toLowerCase();
+      if (this.filtroNomeProduto?.trim()) {
+        const nomeProduto = venda.produto_nome?.toLowerCase() ?? '';
         const termoBusca = this.filtroNomeProduto.toLowerCase().trim();
         if (!nomeProduto.includes(termoBusca)) {
           return false;
@@ -224,7 +234,7 @@ export class RelatorioVendasComponent implements OnInit {
       }
 
       // Filtro por método de pagamento
-      if (this.filtroMetodoPagamento && this.filtroMetodoPagamento.trim()) {
+      if (this.filtroMetodoPagamento?.trim()) {
         if (venda.metodo_pagamento !== this.filtroMetodoPagamento) {
           return false;
         }

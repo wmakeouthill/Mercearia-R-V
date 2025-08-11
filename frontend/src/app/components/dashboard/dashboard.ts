@@ -6,6 +6,7 @@ import { Subscription } from 'rxjs';
 import { AuthService } from '../../services/auth';
 import { CaixaService } from '../../services/caixa.service';
 import { Usuario, StatusCaixa } from '../../models';
+import { logger } from '../../utils/logger';
 
 @Component({
   selector: 'app-dashboard',
@@ -31,23 +32,26 @@ export class DashboardComponent implements OnInit, OnDestroy {
   private statusSubscription?: Subscription;
 
   constructor(
-    private authService: AuthService,
-    private caixaService: CaixaService,
-    private router: Router,
-    private route: ActivatedRoute,
-    private cdr: ChangeDetectorRef
+    private readonly authService: AuthService,
+    private readonly caixaService: CaixaService,
+    private readonly router: Router,
+    private readonly route: ActivatedRoute,
+    private readonly cdr: ChangeDetectorRef
   ) { }
 
-  async ngOnInit(): Promise<void> {
+  ngOnInit(): void {
+    logger.info('DASHBOARD', 'INIT', 'Componente iniciado');
     this.currentUser = this.authService.getCurrentUser();
     this.isAdmin = this.authService.isAdmin();
     this.podeControlarCaixa = this.authService.podeControlarCaixa();
 
     // Recarregar informações do usuário para garantir que as permissões estão atualizadas
-    await this.authService.reloadCurrentUser();
-    this.currentUser = this.authService.getCurrentUser();
-    this.isAdmin = this.authService.isAdmin();
-    this.podeControlarCaixa = this.authService.podeControlarCaixa();
+    this.authService.reloadCurrentUser()
+      .finally(() => {
+        this.currentUser = this.authService.getCurrentUser();
+        this.isAdmin = this.authService.isAdmin();
+        this.podeControlarCaixa = this.authService.podeControlarCaixa();
+      });
 
     // Verificar mensagens de erro na URL
     this.route.queryParams.subscribe(params => {
@@ -85,10 +89,10 @@ export class DashboardComponent implements OnInit, OnDestroy {
   loadStatusCaixa(): void {
     this.statusSubscription = this.caixaService.statusCaixa$.subscribe(status => {
       this.statusCaixa = status;
-      if (status && status.horario_abertura_obrigatorio) {
+      if (status?.horario_abertura_obrigatorio) {
         this.horarioAbertura = status.horario_abertura_obrigatorio;
       }
-      if (status && status.horario_fechamento_obrigatorio) {
+      if (status?.horario_fechamento_obrigatorio) {
         this.horarioFechamento = status.horario_fechamento_obrigatorio;
       }
       // Forçar detecção de mudanças
@@ -105,10 +109,12 @@ export class DashboardComponent implements OnInit, OnDestroy {
         this.success = response.message;
         this.loading = false;
         setTimeout(() => this.success = '', 3000);
+        logger.info('DASHBOARD', 'ABRIR_CAIXA', 'Caixa aberto');
       },
       error: (error) => {
         this.error = error.error?.error || 'Erro ao abrir caixa';
         this.loading = false;
+        logger.error('DASHBOARD', 'ABRIR_CAIXA', 'Erro ao abrir caixa', error);
       }
     });
   }
@@ -126,10 +132,12 @@ export class DashboardComponent implements OnInit, OnDestroy {
         this.success = response.message;
         this.loading = false;
         setTimeout(() => this.success = '', 3000);
+        logger.info('DASHBOARD', 'FECHAR_CAIXA', 'Caixa fechado');
       },
       error: (error) => {
         this.error = error.error?.error || 'Erro ao fechar caixa';
         this.loading = false;
+        logger.error('DASHBOARD', 'FECHAR_CAIXA', 'Erro ao fechar caixa', error);
       }
     });
   }
@@ -158,10 +166,15 @@ export class DashboardComponent implements OnInit, OnDestroy {
         this.showHorariosConfig = false;
         this.loading = false;
         setTimeout(() => this.success = '', 3000);
+        logger.info('DASHBOARD', 'CONFIG_HORARIOS', 'Horários configurados', {
+          abertura: this.horarioAbertura,
+          fechamento: this.horarioFechamento
+        });
       },
       error: (error) => {
         this.error = error.error?.error || 'Erro ao configurar horários';
         this.loading = false;
+        logger.error('DASHBOARD', 'CONFIG_HORARIOS', 'Erro ao configurar horários', error);
       }
     });
   }

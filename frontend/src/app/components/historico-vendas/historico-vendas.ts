@@ -7,6 +7,7 @@ import { AuthService } from '../../services/auth';
 import { ImageService } from '../../services/image.service';
 import { extractLocalDate, formatDateBR } from '../../utils/date-utils';
 import { Venda, MetodoPagamento } from '../../models';
+import { logger } from '../../utils/logger';
 
 @Component({
   selector: 'app-historico-vendas',
@@ -32,6 +33,7 @@ export class HistoricoVendasComponent implements OnInit {
   ) { }
 
   ngOnInit(): void {
+    logger.info('HISTORICO_VENDAS', 'INIT', 'Componente iniciado');
     this.loadVendas();
   }
 
@@ -45,6 +47,7 @@ export class HistoricoVendasComponent implements OnInit {
         this.vendas = Array.isArray(vendas) ? vendas : [];
         this.vendasFiltradas = [...this.vendas];
         this.loading = false;
+        logger.info('HISTORICO_VENDAS', 'LOAD_VENDAS', 'Vendas carregadas', { count: this.vendas.length });
       },
       error: (error: any) => {
         this.error = 'Erro ao carregar vendas';
@@ -52,7 +55,7 @@ export class HistoricoVendasComponent implements OnInit {
         // Garantir arrays vazios em caso de erro
         this.vendas = [];
         this.vendasFiltradas = [];
-        console.error('Erro na API:', error);
+        logger.error('HISTORICO_VENDAS', 'LOAD_VENDAS', 'Erro ao carregar vendas', error);
       }
     });
   }
@@ -75,10 +78,9 @@ export class HistoricoVendasComponent implements OnInit {
       // Filtro por data
       if (this.dataFiltro) {
         try {
-          // Converter a data da venda para data local e comparar
           const vendaDataLocal = extractLocalDate(venda.data_venda);
           matchData = vendaDataLocal === this.dataFiltro;
-        } catch (e) {
+        } catch {
           matchData = false;
         }
       }
@@ -112,10 +114,10 @@ export class HistoricoVendasComponent implements OnInit {
         next: () => {
           this.vendas = this.vendas.filter(v => v.id !== id);
           this.vendasFiltradas = this.vendasFiltradas.filter(v => v.id !== id);
-          console.log(`Venda ${id} excluída com sucesso`);
+          logger.info('HISTORICO_VENDAS', 'DELETE_VENDA', 'Venda excluída', { id });
         },
         error: (error: any) => {
-          console.error('Erro ao excluir venda:', error);
+          logger.error('HISTORICO_VENDAS', 'DELETE_VENDA', 'Erro ao excluir venda', error);
           alert('Erro ao excluir venda');
         }
       });
@@ -180,4 +182,4 @@ export class HistoricoVendasComponent implements OnInit {
       event.target.src = fallbackUrl;
     }
   }
-} 
+}

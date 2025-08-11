@@ -8,6 +8,11 @@ spring:
     url: ${DB_URL:}
     username: ${DB_USERNAME:}
     password: ${DB_PASSWORD:}
+  devtools:
+    restart:
+      enabled: false
+    livereload:
+      enabled: false
   jpa:
     hibernate:
       ddl-auto: update
@@ -20,7 +25,7 @@ spring:
 
 app:
   jwt:
-    secret: ${JWT_SECRET}
+    secret: ${JWT_SECRET:dev-secret-please-change-me-0123456789-ABCDEFGHIJKLMNOPQRSTUVWXYZ}
     expiration: 86400000 # 24h em ms
 
 # CORS permissivo similar ao Express
@@ -31,3 +36,16 @@ cors:
   exposed-headers: "Content-Length,X-Foo,X-Bar"
   allow-credentials: true
   max-age: 86400
+
+logging:
+  # Nome do arquivo de log. Em dev, o backend costuma rodar dentro de `backend-spring/`,
+  # então usamos ../ para gravar na raiz do projeto. Pode ser sobrescrito via LOG_FILE
+  file:
+    name: ${LOG_FILE:../backend.log}
+  level:
+    root: INFO
+    "[org.springframework.web]": INFO
+    "[com.example.backendspring]": DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n"

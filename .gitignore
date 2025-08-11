@@ -48,9 +48,13 @@ target/
 backend-spring/.classpath
 backend-spring/.project
 backend-spring/.settings/
-backend-spring/data/
-backend-spring/data/pg/
-backend-spring/secrets/
+# Dados gerados (embedded Postgres, etc.) em qualquer módulo do backend
+backend-spring/**/data/
+# Uploads de runtime em qualquer módulo do backend
+backend-spring/**/uploads/
+# Segredos locais do backend (módulos/variações)
+backend-spring/**/secrets/
+
 
 ############################################################
 # Uploads e dados de runtime
@@ -58,6 +62,8 @@ backend-spring/secrets/
 uploads/
 logs/
 *.log
+database.sqlite
+*.sqlite
 
 ############################################################
 # Variáveis de ambiente e segredos
@@ -84,3 +90,8 @@ temp/
 *.tmp
 *.swp
 *.swo
+
+############################################################
+# Java (artefatos compilados)
+############################################################
+**/*.class

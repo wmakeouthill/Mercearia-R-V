@@ -5,6 +5,7 @@ import { Router } from '@angular/router';
 import { ApiService } from '../../services/api';
 import { AuthService } from '../../services/auth';
 import { Produto } from '../../models';
+import { logger } from '../../utils/logger';
 
 @Component({
   selector: 'app-gerenciar-estoque',
@@ -19,9 +20,9 @@ import { Produto } from '../../models';
 
       <div class="content">
         <div class="search-section">
-          <input 
-            type="text" 
-            [(ngModel)]="searchTerm" 
+          <input
+            type="text"
+            [(ngModel)]="searchTerm"
             (input)="filterProdutos()"
             placeholder="Buscar produtos..."
             class="search-input"
@@ -35,7 +36,7 @@ import { Produto } from '../../models';
               <p class="codigo">Código: {{ produto.codigo_barras || 'N/A' }}</p>
               <p class="preco">Preço: R$ {{ produto.preco_venda.toFixed(2) }}</p>
             </div>
-            
+
             <div class="estoque-section">
               <div class="estoque-atual">
                 <span class="label">Estoque Atual:</span>
@@ -43,16 +44,16 @@ import { Produto } from '../../models';
                   {{ produto.quantidade_estoque }}
                 </span>
               </div>
-              
+
               <div class="estoque-actions">
-                <input 
-                  type="number" 
-                  [(ngModel)]="produto.novaQuantidade" 
+                <input
+                  type="number"
+                  [(ngModel)]="produto.novaQuantidade"
                   [placeholder]="produto.quantidade_estoque.toString()"
                   class="quantidade-input"
                   min="0"
                 >
-                <button 
+                <button
                   (click)="atualizarEstoque(produto)"
                   [disabled]="produto.atualizando"
                   class="btn-atualizar"
@@ -274,11 +275,11 @@ import { Produto } from '../../models';
       .produtos-grid {
         grid-template-columns: 1fr;
       }
-      
+
       .estoque-actions {
         flex-direction: column;
       }
-      
+
       .stats-section {
         grid-template-columns: repeat(2, 1fr);
       }
@@ -293,12 +294,13 @@ export class GerenciarEstoqueComponent implements OnInit {
   error = '';
 
   constructor(
-    private apiService: ApiService,
-    private authService: AuthService,
-    private router: Router
+    private readonly apiService: ApiService,
+    private readonly authService: AuthService,
+    private readonly router: Router
   ) { }
 
   ngOnInit(): void {
+    logger.info('GERENCIAR_ESTOQUE', 'INIT', 'Componente iniciado');
     this.loadProdutos();
   }
 
@@ -315,11 +317,12 @@ export class GerenciarEstoqueComponent implements OnInit {
         }));
         this.produtosFiltrados = [...this.produtos];
         this.loading = false;
+        logger.info('GERENCIAR_ESTOQUE', 'LOAD_PRODUTOS', 'Produtos carregados', { count: produtos.length });
       },
       error: (error: any) => {
         this.error = 'Erro ao carregar produtos';
         this.loading = false;
-        console.error('Erro na API:', error);
+        logger.error('GERENCIAR_ESTOQUE', 'LOAD_PRODUTOS', 'Erro ao carregar produtos', error);
       }
     });
   }
@@ -331,7 +334,7 @@ export class GerenciarEstoqueComponent implements OnInit {
       const term = this.searchTerm.toLowerCase();
       this.produtosFiltrados = this.produtos.filter(produto =>
         produto.nome.toLowerCase().includes(term) ||
-        (produto.codigo_barras && produto.codigo_barras.toLowerCase().includes(term))
+        produto.codigo_barras?.toLowerCase().includes(term)
       );
     }
   }
@@ -341,17 +344,19 @@ export class GerenciarEstoqueComponent implements OnInit {
       return;
     }
 
+    const novaQuantidade: number = produto.novaQuantidade;
+
     produto.atualizando = true;
 
-    this.apiService.updateEstoque(produto.id!, produto.novaQuantidade!).subscribe({
+    this.apiService.updateEstoque(produto.id!, novaQuantidade).subscribe({
       next: () => {
-        produto.quantidade_estoque = produto.novaQuantidade!;
+        produto.quantidade_estoque = novaQuantidade;
         produto.atualizando = false;
-        console.log(`Estoque do produto ${produto.nome} atualizado para ${produto.quantidade_estoque}`);
+        logger.info('GERENCIAR_ESTOQUE', 'UPDATE_ESTOQUE', 'Estoque atualizado', { id: produto.id, quantidade: produto.quantidade_estoque });
       },
       error: (error: any) => {
         produto.atualizando = false;
-        console.error('Erro ao atualizar estoque:', error);
+        logger.error('GERENCIAR_ESTOQUE', 'UPDATE_ESTOQUE', 'Erro ao atualizar estoque', error);
         alert('Erro ao atualizar estoque');
       }
     });
@@ -372,4 +377,4 @@ export class GerenciarEstoqueComponent implements OnInit {
   voltarAoDashboard(): void {
     this.router.navigate(['/dashboard']);
   }
-} 
+}

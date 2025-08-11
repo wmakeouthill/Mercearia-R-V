@@ -16,7 +16,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     // Utilitários
     platform: process.platform,
-    isDev: process.env.NODE_ENV === 'development'
+    isDev: process.env.NODE_ENV === 'development',
+
+    // Log: enviar linha de log para o processo principal gravar em arquivo
+    writeLog: (line: string) => ipcRenderer.invoke('write-log', line)
 });
 
 // Tipos para TypeScript
@@ -29,6 +32,7 @@ declare global {
             onAppReady: (callback: () => void) => void;
             platform: string;
             isDev: boolean;
+            writeLog: (line: string) => Promise<void>;
         };
     }
 } 

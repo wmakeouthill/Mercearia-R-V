@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
-import { BehaviorSubject, Observable } from 'rxjs';
+import { BehaviorSubject } from 'rxjs';
 import { Router } from '@angular/router';
-import { Usuario, LoginRequest, LoginResponse, JwtPayload } from '../models';
+import { Usuario, LoginRequest, LoginResponse } from '../models';
 import { logger } from '../utils/logger';
 import { environment } from '../../environments/environment';
 
@@ -9,10 +9,10 @@ import { environment } from '../../environments/environment';
   providedIn: 'root'
 })
 export class AuthService {
-  private currentUserSubject = new BehaviorSubject<Usuario | null>(null);
+  private readonly currentUserSubject = new BehaviorSubject<Usuario | null>(null);
   public currentUser$ = this.currentUserSubject.asObservable();
 
-  constructor(private router: Router) {
+  constructor(private readonly router: Router) {
     this.loadUserFromStorage();
   }
 
@@ -25,6 +25,8 @@ export class AuthService {
         const user = JSON.parse(userStr);
         this.currentUserSubject.next(user);
       } catch (error) {
+        const err = error instanceof Error ? error : new Error('Falha ao parsear usuário do localStorage');
+        logger.warn('AUTH_SERVICE', 'LOAD_USER', 'JSON inválido no localStorage', err);
         this.clearAuth();
       }
     }
@@ -69,8 +71,9 @@ export class AuthService {
           resolve(true);
         })
         .catch(error => {
-          logger.error('AUTH_SERVICE', 'LOGIN', 'Erro no login', error);
-          reject(error);
+          const err = error instanceof Error ? error : new Error(String(error));
+          logger.error('AUTH_SERVICE', 'LOGIN', 'Erro no login', err);
+          reject(err);
         });
     });
   }

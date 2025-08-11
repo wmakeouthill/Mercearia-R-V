@@ -12,7 +12,7 @@ export function parseDate(dateString: string): Date {
         throw new Error('Data inválida: string vazia');
     }
 
-    // Se a data não tem timezone (como '2024-01-15T10:30:00'), 
+    // Se a data não tem timezone (como '2024-01-15T10:30:00'),
     // adicionar 'Z' para forçar interpretação como UTC
     let dataParseada = dateString;
     if (!dateString.includes('Z') && !dateString.includes('+') && !dateString.includes('-', 10)) {
@@ -132,8 +132,12 @@ export function formatTimeBR(dateString: string): string {
  * @returns String da data atual
  */
 export function getCurrentDateForInput(): string {
+    // Retornar data LOCAL (YYYY-MM-DD) evitando deslocamento por UTC
     const hoje = new Date();
-    return hoje.toISOString().split('T')[0];
+    const yyyy = hoje.getFullYear();
+    const mm = String(hoje.getMonth() + 1).padStart(2, '0');
+    const dd = String(hoje.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
 }
 
 /**
@@ -144,20 +148,20 @@ export function getCurrentDateForInput(): string {
 export function formatDateYMD(dateString: string): string {
     try {
         if (!dateString) return 'Data não disponível';
-        
+
         // Para formato YYYY-MM-DD, criar data local sem problemas de fuso
         const parts = dateString.split('-');
         if (parts.length !== 3) return 'Data inválida';
-        
+
         const year = parseInt(parts[0]);
         const month = parseInt(parts[1]) - 1; // JavaScript usa mês 0-11
         const day = parseInt(parts[2]);
-        
+
         if (isNaN(year) || isNaN(month) || isNaN(day)) return 'Data inválida';
-        
+
         // Criar data local sem conversão de fuso horário
         const date = new Date(year, month, day);
-        
+
         return date.toLocaleDateString('pt-BR', {
             day: '2-digit',
             month: '2-digit',

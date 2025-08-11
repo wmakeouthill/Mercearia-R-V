@@ -7,17 +7,15 @@
     <groupId>com.example</groupId>
     <artifactId>backend-spring</artifactId>
     <version>0.0.1-SNAPSHOT</version>
-    <packaging>pom</packaging>
-    <modules>
-        <module>demo</module>
-    </modules>
+    <packaging>jar</packaging>
     <name>backend-spring</name>
-    <description>Backend Spring Boot que replica o backend Node/Express</description>
+    <description>Backend Spring Boot da mercearia</description>
 
     <properties>
         <java.version>21</java.version>
         <spring.boot.version>3.5.4</spring.boot.version>
         <jjwt.version>0.11.5</jjwt.version>
+        <lombok.version>1.18.36</lombok.version>
     </properties>
 
     <dependencyManagement>
@@ -123,6 +121,7 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+                <version>${spring.boot.version}</version>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -130,6 +129,21 @@
                 <version>3.11.0</version>
                 <configuration>
                     <release>${java.version}</release>
+                    <compilerArgs>
+                        <arg>-parameters</arg>
+                    </compilerArgs>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                            <version>${lombok.version}</version>
+                        </path>
+                        <path>
+                            <groupId>org.springframework.boot</groupId>
+                            <artifactId>spring-boot-configuration-processor</artifactId>
+                            <version>${spring.boot.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
                 </configuration>
             </plugin>
         </plugins>
