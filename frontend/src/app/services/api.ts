@@ -257,6 +257,14 @@ export class ApiService {
     );
   }
 
+  // Vendas completas (novo modelo com itens e pagamentos)
+  getVendasCompletas(): Observable<any[]> {
+    return this.makeRequest(
+      () => this.http.get<any[]>(`${this.baseUrl}/checkout`),
+      'GET_VENDAS_COMPLETAS'
+    );
+  }
+
   private postVenda(payload: any): Observable<Venda> {
     return this.makeRequest(
       () => this.http.post<Venda>(`${this.baseUrl}/vendas`, payload),

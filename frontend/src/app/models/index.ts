@@ -41,6 +41,7 @@ export interface Venda {
     metodo_pagamento: MetodoPagamento;
     produto_nome?: string;
     produto_imagem?: string | null;
+    pagamentos_resumo?: string; // campo auxiliar para exibição
 }
 
 export interface VendaSimples {

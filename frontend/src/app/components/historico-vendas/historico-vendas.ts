@@ -35,6 +35,7 @@ export class HistoricoVendasComponent implements OnInit {
   ngOnInit(): void {
     logger.info('HISTORICO_VENDAS', 'INIT', 'Componente iniciado');
     this.loadVendas();
+    this.loadVendasCompletas();
   }
 
   loadVendas(): void {
@@ -62,6 +63,46 @@ export class HistoricoVendasComponent implements OnInit {
         this.vendas = [];
         this.vendasFiltradas = [];
         logger.error('HISTORICO_VENDAS', 'LOAD_VENDAS', 'Erro ao carregar vendas', error);
+      }
+    });
+  }
+
+  loadVendasCompletas(): void {
+    this.apiService.getVendasCompletas().subscribe({
+      next: (vendasCompletas: any[]) => {
+        // Explodir itens para linhas de tabela e incluir resumo de pagamentos no nome do produto
+        const linhas: Venda[] = [];
+        for (const v of vendasCompletas) {
+          const data = v.data_venda;
+          const pagamentos: Array<{ metodo: MetodoPagamento; valor: number }> = (v.pagamentos || []);
+          const metodoResumo = this.buildPagamentoResumo(pagamentos);
+          const itens = v.itens || [];
+          for (const it of itens) {
+            const linha: Venda = {
+              id: v.id,
+              produto_id: it.produto_id,
+              quantidade_vendida: it.quantidade,
+              preco_total: it.preco_total,
+              data_venda: data,
+              metodo_pagamento: 'dinheiro',
+              produto_nome: it.produto_nome,
+              produto_imagem: it.produto_imagem,
+              pagamentos_resumo: metodoResumo,
+            } as any;
+            linhas.push(linha);
+          }
+        }
+        // Mesclar e reordenar
+        this.vendas = [...linhas, ...(this.vendas || [])].sort((a, b) => {
+          const timeDiff = (parseDate(b.data_venda).getTime() - parseDate(a.data_venda).getTime());
+          if (timeDiff !== 0) return timeDiff;
+          return (b.id || 0) - (a.id || 0);
+        });
+        this.vendasFiltradas = [...this.vendas];
+        logger.info('HISTORICO_VENDAS', 'LOAD_VENDAS_COMPLETAS', 'Vendas checkout carregadas', { count: vendasCompletas.length });
+      },
+      error: (error: any) => {
+        logger.warn('HISTORICO_VENDAS', 'LOAD_VENDAS_COMPLETAS', 'Erro ao carregar vendas checkout', error);
       }
     });
   }
@@ -166,6 +207,32 @@ export class HistoricoVendasComponent implements OnInit {
       'pix': '📱'
     };
     return icones[metodo] || '💰';
+  }
+
+  private buildPagamentoResumo(pagamentos: Array<{ metodo: MetodoPagamento; valor: number }>): string {
+    if (!Array.isArray(pagamentos) || pagamentos.length === 0) return '';
+    const order: MetodoPagamento[] = ['dinheiro', 'cartao_credito', 'cartao_debito', 'pix'];
+    const somaPorMetodo: Record<MetodoPagamento, number> = {
+      dinheiro: 0,
+      cartao_credito: 0,
+      cartao_debito: 0,
+      pix: 0
+    };
+    for (const p of pagamentos) {
+      const m = p.metodo;
+      const v = Number(p.valor || 0);
+      if (m in somaPorMetodo) somaPorMetodo[m] += v;
+    }
+    const partes: string[] = [];
+    for (const m of order) {
+      const v = somaPorMetodo[m];
+      if (v > 0) {
+        const nome = this.getMetodoPagamentoNome(m);
+        const valorFmt = v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        partes.push(`${nome} R$ ${valorFmt}`);
+      }
+    }
+    return partes.join(' + ');
   }
 
   getReceitaTotal(): number {

@@ -14,6 +14,9 @@ import org.springframework.web.bind.annotation.*;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.Set;
 
 @RestController
 @RequestMapping("/api/checkout")
@@ -24,151 +27,248 @@ public class CheckoutController {
     private final ProductRepository productRepository;
 
     private static final String DEFAULT_PAGAMENTO = "dinheiro";
+    private static final String KEY_ERROR = "error";
+    private static final Set<String> ALLOWED_PAYMENT_METHODS = Set.of(
+            DEFAULT_PAGAMENTO, "cartao_credito", "cartao_debito", "pix"
+    );
     private static final Logger log = LoggerFactory.getLogger(CheckoutController.class);
 
     @PostMapping
     @Transactional
     public ResponseEntity<Object> create(@RequestBody CheckoutRequest req) {
         try {
+            // validações básicas
             if (req.getItens() == null || req.getItens().isEmpty()) {
-                return ResponseEntity.badRequest().body(Map.of("error", "Itens da venda são obrigatórios"));
+                return badRequest("Itens da venda são obrigatórios");
             }
             if (req.getPagamentos() == null || req.getPagamentos().isEmpty()) {
-                return ResponseEntity.badRequest().body(Map.of("error", "Pelo menos um pagamento é obrigatório"));
+                return badRequest("Pelo menos um pagamento é obrigatório");
             }
 
-            // Calcular subtotal a partir dos itens
-            double subtotal = 0.0;
-            for (CheckoutItem item : req.getItens()) {
-                if (item.getProdutoId() == null || item.getQuantidade() == null || item.getQuantidade() <= 0
-                        || item.getPrecoUnitario() == null) {
-                    return ResponseEntity.badRequest().body(Map.of("error", "Item inválido"));
-                }
-                subtotal += item.getQuantidade() * item.getPrecoUnitario();
+            String itensError = validateItens(req.getItens());
+            if (itensError != null) {
+                return badRequest(itensError);
             }
 
+            double subtotal = calculateSubtotal(req.getItens());
             double desconto = req.getDesconto() != null ? req.getDesconto() : 0.0;
             double acrescimo = req.getAcrescimo() != null ? req.getAcrescimo() : 0.0;
             double totalFinal = subtotal - desconto + acrescimo;
 
             if (totalFinal < 0) {
-                return ResponseEntity.badRequest().body(Map.of("error", "Total final inválido"));
+                return badRequest("Total final inválido");
             }
 
-            // validar valores e somar pagamentos
-            for (CheckoutPayment p : req.getPagamentos()) {
-                if (p.getValor() == null || p.getValor() < 0) {
-                    return ResponseEntity.badRequest().body(Map.of("error", "Valor do pagamento inválido"));
-                }
+            String pagamentosError = validatePagamentosValores(req.getPagamentos());
+            if (pagamentosError != null) {
+                return badRequest(pagamentosError);
             }
+
+            // validar soma de pagamentos
             double somaPagamentos = req.getPagamentos().stream().mapToDouble(CheckoutPayment::getValor).sum();
             if (Math.abs(somaPagamentos - totalFinal) > 0.01) {
-                return ResponseEntity.badRequest().body(Map.of("error", "Soma dos pagamentos deve ser igual ao total"));
+                return badRequest("Soma dos pagamentos deve ser igual ao total");
             }
 
-            // Validar métodos
-            for (CheckoutPayment p : req.getPagamentos()) {
-                String metodo = p.getMetodo() == null ? DEFAULT_PAGAMENTO : p.getMetodo();
-                switch (metodo) {
-                    case DEFAULT_PAGAMENTO, "cartao_credito", "cartao_debito", "pix" -> {
-                    }
-                    default -> {
-                        return ResponseEntity.badRequest()
-                                .body(Map.of("error", "Método de pagamento inválido: " + metodo));
-                    }
-                }
+            // validar métodos de pagamento suportados
+            String metodoError = validatePaymentMethods(req.getPagamentos());
+            if (metodoError != null) {
+                return badRequest(metodoError);
             }
 
-            // Debitar estoque
-            for (CheckoutItem item : req.getItens()) {
-                Product produto = productRepository.findById(item.getProdutoId()).orElse(null);
-                if (produto == null) {
-                    return ResponseEntity.status(404)
-                            .body(Map.of("error", "Produto não encontrado: " + item.getProdutoId()));
-                }
-                if (produto.getQuantidadeEstoque() < item.getQuantidade()) {
-                    return ResponseEntity.badRequest()
-                            .body(Map.of("error", "Estoque insuficiente para o produto: " + produto.getNome()));
-                }
+            // validar estoque existente
+            ResponseEntity<Object> estoqueError = validateStock(req.getItens());
+            if (estoqueError != null) {
+                return estoqueError;
             }
 
-            log.info("CHECKOUT request recebido: itens={}, pagamentos={}, subtotal={}, total={}", req.getItens().size(),
-                    req.getPagamentos().size(), subtotal, totalFinal);
+            log.info("CHECKOUT request recebido: itens={}, pagamentos={}, subtotal={}, total={}",
+                    req.getItens().size(), req.getPagamentos().size(), subtotal, totalFinal);
 
-            // Criar a venda
-            SaleOrder venda = SaleOrder.builder()
-                    .dataVenda(OffsetDateTime.now())
-                    .subtotal(subtotal)
-                    .desconto(desconto)
-                    .acrescimo(acrescimo)
-                    .totalFinal(totalFinal)
-                    .build();
+            // criar venda e persistir
+            SaleOrder venda = createSaleOrder(subtotal, desconto, acrescimo, totalFinal);
+            saleOrderRepository.save(venda);
+
+            addItemsToOrder(venda, req.getItens());
+            addPaymentsToOrder(venda, req.getPagamentos());
 
             saleOrderRepository.save(venda);
 
-            for (CheckoutItem item : req.getItens()) {
-                Product produto = productRepository.findById(item.getProdutoId()).orElseThrow();
-                produto.setQuantidadeEstoque(produto.getQuantidadeEstoque() - item.getQuantidade());
-                productRepository.save(produto);
-
-                SaleItem si = SaleItem.builder()
-                        .venda(venda)
-                        .produto(produto)
-                        .quantidade(item.getQuantidade())
-                        .precoUnitario(item.getPrecoUnitario())
-                        .precoTotal(item.getPrecoUnitario() * item.getQuantidade())
-                        .build();
-                venda.getItens().add(si);
-            }
-
-            for (CheckoutPayment p : req.getPagamentos()) {
-                String metodo = p.getMetodo() == null ? DEFAULT_PAGAMENTO : p.getMetodo();
-                SalePayment sp = SalePayment.builder()
-                        .venda(venda)
-                        .metodo(metodo)
-                        .valor(p.getValor())
-                        .troco(p.getTroco())
-                        .build();
-                venda.getPagamentos().add(sp);
-            }
-
-            saleOrderRepository.save(venda);
-
-            var itens = venda.getItens().stream().map(it -> {
-                java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
-                m.put("produto_id", it.getProduto().getId());
-                m.put("produto_nome", it.getProduto().getNome());
-                m.put("quantidade", it.getQuantidade());
-                m.put("preco_unitario", it.getPrecoUnitario());
-                m.put("preco_total", it.getPrecoTotal());
-                return m;
-            }).toList();
-
-            var pagamentos = venda.getPagamentos().stream().map(pg -> {
-                java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
-                m.put("metodo", pg.getMetodo());
-                m.put("valor", pg.getValor());
-                if (pg.getTroco() != null)
-                    m.put("troco", pg.getTroco());
-                return m;
-            }).toList();
-
-            java.util.Map<String, Object> resp = new java.util.LinkedHashMap<>();
-            resp.put("id", venda.getId());
-            resp.put("data_venda", venda.getDataVenda());
-            resp.put("subtotal", venda.getSubtotal());
-            resp.put("desconto", venda.getDesconto());
-            resp.put("acrescimo", venda.getAcrescimo());
-            resp.put("total_final", venda.getTotalFinal());
-            resp.put("itens", itens);
-            resp.put("pagamentos", pagamentos);
-
+            Map<String, Object> resp = buildResponse(venda);
             return ResponseEntity.status(201).body(resp);
         } catch (Exception e) {
             log.error("Erro no checkout", e);
             return ResponseEntity.status(500)
-                    .body(Map.of("error", "Falha ao processar checkout", "details", e.getMessage()));
+                    .body(Map.of(KEY_ERROR, "Falha ao processar checkout", "details", e.getMessage()));
         }
+    }
+
+    @GetMapping
+    public ResponseEntity<List<Map<String, Object>>> listAll() {
+        List<Map<String, Object>> lista = saleOrderRepository.findAll().stream()
+                .sorted(Comparator.comparing(SaleOrder::getDataVenda).reversed())
+                .map(venda -> {
+                    Map<String, Object> resp = new LinkedHashMap<>();
+                    resp.put("id", venda.getId());
+                    resp.put("data_venda", venda.getDataVenda());
+                    resp.put("subtotal", venda.getSubtotal());
+                    resp.put("desconto", venda.getDesconto());
+                    resp.put("acrescimo", venda.getAcrescimo());
+                    resp.put("total_final", venda.getTotalFinal());
+
+                    var itens = venda.getItens().stream().map(it -> {
+                        Map<String, Object> m = new LinkedHashMap<>();
+                        m.put("produto_id", it.getProduto().getId());
+                        m.put("produto_nome", it.getProduto().getNome());
+                        m.put("produto_imagem", it.getProduto().getImagem());
+                        m.put("quantidade", it.getQuantidade());
+                        m.put("preco_unitario", it.getPrecoUnitario());
+                        m.put("preco_total", it.getPrecoTotal());
+                        return m;
+                    }).toList();
+                    var pagamentos = venda.getPagamentos().stream().map(pg -> {
+                        Map<String, Object> m = new LinkedHashMap<>();
+                        m.put("metodo", pg.getMetodo());
+                        m.put("valor", pg.getValor());
+                        if (pg.getTroco() != null)
+                            m.put("troco", pg.getTroco());
+                        return m;
+                    }).toList();
+
+                    resp.put("itens", itens);
+                    resp.put("pagamentos", pagamentos);
+                    return resp;
+                }).toList();
+        return ResponseEntity.ok(lista);
+    }
+
+    private ResponseEntity<Object> badRequest(String message) {
+        return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, message));
+    }
+
+    private String validateItens(List<CheckoutItem> itens) {
+        for (CheckoutItem item : itens) {
+            if (item.getProdutoId() == null || item.getQuantidade() == null || item.getQuantidade() <= 0
+                    || item.getPrecoUnitario() == null) {
+                return "Item inválido";
+            }
+        }
+        return null;
+    }
+
+    private double calculateSubtotal(List<CheckoutItem> itens) {
+        double subtotal = 0.0;
+        for (CheckoutItem item : itens) {
+            subtotal += item.getQuantidade() * item.getPrecoUnitario();
+        }
+        return subtotal;
+    }
+
+    private String validatePagamentosValores(List<CheckoutPayment> pagamentos) {
+        for (CheckoutPayment p : pagamentos) {
+            if (p.getValor() == null || p.getValor() < 0) {
+                return "Valor do pagamento inválido";
+            }
+        }
+        return null;
+    }
+
+    private String validatePaymentMethods(List<CheckoutPayment> pagamentos) {
+        for (CheckoutPayment p : pagamentos) {
+            String metodo = p.getMetodo() == null ? DEFAULT_PAGAMENTO : p.getMetodo();
+            if (!ALLOWED_PAYMENT_METHODS.contains(metodo)) {
+                return "Método de pagamento inválido: " + metodo;
+            }
+        }
+        return null;
+    }
+
+    private ResponseEntity<Object> validateStock(List<CheckoutItem> itens) {
+        for (CheckoutItem item : itens) {
+            Product produto = productRepository.findById(item.getProdutoId()).orElse(null);
+            if (produto == null) {
+                return ResponseEntity.status(404).body(Map.of(KEY_ERROR,
+                        "Produto não encontrado: " + item.getProdutoId()));
+            }
+            if (produto.getQuantidadeEstoque() < item.getQuantidade()) {
+                return badRequest("Estoque insuficiente para o produto: " + produto.getNome());
+            }
+        }
+        return null;
+    }
+
+    private SaleOrder createSaleOrder(double subtotal, double desconto, double acrescimo, double totalFinal) {
+        return SaleOrder.builder()
+                .dataVenda(OffsetDateTime.now())
+                .subtotal(subtotal)
+                .desconto(desconto)
+                .acrescimo(acrescimo)
+                .totalFinal(totalFinal)
+                .build();
+    }
+
+    private void addItemsToOrder(SaleOrder venda, List<CheckoutItem> itens) {
+        for (CheckoutItem item : itens) {
+            Product produto = productRepository.findById(item.getProdutoId()).orElseThrow();
+            produto.setQuantidadeEstoque(produto.getQuantidadeEstoque() - item.getQuantidade());
+            productRepository.save(produto);
+
+            SaleItem si = SaleItem.builder()
+                    .venda(venda)
+                    .produto(produto)
+                    .quantidade(item.getQuantidade())
+                    .precoUnitario(item.getPrecoUnitario())
+                    .precoTotal(item.getPrecoUnitario() * item.getQuantidade())
+                    .build();
+            venda.getItens().add(si);
+        }
+    }
+
+    private void addPaymentsToOrder(SaleOrder venda, List<CheckoutPayment> pagamentos) {
+        for (CheckoutPayment p : pagamentos) {
+            String metodo = p.getMetodo() == null ? DEFAULT_PAGAMENTO : p.getMetodo();
+            SalePayment sp = SalePayment.builder()
+                    .venda(venda)
+                    .metodo(metodo)
+                    .valor(p.getValor())
+                    .troco(p.getTroco())
+                    .build();
+            venda.getPagamentos().add(sp);
+        }
+    }
+
+    private Map<String, Object> buildResponse(SaleOrder venda) {
+        var itens = venda.getItens().stream().map(it -> {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("produto_id", it.getProduto().getId());
+            m.put("produto_nome", it.getProduto().getNome());
+            m.put("produto_imagem", it.getProduto().getImagem());
+            m.put("quantidade", it.getQuantidade());
+            m.put("preco_unitario", it.getPrecoUnitario());
+            m.put("preco_total", it.getPrecoTotal());
+            return m;
+        }).toList();
+
+        var pagamentos = venda.getPagamentos().stream().map(pg -> {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("metodo", pg.getMetodo());
+            m.put("valor", pg.getValor());
+            if (pg.getTroco() != null) {
+                m.put("troco", pg.getTroco());
+            }
+            return m;
+        }).toList();
+
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("id", venda.getId());
+        resp.put("data_venda", venda.getDataVenda());
+        resp.put("subtotal", venda.getSubtotal());
+        resp.put("desconto", venda.getDesconto());
+        resp.put("acrescimo", venda.getAcrescimo());
+        resp.put("total_final", venda.getTotalFinal());
+        resp.put("itens", itens);
+        resp.put("pagamentos", pagamentos);
+        return resp;
     }
 
     @Data

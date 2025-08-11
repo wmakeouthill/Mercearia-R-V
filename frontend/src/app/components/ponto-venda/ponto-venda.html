@@ -42,9 +42,9 @@
             <div class="lista-produtos">
                 <h3>Produtos Disponíveis</h3>
                 <div class="produtos-grid">
-                    <div *ngFor="let produto of produtosFiltrados" class="produto-card"
+                    <a href="#" *ngFor="let produto of produtosFiltrados" class="produto-card"
                         [class.selecionado]="produtoSelecionado?.id === produto.id"
-                        (click)="selecionarProduto(produto)">
+                        (click)="selecionarProduto(produto); $event.preventDefault()">
                         <div class="produto-imagem-card">
                             <img [src]="getImageUrl(produto.imagem)"
                                  [alt]="produto.nome"
@@ -67,7 +67,7 @@
                                     class="btn-add-inline">+ Carrinho</button>
                             </div>
                         </div>
-                    </div>
+                    </a>
                 </div>
             </div>
 

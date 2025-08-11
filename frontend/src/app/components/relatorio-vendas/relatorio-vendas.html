@@ -188,10 +188,9 @@
                     <tr>
                         <th class="col-numero">Nº</th>
                         <th class="col-data-hora">Data/Hora</th>
-                        <th class="col-imagem">Img</th>
                         <th class="col-produto">Produto</th>
                         <th class="col-qtd">Qtd</th>
-                        <th class="col-metodo">Método</th>
+                        <th class="col-metodo">Pagamentos</th>
                         <th class="col-total">Total</th>
                     </tr>
                 </thead>
@@ -203,21 +202,15 @@
                                 {{ formatarData(venda.data_venda) }} {{ formatarHora(venda.data_venda) }}
                             </span>
                         </td>
-                        <td class="venda-imagem">
-                            <div class="venda-imagem-container">
-                                <img [src]="getImageUrl(venda.produto_imagem)" [alt]="venda.produto_nome"
-                                    class="venda-imagem-thumb" (error)="onImageError($event)">
-                            </div>
-                        </td>
                         <td class="produto-info">
-                            <div class="produto-nome">{{ venda.produto_nome || 'Produto #' + venda.produto_id }}</div>
+                            <div class="produto-nome com-imagem">
+                                <img class="produto-thumb-inline" [src]="getImageUrl(venda.produto_imagem)" [alt]="venda.produto_nome" (error)="onImageError($event)">
+                                <span>{{ venda.produto_nome || 'Produto #' + venda.produto_id }}</span>
+                            </div>
                         </td>
                         <td class="quantidade">{{ venda.quantidade_vendida }}</td>
                         <td class="metodo-pagamento">
-                            <div class="metodo-badge">
-                                <span class="metodo-icone">{{ getMetodoPagamentoIcone(venda.metodo_pagamento) }}</span>
-                                <span class="metodo-nome">{{ getMetodoPagamentoNome(venda.metodo_pagamento) }}</span>
-                            </div>
+                            <div class="pagamentos-resumo">{{ venda['pagamentos_resumo'] || getMetodoPagamentoNome(venda.metodo_pagamento) }}</div>
                         </td>
                         <td class="valor-total">R$ {{ venda.preco_total.toFixed(2) }}</td>
                     </tr>

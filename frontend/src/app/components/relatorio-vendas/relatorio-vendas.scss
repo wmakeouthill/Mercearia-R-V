@@ -435,21 +435,15 @@
         width: 5%;
     }
 
-    .col-data-hora {
-        width: 10%;
-    }
+    .col-data-hora { width: 12%; }
 
-    .col-produto {
-        width: 35%;
-    }
+    .col-produto { width: 45%; }
 
     .col-qtd {
         width: 8%;
     }
 
-    .col-metodo {
-        width: 10%;
-    }
+    .col-metodo { width: 18%; }
 
     .col-total {
         width: 12%;
@@ -516,7 +510,18 @@
         .produto-nome {
             color: var(--dark-gray);
             font-weight: 500;
-            font-size: 0.8rem;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .produto-thumb-inline {
+            width: 28px;
+            height: 28px;
+            border-radius: 6px;
+            object-fit: cover;
+            background: #f2f2f2;
+            border: 1px solid rgba(0,0,0,0.06);
         }
     }
 
@@ -526,31 +531,8 @@
         color: var(--primary-blue);
     }
 
-    .metodo-pagamento {
-        text-align: center;
-
-        .metodo-badge {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 3px;
-            padding: 2px 4px;
-            background: rgba(0, 46, 89, 0.1);
-            border-radius: 6px;
-            width: fit-content;
-            margin: 0 auto;
-
-            .metodo-icone {
-                font-size: 0.8rem;
-            }
-
-            .metodo-nome {
-                font-size: 0.65rem;
-                font-weight: 600;
-                color: var(--primary-blue);
-            }
-        }
-    }
+    .metodo-pagamento { text-align: left; }
+    .pagamentos-resumo { font-size: 0.85rem; color: var(--primary-blue); font-weight: 600; }
 
     .valor-total {
         text-align: center;

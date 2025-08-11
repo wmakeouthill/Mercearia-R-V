@@ -6,7 +6,7 @@ import { ApiService } from '../../services/api';
 import { AuthService } from '../../services/auth';
 import { ImageService } from '../../services/image.service';
 import { extractLocalDate, extractYearMonth, formatDateBR, formatTimeBR, getCurrentDateForInput, formatDateYMD, parseDate } from '../../utils/date-utils';
-import { RelatorioVendas, Venda, MetodoPagamento, RelatorioResumo } from '../../models';
+import { RelatorioVendas, Venda, MetodoPagamento, RelatorioResumo, VendaCompletaResponse } from '../../models';
 import { logger } from '../../utils/logger';
 
 @Component({
@@ -77,7 +77,6 @@ export class RelatorioVendasComponent implements OnInit {
 
     this.apiService.getVendas().subscribe({
       next: (vendas) => {
-        // Ordenar por data mais recente primeiro (fallback por id)
         this.vendas = [...vendas].sort((a, b) => {
           const timeDiff = (parseDate(b.data_venda).getTime() - parseDate(a.data_venda).getTime());
           if (timeDiff !== 0) return timeDiff;
@@ -86,12 +85,51 @@ export class RelatorioVendasComponent implements OnInit {
         this.calcularEstatisticas();
         this.gerarRelatorios();
         this.loading = false;
-        logger.info('RELATORIO_VENDAS', 'LOAD_VENDAS', 'Vendas carregadas', { count: vendas.length });
+        logger.info('RELATORIO_VENDAS', 'LOAD_VENDAS', 'Vendas (legado) carregadas', { count: vendas.length });
       },
       error: (error: any) => {
-        this.error = 'Erro ao carregar vendas';
+        logger.warn('RELATORIO_VENDAS', 'LOAD_VENDAS', 'Erro ao carregar vendas (legado). Continuando.', error);
+      }
+    });
+
+    // Carregar vendas completas (novo modelo) e incorporar em memória como linhas agregadas por item
+    this.apiService.getVendasCompletas().subscribe({
+      next: (vendasCompletas: VendaCompletaResponse[]) => {
+        const linhas: Venda[] = [];
+        for (const v of vendasCompletas) {
+          const data = v.data_venda;
+          const pagamentos: Array<{ metodo: MetodoPagamento; valor: number }> = (v.pagamentos || []);
+          const itens = v.itens || [];
+          // Resumo ordenado e com valores
+          const metodoResumo = this.buildPagamentoResumo(pagamentos);
+          for (const it of itens) {
+            const linha: Venda = {
+              id: v.id,
+              produto_id: it.produto_id,
+              quantidade_vendida: it.quantidade,
+              preco_total: it.preco_total,
+              data_venda: data,
+              metodo_pagamento: 'dinheiro', // placeholder para não quebrar filtros
+              produto_nome: it.produto_nome,
+              produto_imagem: it.produto_imagem,
+              pagamentos_resumo: metodoResumo,
+            } as any;
+            linhas.push(linha);
+          }
+        }
+        // Mesclar com as vendas legadas
+        this.vendas = [...linhas, ...(this.vendas || [])].sort((a, b) => {
+          const timeDiff = (parseDate(b.data_venda).getTime() - parseDate(a.data_venda).getTime());
+          if (timeDiff !== 0) return timeDiff;
+          return (b.id || 0) - (a.id || 0);
+        });
+        this.calcularEstatisticas();
+        this.gerarRelatorios();
         this.loading = false;
-        logger.error('RELATORIO_VENDAS', 'LOAD_VENDAS', 'Erro ao carregar vendas', error);
+        logger.info('RELATORIO_VENDAS', 'LOAD_VENDAS_COMPLETAS', 'Vendas (checkout) carregadas', { count: vendasCompletas.length });
+      },
+      error: (error: any) => {
+        logger.warn('RELATORIO_VENDAS', 'LOAD_VENDAS_COMPLETAS', 'Erro ao carregar vendas completas', error);
       }
     });
   }
@@ -149,6 +187,33 @@ export class RelatorioVendasComponent implements OnInit {
     }, {} as Record<string, RelatorioVendas>);
 
     this.relatorioDiario = Object.values(vendasPorDia).sort((a, b) => b.data.localeCompare(a.data));
+  }
+
+  private buildPagamentoResumo(pagamentos: Array<{ metodo: MetodoPagamento; valor: number }>): string {
+    if (!Array.isArray(pagamentos) || pagamentos.length === 0) return '';
+    const order: MetodoPagamento[] = ['dinheiro', 'cartao_credito', 'cartao_debito', 'pix'];
+    // Somar por método para robustez
+    const somaPorMetodo: Record<MetodoPagamento, number> = {
+      dinheiro: 0,
+      cartao_credito: 0,
+      cartao_debito: 0,
+      pix: 0
+    };
+    for (const p of pagamentos) {
+      const m = p.metodo;
+      const v = Number(p.valor || 0);
+      if (m in somaPorMetodo) somaPorMetodo[m] += v;
+    }
+    const partes: string[] = [];
+    for (const m of order) {
+      const v = somaPorMetodo[m];
+      if (v > 0) {
+        const nome = this.getMetodoPagamentoNome(m);
+        const valorFmt = v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        partes.push(`${nome} R$ ${valorFmt}`);
+      }
+    }
+    return partes.join(' + ');
   }
 
   gerarRelatorioMensal(): void {
