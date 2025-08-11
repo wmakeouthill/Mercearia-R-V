@@ -134,23 +134,36 @@ public class CheckoutController {
 
             saleOrderRepository.save(venda);
 
-            return ResponseEntity.status(201).body(Map.of(
-                    "id", venda.getId(),
-                    "data_venda", venda.getDataVenda(),
-                    "subtotal", venda.getSubtotal(),
-                    "desconto", venda.getDesconto(),
-                    "acrescimo", venda.getAcrescimo(),
-                    "total_final", venda.getTotalFinal(),
-                    "itens", venda.getItens().stream().map(it -> Map.of(
-                            "produto_id", it.getProduto().getId(),
-                            "produto_nome", it.getProduto().getNome(),
-                            "quantidade", it.getQuantidade(),
-                            "preco_unitario", it.getPrecoUnitario(),
-                            "preco_total", it.getPrecoTotal())).toList(),
-                    "pagamentos", venda.getPagamentos().stream().map(pg -> Map.of(
-                            "metodo", pg.getMetodo(),
-                            "valor", pg.getValor(),
-                            "troco", pg.getTroco())).toList()));
+            var itens = venda.getItens().stream().map(it -> {
+                java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
+                m.put("produto_id", it.getProduto().getId());
+                m.put("produto_nome", it.getProduto().getNome());
+                m.put("quantidade", it.getQuantidade());
+                m.put("preco_unitario", it.getPrecoUnitario());
+                m.put("preco_total", it.getPrecoTotal());
+                return m;
+            }).toList();
+
+            var pagamentos = venda.getPagamentos().stream().map(pg -> {
+                java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
+                m.put("metodo", pg.getMetodo());
+                m.put("valor", pg.getValor());
+                if (pg.getTroco() != null)
+                    m.put("troco", pg.getTroco());
+                return m;
+            }).toList();
+
+            java.util.Map<String, Object> resp = new java.util.LinkedHashMap<>();
+            resp.put("id", venda.getId());
+            resp.put("data_venda", venda.getDataVenda());
+            resp.put("subtotal", venda.getSubtotal());
+            resp.put("desconto", venda.getDesconto());
+            resp.put("acrescimo", venda.getAcrescimo());
+            resp.put("total_final", venda.getTotalFinal());
+            resp.put("itens", itens);
+            resp.put("pagamentos", pagamentos);
+
+            return ResponseEntity.status(201).body(resp);
         } catch (Exception e) {
             log.error("Erro no checkout", e);
             return ResponseEntity.status(500)

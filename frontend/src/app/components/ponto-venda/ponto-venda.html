@@ -151,7 +151,7 @@
                             <button *ngFor="let metodo of metodosDisponiveis" class="btn-metodo-compacto"
                                     (click)="adicionarPagamento(metodo.valor)" [title]="'Adicionar '+metodo.nome">
                                 <span class="metodo-icone">{{ metodo.icone }}</span>
-                                <span class="metodo-nome-curto">{{ metodo.nome.split(' ')[0] }}</span>
+                                <span class="metodo-nome-curto">{{ getMetodoLabelCurto(metodo.valor) }}</span>
                             </button>
                         </div>
                     </div>

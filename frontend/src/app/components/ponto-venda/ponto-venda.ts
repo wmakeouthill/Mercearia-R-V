@@ -49,6 +49,16 @@ export class PontoVendaComponent implements OnInit, OnDestroy {
     return nomes[metodo] || metodo;
   }
 
+  getMetodoLabelCurto(metodo: MetodoPagamento): string {
+    const curtos: Record<MetodoPagamento, string> = {
+      'dinheiro': 'Dinheiro',
+      'cartao_credito': 'Crédito',
+      'cartao_debito': 'Débito',
+      'pix': 'PIX'
+    };
+    return curtos[metodo] || this.getMetodoPagamentoNome(metodo);
+  }
+
   adicionarPagamento(metodo?: MetodoPagamento): void {
     const total = this.getTotalCarrinho();
     const somaAtual = this.pagamentos.reduce((sum, p) => sum + (p.valor || 0), 0);
