@@ -17,11 +17,14 @@ import java.util.LinkedHashMap;
 public class CaixaController {
 
     private final CaixaStatusRepository caixaStatusRepository;
+    private final CaixaMovimentacaoRepository movimentacaoRepository;
     private final UserRepository userRepository;
 
     private static final String KEY_ERROR = "error";
     private static final String KEY_MESSAGE = "message";
     private static final String MSG_NAO_AUTENTICADO = "Usuário não autenticado";
+    private static final String TIPO_ENTRADA = "entrada";
+    private static final String TIPO_RETIRADA = "retirada";
 
     @GetMapping("/status")
     public ResponseEntity<Map<String, Object>> status() {
@@ -44,6 +47,77 @@ public class CaixaController {
                     return ResponseEntity.ok(body);
                 })
                 .orElse(ResponseEntity.ok(Map.of("id", 1, "aberto", false)));
+    }
+
+    @GetMapping("/resumo-dia")
+    public ResponseEntity<Map<String, Object>> resumoDia(@RequestParam(value = "data", required = false) String data) {
+        try {
+            var dia = data == null ? java.time.LocalDate.now() : java.time.LocalDate.parse(data);
+            Double saldoMov = movimentacaoRepository.saldoDoDia(dia);
+            java.util.Map<String, Object> body = new java.util.LinkedHashMap<>();
+            body.put("data", dia.toString());
+            body.put("saldo_movimentacoes", saldoMov != null ? saldoMov : 0.0);
+            return ResponseEntity.ok(body);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of(KEY_ERROR,
+                    "Falha ao obter resumo do dia. Se acabou de atualizar o sistema, reinicie o backend para aplicar alterações de banco."));
+        }
+    }
+
+    @GetMapping("/movimentacoes")
+    public ResponseEntity<java.util.List<java.util.Map<String, Object>>> listarMovimentacoes(
+            @RequestParam(value = "data", required = false) String data) {
+        try {
+            var dia = data == null ? java.time.LocalDate.now() : java.time.LocalDate.parse(data);
+            var lista = movimentacaoRepository.findByDia(dia).stream().map(m -> {
+                java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
+                row.put("id", m.getId());
+                row.put("tipo", m.getTipo());
+                row.put("valor", m.getValor());
+                row.put("descricao", m.getDescricao());
+                row.put("usuario", m.getUsuario() != null ? m.getUsuario().getUsername() : null);
+                row.put("data_movimento", m.getDataMovimento());
+                return row;
+            }).toList();
+            return ResponseEntity.ok(lista);
+        } catch (Exception e) {
+            return ResponseEntity.ok(java.util.List.of());
+        }
+    }
+
+    @PostMapping("/movimentacoes")
+    @Transactional
+    public ResponseEntity<Map<String, Object>> adicionarMovimentacao(
+            @RequestAttribute(name = "userId", required = false) Long userId,
+            @RequestBody MovimentacaoRequest req) {
+        try {
+            if (userId == null)
+                return ResponseEntity.status(401).body(Map.of(KEY_ERROR, MSG_NAO_AUTENTICADO));
+
+            String tipo = req.getTipo();
+            if (!TIPO_ENTRADA.equals(tipo) && !TIPO_RETIRADA.equals(tipo)) {
+                return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, "Tipo inválido (entrada|retirada)"));
+            }
+            if (req.getValor() == null || req.getValor() <= 0) {
+                return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, "Valor deve ser maior que zero"));
+            }
+
+            var agora = java.time.OffsetDateTime.now();
+            CaixaMovimentacao mov = CaixaMovimentacao.builder()
+                    .tipo(tipo)
+                    .valor(req.getValor())
+                    .descricao(req.getDescricao())
+                    .usuario(userRepository.findById(userId).orElse(null))
+                    .dataMovimento(agora)
+                    .criadoEm(agora)
+                    .atualizadoEm(agora)
+                    .build();
+            movimentacaoRepository.save(mov);
+            return ResponseEntity.ok(Map.of(KEY_MESSAGE, "Movimentação registrada com sucesso"));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of(KEY_ERROR,
+                    "Falha ao registrar movimentação. Se acabou de atualizar o sistema, reinicie o backend para aplicar alterações de banco."));
+        }
     }
 
     @PostMapping("/abrir")
@@ -107,5 +181,12 @@ public class CaixaController {
     public static class HorariosRequest {
         private String horarioAberturaObrigatorio;
         private String horarioFechamentoObrigatorio;
+    }
+
+    @lombok.Data
+    public static class MovimentacaoRequest {
+        private String tipo; // entrada | retirada
+        private Double valor;
+        private String descricao;
     }
 }

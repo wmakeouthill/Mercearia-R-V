@@ -10,11 +10,11 @@ import { logger } from '../utils/logger';
     providedIn: 'root'
 })
 export class CaixaService {
-    private baseUrl = environment.apiUrl;
-    private statusCaixaSubject = new BehaviorSubject<StatusCaixa | null>(null);
+    private readonly baseUrl = environment.apiUrl;
+    private readonly statusCaixaSubject = new BehaviorSubject<StatusCaixa | null>(null);
     public statusCaixa$ = this.statusCaixaSubject.asObservable();
 
-    constructor(private http: HttpClient) {
+    constructor(private readonly http: HttpClient) {
         this.loadStatusCaixa();
     }
 
@@ -58,6 +58,24 @@ export class CaixaService {
         return this.makeRequest('GET_STATUS',
             () => this.http.get<StatusCaixa>(`${this.baseUrl}/caixa/status`)
         );
+    }
+
+    listarMovimentacoes(data?: string): Observable<Array<{ id: number; tipo: string; valor: number; descricao?: string; usuario?: string; data_movimento: string }>> {
+        const url = data ? `${this.baseUrl}/caixa/movimentacoes?data=${data}` : `${this.baseUrl}/caixa/movimentacoes`;
+        return this.makeRequest('LISTAR_MOVIMENTACOES', () => this.http.get<any[]>(url));
+    }
+
+    adicionarMovimentacao(mov: { tipo: 'entrada' | 'retirada'; valor: number; descricao?: string }): Observable<{ message: string }> {
+        return this.makeRequest('ADICIONAR_MOVIMENTACAO', () => this.http.post<{ message: string }>(`${this.baseUrl}/caixa/movimentacoes`, mov)).pipe(
+            tap(() => {
+                this.loadStatusCaixa();
+            })
+        );
+    }
+
+    getResumoMovimentacoesDia(data?: string): Observable<{ data: string; saldo_movimentacoes: number }> {
+        const url = data ? `${this.baseUrl}/caixa/resumo-dia?data=${data}` : `${this.baseUrl}/caixa/resumo-dia`;
+        return this.makeRequest('RESUMO_MOVIMENTACOES_DIA', () => this.http.get<{ data: string; saldo_movimentacoes: number }>(url));
     }
 
     /**
@@ -109,8 +127,7 @@ export class CaixaService {
      * Verifica se o caixa está aberto
      */
     isCaixaAberto(): boolean {
-        const status = this.statusCaixaSubject.value;
-        return status ? status.aberto : false;
+        return this.statusCaixaSubject.value?.aberto ?? false;
     }
 
     /**

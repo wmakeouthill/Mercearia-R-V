@@ -329,9 +329,10 @@ export class ApiService {
   }
 
   // Novos: obter resumo+breakdown direto do backend
-  getResumoDia(): Observable<RelatorioResumo> {
+  getResumoDia(data?: string): Observable<RelatorioResumo> {
+    const url = data ? `${this.baseUrl}/vendas/relatorios/dia?data=${data}` : `${this.baseUrl}/vendas/relatorios/dia`;
     return this.makeRequest(
-      () => this.http.get<RelatorioResumo>(`${this.baseUrl}/vendas/relatorios/dia`),
+      () => this.http.get<RelatorioResumo>(url),
       'GET_RESUMO_DIA'
     );
   }

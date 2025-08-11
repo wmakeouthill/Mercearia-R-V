@@ -1,0 +1,97 @@
+@import '../dashboard/dashboard.scss';
+
+.caixa-container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 0 24px 24px;
+}
+
+.top-bar {
+  display: flex;
+  gap: 16px;
+  align-items: end;
+  margin-bottom: 12px;
+
+  .filtros {
+    background: var(--white);
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0, 46, 89, 0.08);
+    border: 2px solid rgba(0, 46, 89, 0.1);
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+
+    label { font-weight: 600; color: var(--primary-blue); font-size: 14px; }
+    input[type="date"], select, input[type="number"], input[type="text"] {
+      padding: 8px 10px;
+      border: 2px solid var(--medium-gray);
+      border-radius: 8px;
+      font-size: 14px;
+    }
+  }
+
+  .form-mov {
+    background: var(--white);
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0, 46, 89, 0.08);
+    border: 2px solid rgba(219, 194, 125, 0.3);
+    padding: 12px 16px;
+    display: flex;
+    align-items: end;
+    gap: 12px;
+
+    h3 { margin: 0; font-size: 16px; color: var(--primary-blue); }
+    label { display: flex; flex-direction: column; font-size: 12px; color: var(--primary-blue); }
+    .flex-1 { flex: 1; }
+    button { background: var(--primary-blue); color: var(--white); border: none; padding: 10px 16px; border-radius: 8px; font-weight: 600; }
+  }
+}
+
+.resumo {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin-bottom: 12px;
+
+  .card {
+    background: var(--white);
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0, 46, 89, 0.08);
+    border: 2px solid rgba(0, 46, 89, 0.1);
+    padding: 12px 16px;
+  }
+  .titulo { color: var(--primary-blue); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; }
+  .valor { font-size: 22px; margin-top: 6px; }
+  .valor.positivo { color: #16a34a; }
+  .valor.negativo { color: #dc2626; }
+}
+
+.mensagens .erro, .mensagens .sucesso {
+  margin: 8px 0;
+  padding: 10px;
+  border-radius: 8px;
+}
+.mensagens .erro { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: #dc2626; }
+.mensagens .sucesso { background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.3); color: #16a34a; }
+
+.lista {
+  background: var(--white);
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 46, 89, 0.08);
+  border: 2px solid rgba(0, 46, 89, 0.1);
+  padding: 8px 0;
+
+  .item {
+    display: grid;
+    grid-template-columns: 100px 120px 1fr 160px 200px;
+    gap: 12px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--light-gray);
+  }
+  .item:last-child { border-bottom: none; }
+  .item .tipo.entrada { color: #16a34a; }
+  .item .tipo.retirada { color: #dc2626; }
+}
+
+

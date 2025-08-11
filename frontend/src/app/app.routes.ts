@@ -1,7 +1,6 @@
 import { Routes } from '@angular/router';
 import { AuthGuard } from './guards/auth.guard';
 import { AdminGuard } from './guards/admin.guard';
-import { CaixaGuard } from './guards/caixa.guard';
 
 export const routes: Routes = [
     { path: '', redirectTo: '/dashboard', pathMatch: 'full' },
@@ -10,6 +9,11 @@ export const routes: Routes = [
         path: 'dashboard',
         loadComponent: () => import('./components/dashboard/dashboard').then(m => m.DashboardComponent),
         canActivate: [AuthGuard]
+    },
+    {
+        path: 'caixa',
+        loadComponent: () => import('./components/caixa/caixa').then(m => m.CaixaComponent),
+        canActivate: [AuthGuard, AdminGuard]
     },
     {
         path: 'produtos',

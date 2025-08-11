@@ -105,9 +105,9 @@ public class SaleController {
     }
 
     @GetMapping("/relatorios/dia")
-    public Map<String, Object> relatorioDia() {
-        var today = java.time.LocalDate.now();
-        return saleReportService.getResumoDia(today);
+    public Map<String, Object> relatorioDia(@RequestParam(value = "data", required = false) String data) {
+        var dia = (data == null || data.isBlank()) ? java.time.LocalDate.now() : java.time.LocalDate.parse(data);
+        return saleReportService.getResumoDia(dia);
     }
 
     @GetMapping("/relatorios/mes")
