@@ -18,6 +18,8 @@ import { logger } from '../../utils/logger';
 })
 export class RelatorioVendasComponent implements OnInit {
   vendas: Venda[] = [];
+  private vendasLegado: Venda[] = [];
+  private vendasCheckout: Venda[] = [];
   relatorioDiario: RelatorioVendas[] = [];
   relatorioMensal: RelatorioVendas[] = [];
   resumoDia?: RelatorioResumo;
@@ -77,15 +79,14 @@ export class RelatorioVendasComponent implements OnInit {
 
     this.apiService.getVendas().subscribe({
       next: (vendas) => {
-        this.vendas = [...vendas].sort((a, b) => {
+        this.vendasLegado = [...vendas].sort((a, b) => {
           const timeDiff = (parseDate(b.data_venda).getTime() - parseDate(a.data_venda).getTime());
           if (timeDiff !== 0) return timeDiff;
           return (b.id || 0) - (a.id || 0);
         });
-        this.calcularEstatisticas();
-        this.gerarRelatorios();
+        this.mergeAndRecompute();
         this.loading = false;
-        logger.info('RELATORIO_VENDAS', 'LOAD_VENDAS', 'Vendas (legado) carregadas', { count: vendas.length });
+        logger.info('RELATORIO_VENDAS', 'LOAD_VENDAS', 'Vendas (legado) carregadas', { count: this.vendasLegado.length });
       },
       error: (error: any) => {
         logger.warn('RELATORIO_VENDAS', 'LOAD_VENDAS', 'Erro ao carregar vendas (legado). Continuando.', error);
@@ -102,6 +103,10 @@ export class RelatorioVendasComponent implements OnInit {
           const itens = v.itens || [];
           // Resumo ordenado e com valores
           const metodoResumo = this.buildPagamentoResumo(pagamentos);
+          const metodosSet = new Set<MetodoPagamento>();
+          for (const p of pagamentos) {
+            metodosSet.add(p.metodo);
+          }
           for (const it of itens) {
             const linha: Venda = {
               id: v.id,
@@ -114,17 +119,17 @@ export class RelatorioVendasComponent implements OnInit {
               produto_imagem: it.produto_imagem,
               pagamentos_resumo: metodoResumo,
             } as any;
+            (linha as any).metodos_multi = Array.from(metodosSet);
             linhas.push(linha);
           }
         }
-        // Mesclar com as vendas legadas
-        this.vendas = [...linhas, ...(this.vendas || [])].sort((a, b) => {
+        // Guardar separado e mesclar de forma determinística
+        this.vendasCheckout = [...linhas].sort((a, b) => {
           const timeDiff = (parseDate(b.data_venda).getTime() - parseDate(a.data_venda).getTime());
           if (timeDiff !== 0) return timeDiff;
           return (b.id || 0) - (a.id || 0);
         });
-        this.calcularEstatisticas();
-        this.gerarRelatorios();
+        this.mergeAndRecompute();
         this.loading = false;
         logger.info('RELATORIO_VENDAS', 'LOAD_VENDAS_COMPLETAS', 'Vendas (checkout) carregadas', { count: vendasCompletas.length });
       },
@@ -132,6 +137,16 @@ export class RelatorioVendasComponent implements OnInit {
         logger.warn('RELATORIO_VENDAS', 'LOAD_VENDAS_COMPLETAS', 'Erro ao carregar vendas completas', error);
       }
     });
+  }
+
+  private mergeAndRecompute(): void {
+    this.vendas = [...(this.vendasCheckout || []), ...(this.vendasLegado || [])].sort((a, b) => {
+      const timeDiff = (parseDate(b.data_venda).getTime() - parseDate(a.data_venda).getTime());
+      if (timeDiff !== 0) return timeDiff;
+      return (b.id || 0) - (a.id || 0);
+    });
+    this.calcularEstatisticas();
+    this.gerarRelatorios();
   }
 
   calcularEstatisticas(): void {
@@ -291,49 +306,48 @@ export class RelatorioVendasComponent implements OnInit {
   }
 
   getVendasFiltradas(): Venda[] {
-    // Garantir que vendas sempre seja um array válido
-    if (!Array.isArray(this.vendas)) {
-      return [];
+    if (!Array.isArray(this.vendas)) return [];
+
+    return this.vendas
+      .filter(v => !!v?.data_venda)
+      .filter(v => this.passaFiltroData(v))
+      .filter(v => this.passaFiltroNome(v))
+      .filter(v => this.passaFiltroMetodo(v))
+      .sort((a, b) => this.ordenarPorDataEId(a, b));
+  }
+
+  private ordenarPorDataEId(a: Venda, b: Venda): number {
+    const timeDiff = parseDate(b.data_venda).getTime() - parseDate(a.data_venda).getTime();
+    if (timeDiff !== 0) return timeDiff;
+    return (b.id || 0) - (a.id || 0);
+  }
+
+  private passaFiltroData(venda: Venda): boolean {
+    if (!this.filtroData) return true;
+    try {
+      const vendaDataLocal = extractLocalDate(venda.data_venda);
+      return vendaDataLocal === this.filtroData;
+    } catch (error) {
+      logger.warn('RELATORIO_VENDAS', 'FILTER_INVALID_DATE', 'Data de venda inválida ao aplicar filtro', { venda, error: String(error) });
+      return false;
     }
+  }
 
-    return this.vendas.filter(venda => {
-      if (!venda?.data_venda) return false;
+  private passaFiltroNome(venda: Venda): boolean {
+    const termo = this.filtroNomeProduto?.trim();
+    if (!termo) return true;
+    const nomeProduto = venda.produto_nome?.toLowerCase() ?? '';
+    return nomeProduto.includes(termo.toLowerCase());
+  }
 
-      // Filtro por data
-      if (this.filtroData) {
-        try {
-          const vendaDataLocal = extractLocalDate(venda.data_venda);
-          if (vendaDataLocal !== this.filtroData) {
-            return false;
-          }
-        } catch (error) {
-          logger.warn('RELATORIO_VENDAS', 'FILTER_INVALID_DATE', 'Data de venda inválida ao aplicar filtro', { venda, error: String(error) });
-          return false;
-        }
-      }
-
-      // Filtro por nome do produto
-      if (this.filtroNomeProduto?.trim()) {
-        const nomeProduto = venda.produto_nome?.toLowerCase() ?? '';
-        const termoBusca = this.filtroNomeProduto.toLowerCase().trim();
-        if (!nomeProduto.includes(termoBusca)) {
-          return false;
-        }
-      }
-
-      // Filtro por método de pagamento
-      if (this.filtroMetodoPagamento?.trim()) {
-        if (venda.metodo_pagamento !== this.filtroMetodoPagamento) {
-          return false;
-        }
-      }
-
-      return true;
-    }).sort((a, b) => {
-      const timeDiff = (parseDate(b.data_venda).getTime() - parseDate(a.data_venda).getTime());
-      if (timeDiff !== 0) return timeDiff;
-      return (b.id || 0) - (a.id || 0);
-    });
+  private passaFiltroMetodo(venda: Venda): boolean {
+    const filtro = this.filtroMetodoPagamento?.trim() as MetodoPagamento | undefined;
+    if (!filtro) return true;
+    const metodosMulti: MetodoPagamento[] | undefined = (venda as any).metodos_multi;
+    if (Array.isArray(metodosMulti) && metodosMulti.length > 0) {
+      return metodosMulti.includes(filtro);
+    }
+    return venda.metodo_pagamento === filtro;
   }
 
   formatarData(data: string): string {

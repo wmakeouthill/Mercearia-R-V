@@ -18,6 +18,8 @@ import { logger } from '../../utils/logger';
 })
 export class HistoricoVendasComponent implements OnInit {
   vendas: Venda[] = [];
+  private vendasLegado: Venda[] = [];
+  private vendasCheckout: Venda[] = [];
   vendasFiltradas: Venda[] = [];
   dataFiltro = '';
   produtoFiltro = '';
@@ -45,23 +47,23 @@ export class HistoricoVendasComponent implements OnInit {
     this.apiService.getVendas().subscribe({
       next: (vendas) => {
         // Garantir que vendas sempre seja um array
-        this.vendas = Array.isArray(vendas) ? vendas : [];
+        const arr = Array.isArray(vendas) ? vendas : [];
         // Ordenar por data mais recente primeiro (fallback por id)
-        this.vendas.sort((a, b) => {
+        this.vendasLegado = [...arr].sort((a, b) => {
           const timeDiff = (parseDate(b.data_venda).getTime() - parseDate(a.data_venda).getTime());
           if (timeDiff !== 0) return timeDiff;
           return (b.id || 0) - (a.id || 0);
         });
-        this.vendasFiltradas = [...this.vendas];
+        this.mergeAndFilter();
         this.loading = false;
-        logger.info('HISTORICO_VENDAS', 'LOAD_VENDAS', 'Vendas carregadas', { count: this.vendas.length });
+        logger.info('HISTORICO_VENDAS', 'LOAD_VENDAS', 'Vendas carregadas', { count: this.vendasLegado.length });
       },
       error: (error: any) => {
         this.error = 'Erro ao carregar vendas';
         this.loading = false;
         // Garantir arrays vazios em caso de erro
-        this.vendas = [];
-        this.vendasFiltradas = [];
+        this.vendasLegado = [];
+        this.mergeAndFilter();
         logger.error('HISTORICO_VENDAS', 'LOAD_VENDAS', 'Erro ao carregar vendas', error);
       }
     });
@@ -76,6 +78,10 @@ export class HistoricoVendasComponent implements OnInit {
           const data = v.data_venda;
           const pagamentos: Array<{ metodo: MetodoPagamento; valor: number }> = (v.pagamentos || []);
           const metodoResumo = this.buildPagamentoResumo(pagamentos);
+          const metodosSet = new Set<MetodoPagamento>();
+          for (const p of pagamentos) {
+            metodosSet.add(p.metodo);
+          }
           const itens = v.itens || [];
           for (const it of itens) {
             const linha: Venda = {
@@ -84,27 +90,39 @@ export class HistoricoVendasComponent implements OnInit {
               quantidade_vendida: it.quantidade,
               preco_total: it.preco_total,
               data_venda: data,
+              // manter um placeholder para compatibilidade, filtro usará metodos_multi
               metodo_pagamento: 'dinheiro',
               produto_nome: it.produto_nome,
               produto_imagem: it.produto_imagem,
               pagamentos_resumo: metodoResumo,
             } as any;
+            (linha as any).metodos_multi = Array.from(metodosSet);
             linhas.push(linha);
           }
         }
-        // Mesclar e reordenar
-        this.vendas = [...linhas, ...(this.vendas || [])].sort((a, b) => {
+        // Guardar separado e mesclar de forma determinística
+        this.vendasCheckout = [...linhas].sort((a, b) => {
           const timeDiff = (parseDate(b.data_venda).getTime() - parseDate(a.data_venda).getTime());
           if (timeDiff !== 0) return timeDiff;
           return (b.id || 0) - (a.id || 0);
         });
-        this.vendasFiltradas = [...this.vendas];
+        this.mergeAndFilter();
         logger.info('HISTORICO_VENDAS', 'LOAD_VENDAS_COMPLETAS', 'Vendas checkout carregadas', { count: vendasCompletas.length });
       },
       error: (error: any) => {
         logger.warn('HISTORICO_VENDAS', 'LOAD_VENDAS_COMPLETAS', 'Erro ao carregar vendas checkout', error);
       }
     });
+  }
+
+  private mergeAndFilter(): void {
+    // Mesclar as duas fontes e ordenar
+    this.vendas = [...(this.vendasCheckout || []), ...(this.vendasLegado || [])].sort((a, b) => {
+      const timeDiff = (parseDate(b.data_venda).getTime() - parseDate(a.data_venda).getTime());
+      if (timeDiff !== 0) return timeDiff;
+      return (b.id || 0) - (a.id || 0);
+    });
+    this.filterVendas();
   }
 
   filterVendas(): void {
@@ -139,9 +157,14 @@ export class HistoricoVendasComponent implements OnInit {
         matchProduto = produtoNome.includes(termoBusca);
       }
 
-      // Filtro por método de pagamento
+      // Filtro por método de pagamento (suporta múltiplos métodos nas vendas do checkout)
       if (this.metodoPagamentoFiltro?.trim()) {
-        matchMetodoPagamento = venda.metodo_pagamento === this.metodoPagamentoFiltro;
+        const metodosMulti: MetodoPagamento[] | undefined = (venda as any).metodos_multi;
+        if (Array.isArray(metodosMulti) && metodosMulti.length > 0) {
+          matchMetodoPagamento = metodosMulti.includes(this.metodoPagamentoFiltro as MetodoPagamento);
+        } else {
+          matchMetodoPagamento = venda.metodo_pagamento === this.metodoPagamentoFiltro;
+        }
       }
 
       return matchData && matchProduto && matchMetodoPagamento;
