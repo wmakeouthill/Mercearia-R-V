@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Observable, BehaviorSubject, throwError, of } from 'rxjs';
 import { tap, catchError, retry, timeout } from 'rxjs/operators';
-import { Produto, Venda, RelatorioVendas } from '../models';
+import { Produto, Venda, RelatorioVendas, CheckoutRequest, VendaCompletaResponse, RelatorioResumo } from '../models';
 import { logger } from '../utils/logger';
 import { environment } from '../../environments/environment';
 import { BackendDetectorService } from './backend-detector';
@@ -265,8 +265,11 @@ export class ApiService {
   }
 
   // Método para a nova estrutura de vendas (com itens)
-  createVendaWithItens(venda: { itens: Array<{ produtoId: number, quantidade: number, precoUnitario: number }>, metodoPagamento: string }): Observable<Venda> {
-    return this.postVenda(venda);
+  createVendaWithItens(checkout: CheckoutRequest): Observable<VendaCompletaResponse> {
+    return this.makeRequest(
+      () => this.http.post<VendaCompletaResponse>(`${this.baseUrl}/checkout`, checkout),
+      'CHECKOUT_VENDA'
+    );
   }
 
   // Método para a estrutura atual de vendas (individual)
@@ -302,6 +305,21 @@ export class ApiService {
     return this.makeRequest(
       () => this.http.get<RelatorioVendas>(url),
       'GET_RELATORIO_VENDAS_MES'
+    );
+  }
+
+  // Novos: obter resumo+breakdown direto do backend
+  getResumoDia(): Observable<RelatorioResumo> {
+    return this.makeRequest(
+      () => this.http.get<RelatorioResumo>(`${this.baseUrl}/vendas/relatorios/dia`),
+      'GET_RESUMO_DIA'
+    );
+  }
+
+  getResumoMesAtual(): Observable<RelatorioResumo> {
+    return this.makeRequest(
+      () => this.http.get<RelatorioResumo>(`${this.baseUrl}/vendas/relatorios/mes`),
+      'GET_RESUMO_MES'
     );
   }
 

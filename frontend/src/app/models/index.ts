@@ -19,6 +19,12 @@ export interface Produto {
 
 export type MetodoPagamento = 'dinheiro' | 'cartao_credito' | 'cartao_debito' | 'pix';
 
+export interface Pagamento {
+    metodo: MetodoPagamento;
+    valor: number;
+    troco?: number;
+}
+
 export interface ItemVenda {
     produto: Produto;
     quantidade: number;
@@ -44,6 +50,30 @@ export interface VendaSimples {
     preco_total: number;
     data_venda: string;
     metodo_pagamento: MetodoPagamento;
+}
+
+export interface CheckoutItem {
+    produtoId: number;
+    quantidade: number;
+    precoUnitario: number;
+}
+
+export interface CheckoutRequest {
+    itens: CheckoutItem[];
+    pagamentos: Pagamento[];
+    desconto?: number;
+    acrescimo?: number;
+}
+
+export interface VendaCompletaResponse {
+    id: number;
+    data_venda: string;
+    subtotal: number;
+    desconto: number;
+    acrescimo: number;
+    total_final: number;
+    itens: Array<{ produto_id: number; produto_nome: string; quantidade: number; preco_unitario: number; preco_total: number }>
+    pagamentos: Array<{ metodo: MetodoPagamento; valor: number; troco?: number }>
 }
 
 export interface LoginRequest {
@@ -76,6 +106,16 @@ export interface RelatorioVendas {
     receita_total: number;
 }
 
+export interface RelatorioResumo {
+    data?: string;
+    periodo?: string;
+    total_vendas: number;
+    quantidade_vendida: number;
+    receita_total: number;
+    por_pagamento?: Record<string, number>;
+    vendas_com_multiplo_pagamento?: number;
+}
+
 export interface StatusCaixa {
     id?: number;
     aberto: boolean;
@@ -89,4 +129,4 @@ export interface StatusCaixa {
     atualizado_em?: string;
     aberto_por_username?: string;
     fechado_por_username?: string;
-} 
+}

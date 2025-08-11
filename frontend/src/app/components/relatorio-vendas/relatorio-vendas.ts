@@ -6,7 +6,7 @@ import { ApiService } from '../../services/api';
 import { AuthService } from '../../services/auth';
 import { ImageService } from '../../services/image.service';
 import { extractLocalDate, extractYearMonth, formatDateBR, formatTimeBR, getCurrentDateForInput, formatDateYMD, parseDate } from '../../utils/date-utils';
-import { RelatorioVendas, Venda, MetodoPagamento } from '../../models';
+import { RelatorioVendas, Venda, MetodoPagamento, RelatorioResumo } from '../../models';
 import { logger } from '../../utils/logger';
 
 @Component({
@@ -20,6 +20,8 @@ export class RelatorioVendasComponent implements OnInit {
   vendas: Venda[] = [];
   relatorioDiario: RelatorioVendas[] = [];
   relatorioMensal: RelatorioVendas[] = [];
+  resumoDia?: RelatorioResumo;
+  resumoMes?: RelatorioResumo;
   filtroPeriodo: 'dia' | 'mes' = 'dia';
   filtroData: string = '';
   filtroNomeProduto: string = '';
@@ -47,7 +49,23 @@ export class RelatorioVendasComponent implements OnInit {
     this.isAdmin = this.authService.isAdmin();
     this.filtroData = this.getDataAtual();
     this.loadVendas();
+    this.loadResumos();
   }
+  loadResumos(): void {
+    this.apiService.getResumoDia().subscribe({
+      next: (res) => {
+        this.resumoDia = res;
+      },
+      error: () => { }
+    });
+    this.apiService.getResumoMesAtual().subscribe({
+      next: (res) => {
+        this.resumoMes = res;
+      },
+      error: () => { }
+    });
+  }
+
 
   getDataAtual(): string {
     return getCurrentDateForInput();

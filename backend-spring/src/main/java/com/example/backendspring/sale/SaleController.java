@@ -20,6 +20,7 @@ public class SaleController {
 
     private final SaleRepository saleRepository;
     private final ProductRepository productRepository;
+    private final SaleReportService saleReportService;
 
     private static final String KEY_ERROR = "error";
     private static final String KEY_MESSAGE = "message";
@@ -106,31 +107,14 @@ public class SaleController {
     @GetMapping("/relatorios/dia")
     public Map<String, Object> relatorioDia() {
         var today = java.time.LocalDate.now();
-        long total = saleRepository.countByDia(today);
-        long qtd = saleRepository.somaQuantidadeByDia(today);
-        double receita = saleRepository.somaReceitaByDia(today);
-        return Map.of("data", today.toString(), "total_vendas", total, KEY_QTD_VENDIDA, qtd, "receita_total",
-                receita);
+        return saleReportService.getResumoDia(today);
     }
 
     @GetMapping("/relatorios/mes")
     public Map<String, Object> relatorioMes() {
-        // Para simplificar, vamos calcular via memória buscando do mês corrente
-        List<Sale> vendas = saleRepository.findAll();
-        var hoje = OffsetDateTime.now();
-        var inicio = hoje.withDayOfMonth(1).toLocalDate();
-        var fim = hoje.withDayOfMonth(hoje.toLocalDate().lengthOfMonth()).toLocalDate();
-        long total = vendas.stream().filter(
-                v -> !v.getDataVenda().toLocalDate().isBefore(inicio) && !v.getDataVenda().toLocalDate().isAfter(fim))
-                .count();
-        long qtd = vendas.stream().filter(
-                v -> !v.getDataVenda().toLocalDate().isBefore(inicio) && !v.getDataVenda().toLocalDate().isAfter(fim))
-                .mapToLong(Sale::getQuantidadeVendida).sum();
-        double receita = vendas.stream().filter(
-                v -> !v.getDataVenda().toLocalDate().isBefore(inicio) && !v.getDataVenda().toLocalDate().isAfter(fim))
-                .mapToDouble(Sale::getPrecoTotal).sum();
-        return Map.of("periodo", inicio + " a " + fim, "total_vendas", total, KEY_QTD_VENDIDA, qtd,
-                "receita_total", receita);
+        var hoje = java.time.OffsetDateTime.now();
+        var ym = java.time.YearMonth.from(hoje);
+        return saleReportService.getResumoMes(ym.getYear(), ym.getMonthValue());
     }
 
     @Data

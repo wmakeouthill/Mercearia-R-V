@@ -46,8 +46,8 @@
                         [class.selecionado]="produtoSelecionado?.id === produto.id"
                         (click)="selecionarProduto(produto)">
                         <div class="produto-imagem-card">
-                            <img [src]="getImageUrl(produto.imagem)" 
-                                 [alt]="produto.nome" 
+                            <img [src]="getImageUrl(produto.imagem)"
+                                 [alt]="produto.nome"
                                  class="produto-card-imagem"
                                  (error)="onImageError($event)">
                         </div>
@@ -112,8 +112,8 @@
             <div class="carrinho-items" *ngIf="carrinho.length > 0">
                 <div class="carrinho-item" *ngFor="let item of carrinho; let i = index">
                     <div class="item-imagem">
-                        <img [src]="getImageUrl(item.produto.imagem)" 
-                             [alt]="item.produto.nome" 
+                        <img [src]="getImageUrl(item.produto.imagem)"
+                             [alt]="item.produto.nome"
                              class="carrinho-produto-imagem"
                              (error)="onImageError($event)">
                     </div>
@@ -143,16 +143,28 @@
                     </div>
                 </div>
 
-                <!-- Seleção de Método de Pagamento - Compacta -->
-                <div class="metodo-pagamento-compacto">
-                    <span class="metodo-label">Método de Pagamento:</span>
-                    <div class="metodos-opcoes">
-                        <button *ngFor="let metodo of metodosDisponiveis" class="btn-metodo-compacto"
-                            [class.ativo]="metodoPagamentoSelecionado === metodo.valor" [title]="metodo.nome"
-                            (click)="metodoPagamentoSelecionado = metodo.valor">
-                            <span class="metodo-icone">{{ metodo.icone }}</span>
-                            <span class="metodo-nome-curto">{{ metodo.nome.split(' ')[0] }}</span>
-                        </button>
+                <!-- Pagamentos -->
+                <div class="pagamentos-section">
+                    <div class="pagamentos-header">
+                        <span class="metodo-label">Pagamentos:</span>
+                        <div class="metodos-opcoes">
+                            <button *ngFor="let metodo of metodosDisponiveis" class="btn-metodo-compacto"
+                                    (click)="adicionarPagamento(metodo.valor)" [title]="'Adicionar '+metodo.nome">
+                                <span class="metodo-icone">{{ metodo.icone }}</span>
+                                <span class="metodo-nome-curto">{{ metodo.nome.split(' ')[0] }}</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="pagamentos-lista" *ngIf="pagamentos.length > 0">
+                        <div class="pagamento-item" *ngFor="let p of pagamentos; let i = index">
+                            <div class="pagamento-metodo">{{ getMetodoPagamentoNome(p.metodo) }}</div>
+                            <input type="number" class="pagamento-valor" [(ngModel)]="p.valor" min="0" step="0.01">
+                            <button class="btn-remover" (click)="removerPagamento(i)" title="Remover">🗑️</button>
+                        </div>
+                        <div class="pagamento-total" [class.invalido]="!isPagamentoValido()">
+                            <span>Total Pagamentos:</span>
+                            <span>R$ {{ getTotalPagamentos().toFixed(2) }} / R$ {{ getTotalCarrinho().toFixed(2) }}</span>
+                        </div>
                     </div>
                 </div>
 

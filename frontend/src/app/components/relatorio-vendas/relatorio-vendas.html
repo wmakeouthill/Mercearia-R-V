@@ -122,6 +122,62 @@
         </div>
     </div>
 
+    <!-- Receita por forma de pagamento -->
+    <div class="relatorio-content">
+        <h2>Receita por forma de pagamento</h2>
+        <div class="loading" *ngIf="loading">
+            Carregando resumo...
+        </div>
+        <div class="relatorio-tabela" *ngIf="!loading">
+            <table class="tabela-relatorio">
+                <thead>
+                    <tr>
+                        <th>Período</th>
+                        <th>Dinheiro</th>
+                        <th>Crédito</th>
+                        <th>Débito</th>
+                        <th>PIX</th>
+                        <th>Total</th>
+                        <th>Vendas c/ múltiplos pagamentos</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr *ngIf="resumoDia?.por_pagamento as pDia">
+                        <td>Hoje</td>
+                        <td>R$ {{ (pDia['dinheiro'] || 0) | number:'1.2-2' }}</td>
+                        <td>R$ {{ (pDia['cartao_credito'] || 0) | number:'1.2-2' }}</td>
+                        <td>R$ {{ (pDia['cartao_debito'] || 0) | number:'1.2-2' }}</td>
+                        <td>R$ {{ (pDia['pix'] || 0) | number:'1.2-2' }}</td>
+                        <td>R$ {{ (resumoDia?.receita_total || 0) | number:'1.2-2' }}</td>
+                        <td>{{ resumoDia?.vendas_com_multiplo_pagamento || 0 }}</td>
+                    </tr>
+                    <tr *ngIf="resumoMes?.por_pagamento as pMes">
+                        <td>Mês atual</td>
+                        <td>R$ {{ (pMes['dinheiro'] || 0) | number:'1.2-2' }}</td>
+                        <td>R$ {{ (pMes['cartao_credito'] || 0) | number:'1.2-2' }}</td>
+                        <td>R$ {{ (pMes['cartao_debito'] || 0) | number:'1.2-2' }}</td>
+                        <td>R$ {{ (pMes['pix'] || 0) | number:'1.2-2' }}</td>
+                        <td>R$ {{ (resumoMes?.receita_total || 0) | number:'1.2-2' }}</td>
+                        <td>{{ resumoMes?.vendas_com_multiplo_pagamento || 0 }}</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Gráfico simples em barras usando CSS puro -->
+        <div class="chart-bars" *ngIf="resumoDia?.por_pagamento as bars">
+            <div class="chart-row">
+                <div class="chart-label">Hoje</div>
+                <div class="chart-bar-group">
+                    <div class="bar dinheiro" [style.--v]="(bars['dinheiro']||0)" title="Dinheiro"></div>
+                    <div class="bar credito" [style.--v]="(bars['cartao_credito']||0)" title="Crédito"></div>
+                    <div class="bar debito" [style.--v]="(bars['cartao_debito']||0)" title="Débito"></div>
+                    <div class="bar pix" [style.--v]="(bars['pix']||0)" title="PIX"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Lista de Vendas Detalhada -->
     <div class="vendas-detalhadas">
         <h2>📋 Vendas Detalhadas</h2>

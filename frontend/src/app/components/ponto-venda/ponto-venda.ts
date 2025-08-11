@@ -6,7 +6,7 @@ import { ApiService } from '../../services/api';
 import { AuthService } from '../../services/auth';
 import { CaixaService } from '../../services/caixa.service';
 import { ImageService } from '../../services/image.service';
-import { Produto, ItemVenda, MetodoPagamento, StatusCaixa } from '../../models';
+import { Produto, ItemVenda, MetodoPagamento, StatusCaixa, Pagamento, CheckoutItem } from '../../models';
 import { Subject, debounceTime, distinctUntilChanged, Subscription } from 'rxjs';
 import { logger } from '../../utils/logger';
 
@@ -25,6 +25,7 @@ export class PontoVendaComponent implements OnInit, OnDestroy {
   quantidade: number = 1;
   termoPesquisa: string = '';
   metodoPagamentoSelecionado: MetodoPagamento = 'dinheiro';
+  pagamentos: Pagamento[] = [];
   loading = false;
   error = '';
   sucesso = '';
@@ -37,6 +38,36 @@ export class PontoVendaComponent implements OnInit, OnDestroy {
     { valor: 'cartao_debito', nome: 'Cartão de Débito', icone: '🏧' },
     { valor: 'pix', nome: 'PIX', icone: '📱' }
   ];
+
+  getMetodoPagamentoNome(metodo: MetodoPagamento): string {
+    const nomes: Record<MetodoPagamento, string> = {
+      'dinheiro': 'Dinheiro',
+      'cartao_credito': 'Cartão de Crédito',
+      'cartao_debito': 'Cartão de Débito',
+      'pix': 'PIX'
+    };
+    return nomes[metodo] || metodo;
+  }
+
+  adicionarPagamento(metodo?: MetodoPagamento): void {
+    const total = this.getTotalCarrinho();
+    const somaAtual = this.pagamentos.reduce((sum, p) => sum + (p.valor || 0), 0);
+    const restante = Math.max(total - somaAtual, 0);
+    this.pagamentos.push({ metodo: metodo || 'dinheiro', valor: Number(restante.toFixed(2)) });
+  }
+
+  removerPagamento(index: number): void {
+    this.pagamentos.splice(index, 1);
+  }
+
+  getTotalPagamentos(): number {
+    return this.pagamentos.reduce((sum, p) => sum + (p.valor || 0), 0);
+  }
+
+  isPagamentoValido(): boolean {
+    const total = this.getTotalCarrinho();
+    return Math.abs(this.getTotalPagamentos() - total) < 0.01 && this.pagamentos.length > 0;
+  }
 
   private readonly searchSubject = new Subject<string>();
   private statusCaixaSubscription?: Subscription;
@@ -321,7 +352,46 @@ export class PontoVendaComponent implements OnInit, OnDestroy {
     this.loading = true;
     this.error = '';
 
-    // Processar cada item do carrinho como uma venda separada
+    // Se houver pagamentos preenchidos, usar checkout único
+    if (this.pagamentos.length > 0) {
+      if (!this.isPagamentoValido()) {
+        this.error = 'Soma dos pagamentos deve ser igual ao total';
+        this.loading = false;
+        return;
+      }
+
+      const itens: CheckoutItem[] = this.carrinho.map(item => ({
+        produtoId: item.produto.id!,
+        quantidade: item.quantidade,
+        precoUnitario: item.preco_unitario,
+      }));
+
+      const checkout = {
+        itens,
+        pagamentos: this.pagamentos.map(p => ({ metodo: p.metodo, valor: Number(p.valor) })),
+      };
+
+      const totalVenda = this.getTotalCarrinho();
+      this.apiService.createVendaWithItens(checkout).subscribe({
+        next: () => {
+          this.showModernNotification = true;
+          this.modernNotificationMessage = `Venda finalizada com sucesso! Total: R$ ${totalVenda.toFixed(2)}`;
+          this.carrinho = [];
+          this.pagamentos = [];
+          this.loading = false;
+          setTimeout(() => this.loadProdutos(), 500);
+          setTimeout(() => this.hideModernNotification(), 5000);
+        },
+        error: (error: any) => {
+          this.error = 'Erro ao finalizar venda';
+          this.loading = false;
+          logger.error('PONTO_VENDA', 'CHECKOUT_FAIL', 'Erro no checkout', error);
+        }
+      });
+      return;
+    }
+
+    // Caso contrário, processar cada item como venda separada (legado)
     const vendas = this.carrinho.map(item => ({
       produto_id: item.produto.id!,
       quantidade_vendida: item.quantidade,

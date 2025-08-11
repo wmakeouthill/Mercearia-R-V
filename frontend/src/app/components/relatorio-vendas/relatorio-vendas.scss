@@ -312,6 +312,54 @@
     }
 }
 
+// Barras simples sem dependências
+.chart-bars {
+    margin-top: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.chart-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.chart-label {
+    width: 70px;
+    font-weight: 600;
+    color: var(--primary-blue);
+}
+
+.chart-bar-group {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    width: 100%;
+}
+
+.bar {
+    height: 14px;
+    border-radius: 6px;
+    background: rgba(0,0,0,0.06);
+    position: relative;
+    overflow: hidden;
+}
+
+.bar::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    width: calc((var(--v, 0) / var(--max, 1)) * 100%);
+    transition: width 0.4s ease;
+}
+
+.bar.dinheiro::after { background: linear-gradient(135deg, #28a745, #218838); }
+.bar.credito::after { background: linear-gradient(135deg, #007bff, #0056b3); }
+.bar.debito::after   { background: linear-gradient(135deg, #17a2b8, #117a8b); }
+.bar.pix::after      { background: linear-gradient(135deg, #20c997, #159f77); }
+
 .loading {
     text-align: center;
     padding: 40px;

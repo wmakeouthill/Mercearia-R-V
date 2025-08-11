@@ -40,7 +40,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.DELETE, PRODUTOS_ALL).hasRole(ROLE_ADMIN)
                         .requestMatchers(HttpMethod.DELETE, "/api/vendas/**").hasRole(ROLE_ADMIN)
                         .requestMatchers(HttpMethod.PUT, "/api/caixa/horarios").hasRole(ROLE_ADMIN)
-                        .requestMatchers(PRODUTOS_ALL, "/api/vendas/**", "/api/caixa/**").authenticated()
+                        .requestMatchers(PRODUTOS_ALL, "/api/vendas/**", "/api/caixa/**", "/api/checkout/**")
+                        .authenticated()
                         .anyRequest().permitAll())
                 .httpBasic(Customizer.withDefaults());
         http.addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);

@@ -489,6 +489,62 @@
     }
 }
 
+// Nova seção de pagamentos múltiplos
+.pagamentos-section {
+    background: var(--white);
+    border-radius: 12px;
+    box-shadow: 0 6px 24px rgba(0, 46, 89, 0.1);
+    padding: 12px;
+    margin-top: 12px;
+    border: 2px solid rgba(219, 194, 125, 0.2);
+}
+
+.pagamentos-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+
+    .metodos-opcoes {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+}
+
+.pagamentos-lista {
+    margin-top: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.pagamento-item {
+    display: grid;
+    grid-template-columns: 1fr 140px auto;
+    gap: 8px;
+    align-items: center;
+}
+
+.pagamento-valor {
+    padding: 6px 8px;
+    border: 2px solid var(--medium-gray);
+    border-radius: 8px;
+    font-size: 0.9rem;
+}
+
+.pagamento-total {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    font-weight: 700;
+    color: var(--primary-blue);
+}
+
+.pagamento-total.invalido {
+    color: var(--danger);
+}
+
 .btn-metodo-compacto {
     background: var(--white);
     border: 1px solid var(--medium-gray);
