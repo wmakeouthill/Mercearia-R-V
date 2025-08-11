@@ -49,31 +49,19 @@ async function waitForServices() {
             return true;
         }
 
-        // Em desenvolvimento, se qualquer um dos serviços já estiver pronto após breve espera,
-        // inicie o Electron para não atrasar a UX.
-        if (attempts >= 2 && (frontendReady || backendReady)) {
-            if (frontendReady && !backendReady) {
-                console.log('⚡ Frontend pronto. Iniciando Electron enquanto o Backend finaliza...');
-            } else if (backendReady && !frontendReady) {
-                console.log('⚡ Backend pronto. Iniciando Electron enquanto o Frontend finaliza...');
-            }
-            return true;
-        }
-
         if (attempts < maxAttempts) {
             console.log('⏳ Aguardando 1 segundo antes da próxima verificação...');
             await new Promise(resolve => setTimeout(resolve, 1000));
         }
     }
 
-    console.log('⚠️ Timeout atingido. Iniciando Electron mesmo assim...');
+    console.log('⚠️ Timeout atingido. Backend ou Frontend não ficaram prontos a tempo. Abortando start automático do Electron.');
     return false;
 }
 
 // Iniciar Electron após aguardar serviços
 async function startElectron() {
-    const ready = await waitForServices();
-
+    await waitForServices();
     console.log('🚀 Iniciando Electron...');
     const electronProcess = spawn('npm', ['run', 'dev'], {
         cwd: 'electron',

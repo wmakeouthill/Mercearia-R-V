@@ -12,19 +12,15 @@ export function parseDate(dateString: string): Date {
         throw new Error('Data inválida: string vazia');
     }
 
-    // Se a data não tem timezone (como '2024-01-15T10:30:00'),
-    // adicionar 'Z' para forçar interpretação como UTC
-    let dataParseada = dateString;
-    if (!dateString.includes('Z') && !dateString.includes('+') && !dateString.includes('-', 10)) {
-        dataParseada = dateString + 'Z';
-    }
+    // Detectar se já possui timezone explícito (termina com Z ou possui offset +HH:mm/-HH:mm)
+    // Importante: se NÃO houver timezone explícito, tratamos como horário LOCAL (não adicionar 'Z').
+    // Adicionar 'Z' forçaria UTC e causaria divergências (ex.: dia anterior em fuso -03:00).
+    const toParse = dateString;
 
-    const date = new Date(dataParseada);
-
+    const date = new Date(toParse);
     if (isNaN(date.getTime())) {
         throw new Error(`Data inválida: ${dateString}`);
     }
-
     return date;
 }
 
@@ -36,13 +32,14 @@ export function parseDate(dateString: string): Date {
 export function extractLocalDate(dateString: string): string {
     try {
         const date = parseDate(dateString);
-
-        // Usar métodos de data local do browser que já consideram o fuso horário
-        const localDate = new Date(date.getTime());
-
-        return localDate.getFullYear() + '-' +
-            String(localDate.getMonth() + 1).padStart(2, '0') + '-' +
-            String(localDate.getDate()).padStart(2, '0');
+        // Extrair data no fuso de São Paulo para consistência com a aplicação
+        const fmt = new Intl.DateTimeFormat('en-CA', {
+            timeZone: 'America/Sao_Paulo',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit'
+        });
+        return fmt.format(date); // en-CA => YYYY-MM-DD
     } catch (error) {
         console.error('Erro ao extrair data local:', error);
         return '';
@@ -57,11 +54,14 @@ export function extractLocalDate(dateString: string): string {
 export function extractYearMonth(dateString: string): string {
     try {
         const date = parseDate(dateString);
-
-        // Usar métodos de data local do browser
-        const localDate = new Date(date.getTime());
-
-        return `${localDate.getFullYear()}-${String(localDate.getMonth() + 1).padStart(2, '0')}`;
+        const fmt = new Intl.DateTimeFormat('en-CA', {
+            timeZone: 'America/Sao_Paulo',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit'
+        });
+        const ymd = fmt.format(date); // YYYY-MM-DD
+        return ymd.slice(0, 7); // YYYY-MM
     } catch (error) {
         console.error('Erro ao extrair ano/mês:', error);
         return '';

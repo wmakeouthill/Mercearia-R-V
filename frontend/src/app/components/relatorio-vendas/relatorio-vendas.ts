@@ -351,6 +351,10 @@ export class RelatorioVendasComponent implements OnInit {
   }
 
   formatarData(data: string): string {
+    // Quando o agrupamento gera 'YYYY-MM-DD', usar formatação própria
+    if (/^\d{4}-\d{2}-\d{2}$/.test(data)) {
+      return formatDateYMD(data);
+    }
     return formatDateBR(data);
   }
 
