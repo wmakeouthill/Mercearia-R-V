@@ -5,7 +5,7 @@ import { Router } from '@angular/router';
 import { ApiService } from '../../services/api';
 import { AuthService } from '../../services/auth';
 import { ImageService } from '../../services/image.service';
-import { extractLocalDate, extractYearMonth, formatDateBR, formatTimeBR, getCurrentDateForInput, formatDateYMD } from '../../utils/date-utils';
+import { extractLocalDate, extractYearMonth, formatDateBR, formatTimeBR, getCurrentDateForInput, formatDateYMD, parseDate } from '../../utils/date-utils';
 import { RelatorioVendas, Venda, MetodoPagamento } from '../../models';
 import { logger } from '../../utils/logger';
 
@@ -59,7 +59,12 @@ export class RelatorioVendasComponent implements OnInit {
 
     this.apiService.getVendas().subscribe({
       next: (vendas) => {
-        this.vendas = vendas;
+        // Ordenar por data mais recente primeiro (fallback por id)
+        this.vendas = [...vendas].sort((a, b) => {
+          const timeDiff = (parseDate(b.data_venda).getTime() - parseDate(a.data_venda).getTime());
+          if (timeDiff !== 0) return timeDiff;
+          return (b.id || 0) - (a.id || 0);
+        });
         this.calcularEstatisticas();
         this.gerarRelatorios();
         this.loading = false;
@@ -241,6 +246,10 @@ export class RelatorioVendasComponent implements OnInit {
       }
 
       return true;
+    }).sort((a, b) => {
+      const timeDiff = (parseDate(b.data_venda).getTime() - parseDate(a.data_venda).getTime());
+      if (timeDiff !== 0) return timeDiff;
+      return (b.id || 0) - (a.id || 0);
     });
   }
 

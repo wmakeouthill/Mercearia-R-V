@@ -5,7 +5,7 @@ import { Router } from '@angular/router';
 import { ApiService } from '../../services/api';
 import { AuthService } from '../../services/auth';
 import { ImageService } from '../../services/image.service';
-import { extractLocalDate, formatDateBR } from '../../utils/date-utils';
+import { extractLocalDate, formatDateBR, parseDate } from '../../utils/date-utils';
 import { Venda, MetodoPagamento } from '../../models';
 import { logger } from '../../utils/logger';
 
@@ -26,10 +26,10 @@ export class HistoricoVendasComponent implements OnInit {
   error = '';
 
   constructor(
-    private apiService: ApiService,
-    private authService: AuthService,
-    private imageService: ImageService,
-    private router: Router
+    private readonly apiService: ApiService,
+    private readonly authService: AuthService,
+    private readonly imageService: ImageService,
+    private readonly router: Router
   ) { }
 
   ngOnInit(): void {
@@ -45,6 +45,12 @@ export class HistoricoVendasComponent implements OnInit {
       next: (vendas) => {
         // Garantir que vendas sempre seja um array
         this.vendas = Array.isArray(vendas) ? vendas : [];
+        // Ordenar por data mais recente primeiro (fallback por id)
+        this.vendas.sort((a, b) => {
+          const timeDiff = (parseDate(b.data_venda).getTime() - parseDate(a.data_venda).getTime());
+          if (timeDiff !== 0) return timeDiff;
+          return (b.id || 0) - (a.id || 0);
+        });
         this.vendasFiltradas = [...this.vendas];
         this.loading = false;
         logger.info('HISTORICO_VENDAS', 'LOAD_VENDAS', 'Vendas carregadas', { count: this.vendas.length });
@@ -86,18 +92,22 @@ export class HistoricoVendasComponent implements OnInit {
       }
 
       // Filtro por produto
-      if (this.produtoFiltro && this.produtoFiltro.trim()) {
+      if (this.produtoFiltro?.trim()) {
         const produtoNome = (venda.produto_nome || '').toLowerCase();
         const termoBusca = this.produtoFiltro.toLowerCase().trim();
         matchProduto = produtoNome.includes(termoBusca);
       }
 
       // Filtro por método de pagamento
-      if (this.metodoPagamentoFiltro && this.metodoPagamentoFiltro.trim()) {
+      if (this.metodoPagamentoFiltro?.trim()) {
         matchMetodoPagamento = venda.metodo_pagamento === this.metodoPagamentoFiltro;
       }
 
       return matchData && matchProduto && matchMetodoPagamento;
+    }).sort((a, b) => {
+      const timeDiff = (parseDate(b.data_venda).getTime() - parseDate(a.data_venda).getTime());
+      if (timeDiff !== 0) return timeDiff;
+      return (b.id || 0) - (a.id || 0);
     });
   }
 
@@ -105,7 +115,11 @@ export class HistoricoVendasComponent implements OnInit {
     this.dataFiltro = '';
     this.produtoFiltro = '';
     this.metodoPagamentoFiltro = '';
-    this.vendasFiltradas = [...this.vendas];
+    this.vendasFiltradas = [...this.vendas].sort((a, b) => {
+      const timeDiff = (parseDate(b.data_venda).getTime() - parseDate(a.data_venda).getTime());
+      if (timeDiff !== 0) return timeDiff;
+      return (b.id || 0) - (a.id || 0);
+    });
   }
 
   excluirVenda(id: number): void {
@@ -113,7 +127,13 @@ export class HistoricoVendasComponent implements OnInit {
       this.apiService.deleteVenda(id).subscribe({
         next: () => {
           this.vendas = this.vendas.filter(v => v.id !== id);
-          this.vendasFiltradas = this.vendasFiltradas.filter(v => v.id !== id);
+          this.vendasFiltradas = this.vendasFiltradas
+            .filter(v => v.id !== id)
+            .sort((a, b) => {
+              const timeDiff = (parseDate(b.data_venda).getTime() - parseDate(a.data_venda).getTime());
+              if (timeDiff !== 0) return timeDiff;
+              return (b.id || 0) - (a.id || 0);
+            });
           logger.info('HISTORICO_VENDAS', 'DELETE_VENDA', 'Venda excluída', { id });
         },
         error: (error: any) => {
