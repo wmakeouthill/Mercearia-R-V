@@ -13,4 +13,10 @@ public interface CaixaMovimentacaoRepository extends JpaRepository<CaixaMoviment
 
     @Query(value = "SELECT COALESCE(SUM(CASE WHEN tipo = 'entrada' THEN valor ELSE -valor END),0) FROM caixa_movimentacoes WHERE DATE(data_movimento) = :dia", nativeQuery = true)
     Double saldoDoDia(@Param("dia") LocalDate dia);
+
+    @Query(value = "SELECT * FROM caixa_movimentacoes WHERE DATE(data_movimento) BETWEEN :inicio AND :fim ORDER BY data_movimento DESC", nativeQuery = true)
+    List<CaixaMovimentacao> findByPeriodo(@Param("inicio") LocalDate inicio, @Param("fim") LocalDate fim);
+
+    @Query(value = "SELECT * FROM caixa_movimentacoes ORDER BY data_movimento DESC", nativeQuery = true)
+    List<CaixaMovimentacao> findAllOrderByData();
 }

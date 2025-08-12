@@ -32,6 +32,15 @@ public class CaixaController {
     private static final String MSG_NAO_AUTENTICADO = "Usuário não autenticado";
     private static final String TIPO_ENTRADA = "entrada";
     private static final String TIPO_RETIRADA = "retirada";
+    private static final String TIPO_VENDA = "venda";
+    private static final String KEY_ITEMS = "items";
+    private static final String KEY_TOTAL = "total";
+    private static final String KEY_HAS_NEXT = "hasNext";
+    private static final String KEY_PAGE = "page";
+    private static final String KEY_SIZE = "size";
+    private static final String KEY_SUM_ENTRADAS = "sum_entradas";
+    private static final String KEY_SUM_RETIRADAS = "sum_retiradas";
+    private static final String KEY_SUM_VENDAS = "sum_vendas";
 
     @GetMapping("/status")
     public ResponseEntity<Map<String, Object>> status() {
@@ -86,42 +95,113 @@ public class CaixaController {
     @GetMapping("/movimentacoes")
     @org.springframework.transaction.annotation.Transactional(readOnly = true)
     @SuppressWarnings("java:S6863") // Mantemos 200 OK em caso de erro para não quebrar o frontend
-    public ResponseEntity<java.util.List<java.util.Map<String, Object>>> listarMovimentacoes(
+    public ResponseEntity<java.util.Map<String, Object>> listarMovimentacoes(
             @RequestParam(value = "data", required = false) String data,
+            @RequestParam(value = "periodo_inicio", required = false) String periodoInicio,
+            @RequestParam(value = "periodo_fim", required = false) String periodoFim,
             @RequestParam(value = "tipo", required = false) String tipo,
             @RequestParam(value = "metodo_pagamento", required = false) String metodoPagamento,
             @RequestParam(value = "hora_inicio", required = false) String horaInicio,
-            @RequestParam(value = "hora_fim", required = false) String horaFim) {
+            @RequestParam(value = "hora_fim", required = false) String horaFim,
+            @RequestParam(value = "page", required = false) Integer page,
+            @RequestParam(value = "size", required = false) Integer size) {
         try {
-            var dia = data == null ? java.time.LocalDate.now() : java.time.LocalDate.parse(data);
+            java.time.LocalDate dia = null;
+            java.time.LocalDate inicio = null;
+            java.time.LocalDate fim = null;
+            if (data != null && !data.isBlank()) {
+                dia = java.time.LocalDate.parse(data);
+            } else if (periodoInicio != null && periodoFim != null) {
+                inicio = java.time.LocalDate.parse(periodoInicio);
+                fim = java.time.LocalDate.parse(periodoFim);
+            }
             var lista = new java.util.ArrayList<java.util.Map<String, Object>>();
 
             var tIni = safeParseLocalTime(horaInicio);
             var tFim = safeParseLocalTime(horaFim);
 
             // Movimentações manuais (entrada/retirada)
-            lista.addAll(buildManualMovRows(dia));
+            lista.addAll(buildManualMovRows(dia, inicio, fim));
 
             // Vendas simples (tabela vendas)
-            lista.addAll(buildSimpleSaleRows(dia));
+            lista.addAll(buildSimpleSaleRows(dia, inicio, fim));
 
             // Vendas completas (multi-pagamento) da venda_cabecalho
-            lista.addAll(buildSaleOrderRows(dia));
+            lista.addAll(buildSaleOrderRows(dia, inicio, fim));
 
             // Ordenar por data_movimento desc
             sortByDataMovimentoDesc(lista);
 
             // Filtros opcionais por tipo, método e faixa horária
             var filtrada = applyFilters(lista, tipo, metodoPagamento, tIni, tFim);
-            return ResponseEntity.ok(filtrada);
+
+            // Somatórios no período filtrado
+            double sumEntradas = filtrada.stream()
+                    .filter(m -> TIPO_ENTRADA.equals(m.get("tipo")))
+                    .mapToDouble(m -> ((Number) m.get(KEY_VALOR)).doubleValue())
+                    .sum();
+            double sumRetiradas = filtrada.stream()
+                    .filter(m -> TIPO_RETIRADA.equals(m.get("tipo")))
+                    .mapToDouble(m -> ((Number) m.get(KEY_VALOR)).doubleValue())
+                    .sum();
+            double sumVendas = filtrada.stream()
+                    .filter(m -> TIPO_VENDA.equals(m.get("tipo")))
+                    .mapToDouble(m -> ((Number) m.get(KEY_VALOR)).doubleValue())
+                    .sum();
+
+            // Paginação simples em memória
+            int pageNum = (page == null || page < 1) ? 1 : page;
+            int pageSize = (size == null || size < 1) ? 20 : size;
+            int fromIndex = (pageNum - 1) * pageSize;
+            if (fromIndex >= filtrada.size()) {
+                return ResponseEntity.ok(java.util.Map.of(
+                        KEY_ITEMS, java.util.List.of(),
+                        KEY_TOTAL, filtrada.size(),
+                        KEY_HAS_NEXT, false,
+                        KEY_PAGE, pageNum,
+                        KEY_SIZE, pageSize,
+                        KEY_SUM_ENTRADAS, sumEntradas,
+                        KEY_SUM_RETIRADAS, sumRetiradas,
+                        KEY_SUM_VENDAS, sumVendas));
+            }
+            int toIndex = Math.min(fromIndex + pageSize, filtrada.size());
+            var paged = filtrada.subList(fromIndex, toIndex);
+            boolean hasNext = toIndex < filtrada.size();
+            java.util.Map<String, Object> body = new java.util.LinkedHashMap<>();
+            body.put(KEY_ITEMS, paged);
+            body.put(KEY_TOTAL, filtrada.size());
+            body.put(KEY_HAS_NEXT, hasNext);
+            body.put(KEY_PAGE, pageNum);
+            body.put(KEY_SIZE, pageSize);
+            body.put(KEY_SUM_ENTRADAS, sumEntradas);
+            body.put(KEY_SUM_RETIRADAS, sumRetiradas);
+            body.put(KEY_SUM_VENDAS, sumVendas);
+            return ResponseEntity.ok(body);
         } catch (Exception e) {
             // Em caso de erro, retornar lista vazia para não quebrar o frontend
-            return ResponseEntity.ok(java.util.List.of());
+            return ResponseEntity.ok(java.util.Map.of(
+                    KEY_ITEMS, java.util.List.of(),
+                    KEY_TOTAL, 0,
+                    KEY_HAS_NEXT, false,
+                    KEY_PAGE, 1,
+                    KEY_SIZE, 20,
+                    KEY_SUM_ENTRADAS, 0.0,
+                    KEY_SUM_RETIRADAS, 0.0,
+                    KEY_SUM_VENDAS, 0.0));
         }
     }
 
-    private java.util.List<java.util.Map<String, Object>> buildManualMovRows(java.time.LocalDate dia) {
-        return movimentacaoRepository.findByDia(dia).stream().map(m -> {
+    private java.util.List<java.util.Map<String, Object>> buildManualMovRows(java.time.LocalDate dia,
+            java.time.LocalDate inicio, java.time.LocalDate fim) {
+        java.util.List<CaixaMovimentacao> base;
+        if (dia != null) {
+            base = movimentacaoRepository.findByDia(dia);
+        } else if (inicio != null && fim != null) {
+            base = movimentacaoRepository.findByPeriodo(inicio, fim);
+        } else {
+            base = movimentacaoRepository.findAllOrderByData();
+        }
+        return base.stream().map(m -> {
             java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
             row.put("id", m.getId());
             row.put("tipo", m.getTipo());
@@ -133,11 +213,20 @@ public class CaixaController {
         }).toList();
     }
 
-    private java.util.List<java.util.Map<String, Object>> buildSimpleSaleRows(java.time.LocalDate dia) {
-        return saleRepository.findByDia(dia).stream().map(v -> {
+    private java.util.List<java.util.Map<String, Object>> buildSimpleSaleRows(java.time.LocalDate dia,
+            java.time.LocalDate inicio, java.time.LocalDate fim) {
+        java.util.List<com.example.backendspring.sale.Sale> base;
+        if (dia != null) {
+            base = saleRepository.findByDia(dia);
+        } else if (inicio != null && fim != null) {
+            base = saleRepository.findByPeriodo(inicio, fim);
+        } else {
+            base = java.util.Collections.emptyList();
+        }
+        return base.stream().map(v -> {
             java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
             row.put("id", v.getId());
-            row.put("tipo", "venda");
+            row.put("tipo", TIPO_VENDA);
             row.put(KEY_VALOR, v.getPrecoTotal());
             row.put(KEY_DESCRICAO, "Venda - " + (v.getProduto() != null ? v.getProduto().getNome() : "Produto") +
                     " x" + v.getQuantidadeVendida() + " (" + v.getMetodoPagamento() + ")");
@@ -149,17 +238,27 @@ public class CaixaController {
         }).toList();
     }
 
-    private java.util.List<java.util.Map<String, Object>> buildSaleOrderRows(java.time.LocalDate dia) {
-        return saleOrderRepository.findByDia(dia).stream().flatMap(vo ->
+    private java.util.List<java.util.Map<String, Object>> buildSaleOrderRows(java.time.LocalDate dia,
+            java.time.LocalDate inicio, java.time.LocalDate fim) {
+        java.util.List<com.example.backendspring.sale.SaleOrder> base;
+        if (dia != null) {
+            base = saleOrderRepository.findByDia(dia);
+        } else if (inicio != null && fim != null) {
+            base = saleOrderRepository.findByPeriodo(inicio, fim);
+        } else {
+            base = java.util.Collections.emptyList();
+        }
+        return base.stream().flatMap(vo ->
         // criar uma linha por método de pagamento para permitir filtro por método
         vo.getPagamentos().stream().map(pg -> {
             java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
             row.put("id", vo.getId());
-            row.put("tipo", "venda");
-            // Mostrar o total da venda na coluna de valor
-            row.put(KEY_VALOR, vo.getTotalFinal());
-            // Guardar o valor parcial do método (se necessário no futuro)
+            row.put("tipo", TIPO_VENDA);
+            // Valor da linha: valor do pagamento (para refletir entrada por método)
+            row.put(KEY_VALOR, pg.getValor());
+            // Guardar o valor parcial do método e total da venda
             row.put("pagamento_valor", pg.getValor());
+            row.put("total_venda", vo.getTotalFinal());
             var nf = java.text.NumberFormat.getCurrencyInstance(java.util.Locale.forLanguageTag("pt-BR"));
             String totalFmt = nf.format(vo.getTotalFinal());
             String breakdown = vo.getPagamentos().stream()

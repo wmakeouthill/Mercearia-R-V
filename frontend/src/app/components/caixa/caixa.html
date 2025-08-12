@@ -2,8 +2,20 @@
   <div class="top-bar">
     <div class="filtros">
       <label>
+        Modo
+        <select [(ngModel)]="filtroModo" (change)="onChangeModo()">
+          <option value="tudo">Tudo</option>
+          <option value="dia">Dia</option>
+          <option value="mes">Mês</option>
+        </select>
+      </label>
+      <label>
         Data
-        <input type="date" [(ngModel)]="dataSelecionada" (change)="onChangeData()" />
+        <input type="date" [(ngModel)]="dataSelecionada" (change)="onChangeData()" [disabled]="filtroModo!=='dia'" />
+      </label>
+      <label>
+        Mês
+        <input type="month" [(ngModel)]="mesSelecionado" (change)="onChangeMes()" [disabled]="filtroModo!=='mes'" />
       </label>
     </div>
     <div class="form-mov">
@@ -24,6 +36,22 @@
         <input type="text" [(ngModel)]="descricao" placeholder="Opcional" />
       </label>
       <button (click)="registrar()" [disabled]="loading">Registrar</button>
+    </div>
+  </div>
+
+  <div class="top-bar filtros-secundarios">
+    <div class="filtros">
+      <label>
+        Exibir
+        <select [(ngModel)]="pageSize" (change)="setPageSize(pageSize)">
+          <option [ngValue]="20">20</option>
+          <option [ngValue]="50">50</option>
+          <option [ngValue]="100">100</option>
+        </select>
+      </label>
+      <div style="flex:1"></div>
+      <button class="action-btn" (click)="exportarCsv()">Exportar CSV</button>
+      <button class="action-btn config-btn" (click)="voltarAoDashboard()">Voltar ao Dashboard</button>
     </div>
   </div>
 
@@ -61,7 +89,7 @@
     </div>
   </div>
 
-  @if (resumoVendasDia) {<div class="resumo">
+   @if (resumoVendasDia) {<div class="resumo">
     <div class="card">
       <div class="titulo">Receita de Vendas (dia)</div>
       <div class="valor positivo">
@@ -80,6 +108,12 @@
         R$ {{ totalNoCaixaHoje | number:'1.2-2' }}
       </div>
     </div>
+     <div class="card">
+       <div class="titulo">Somatórios do Período</div>
+       <div class="valor positivo">Entradas: R$ {{ sumEntradas | number:'1.2-2' }}</div>
+       <div class="valor negativo">Retiradas: R$ {{ sumRetiradas | number:'1.2-2' }}</div>
+       <div class="valor">Vendas: R$ {{ sumVendas | number:'1.2-2' }}</div>
+     </div>
   </div>}
 
   <div class="mensagens">
@@ -89,8 +123,8 @@
 
   <div class="lista">
     <h3>Movimentações do dia</h3>
-    @if (!movimentacoes || movimentacoes.length === 0) {<div class="vazia">Sem movimentações</div>}
-    @if (movimentacoes && movimentacoes.length > 0) {
+     @if (!movimentacoes || movimentacoes.length === 0) {<div class="vazia">Sem movimentações</div>}
+     @if (movimentacoes && movimentacoes.length > 0) {
       <div class="tabela-wrapper">
         <div class="tabela-cabecalho">
           <button class="th tipo sort" (click)="setSort('tipo')">Tipo</button>
@@ -125,6 +159,11 @@
             <div class="col data">{{ m.data_movimento | date:'short' }}</div>
           </div>
         }
+         <div class="paginacao" style="display:flex; gap:12px; padding:12px 16px; align-items:center; justify-content:flex-end;">
+           <button class="action-btn close-btn" (click)="prevPage()" [disabled]="page<=1">Anterior</button>
+           <div style="min-width:60px; text-align:center; font-weight:700; color: var(--primary-blue);">{{ page }}</div>
+           <button class="action-btn config-btn" (click)="nextPage()">Próxima</button>
+         </div>
       </div>
     }
   </div>

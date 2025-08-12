@@ -6,6 +6,7 @@ import { CaixaService } from '../../services/caixa.service';
 import { logger } from '../../utils/logger';
 import { forkJoin } from 'rxjs';
 import { RelatorioResumo } from '../../models';
+import { Router } from '@angular/router';
 
 type TipoMovManual = 'entrada' | 'retirada';
 type TipoMovLista = 'entrada' | 'retirada' | 'venda';
@@ -18,7 +19,9 @@ type TipoMovLista = 'entrada' | 'retirada' | 'venda';
   styleUrl: './caixa.scss'
 })
 export class CaixaComponent implements OnInit {
+  filtroModo: 'tudo' | 'dia' | 'mes' = 'tudo';
   dataSelecionada = new Date().toISOString().substring(0, 10);
+  mesSelecionado = new Date().toISOString().substring(0, 7);
   resumo: { data: string; saldo_movimentacoes: number } | null = null;
   resumoVendasDia: RelatorioResumo | null = null;
   movimentacoes: Array<{ id: number; tipo: TipoMovLista; valor: number; descricao?: string; usuario?: string; data_movimento: string; produto_nome?: string; metodo_pagamento?: string; pagamento_valor?: number }> = [];
@@ -35,38 +38,70 @@ export class CaixaComponent implements OnInit {
   loading = false;
   error = '';
   success = '';
+  sumEntradas = 0;
+  sumRetiradas = 0;
+  sumVendas = 0;
+  hasMore = false;
 
   constructor(
     private readonly api: ApiService,
     private readonly caixaService: CaixaService,
+    private readonly router: Router,
   ) { }
 
   ngOnInit(): void {
     this.loadResumoEMovimentacoes();
   }
 
-  onChangeData(): void {
-    this.loadResumoEMovimentacoes();
+  voltarAoDashboard(): void {
+    this.router.navigate(['/dashboard']);
   }
+
+  onChangeData(): void { this.page = 1; this.loadResumoEMovimentacoes(); }
+  onChangeMes(): void { this.page = 1; this.loadResumoEMovimentacoes(); }
+  onChangeModo(): void { this.page = 1; this.loadResumoEMovimentacoes(); }
 
   private loadResumoEMovimentacoes(): void {
     this.error = '';
     this.loading = true;
-    const data = this.dataSelecionada;
+    let dataParam: string | undefined;
+    let periodoInicio: string | undefined;
+    let periodoFim: string | undefined;
+    if (this.filtroModo === 'dia') {
+      dataParam = this.dataSelecionada;
+    } else if (this.filtroModo === 'mes') {
+      const [y, m] = this.mesSelecionado.split('-').map(Number);
+      const first = new Date(y, (m || 1) - 1, 1);
+      const last = new Date(y, (m || 1), 0);
+      periodoInicio = first.toISOString().substring(0, 10);
+      periodoFim = last.toISOString().substring(0, 10);
+    }
+
     forkJoin({
       resumoVendas: this.api.getResumoDia(this.dataSelecionada),
-      resumoMovs: this.caixaService.getResumoMovimentacoesDia(data),
-      movimentacoes: this.caixaService.listarMovimentacoes(
-        data,
-        this.filtroTipo || undefined,
-        this.filtroMetodo || undefined,
-        this.filtroHoraInicio || undefined,
-        this.filtroHoraFim || undefined)
+      resumoMovs: this.caixaService.getResumoMovimentacoesDia(dataParam),
+      movimentacoes: this.caixaService.listarMovimentacoes({
+        data: dataParam,
+        tipo: this.filtroTipo || undefined,
+        metodo_pagamento: this.filtroMetodo || undefined,
+        hora_inicio: this.filtroHoraInicio || undefined,
+        hora_fim: this.filtroHoraFim || undefined,
+        periodo_inicio: periodoInicio,
+        periodo_fim: periodoFim,
+        page: this.page,
+        size: this.pageSize,
+      })
     }).subscribe({
       next: ({ resumoVendas, resumoMovs, movimentacoes }) => {
         this.resumoVendasDia = resumoVendas;
         this.resumo = resumoMovs as any;
-        this.movimentacoes = (movimentacoes as any) || [];
+        const payload = movimentacoes as any;
+        const lista = payload?.items || [];
+        this.movimentacoes = lista;
+        this.hasMore = !!payload?.hasNext;
+        this.sumEntradas = Number(payload?.sum_entradas || 0);
+        this.sumRetiradas = Number(payload?.sum_retiradas || 0);
+        this.sumVendas = Number(payload?.sum_vendas || 0);
         this.applySorting();
         this.loading = false;
       },
@@ -77,6 +112,13 @@ export class CaixaComponent implements OnInit {
       }
     });
   }
+
+  // paginação
+  page = 1;
+  pageSize: 20 | 50 | 100 = 20;
+  setPageSize(n: 20 | 50 | 100) { this.pageSize = n; this.page = 1; this.loadResumoEMovimentacoes(); }
+  nextPage() { this.page++; this.loadResumoEMovimentacoes(); }
+  prevPage() { if (this.page > 1) { this.page--; this.loadResumoEMovimentacoes(); } }
 
   aplicarFiltrosMovs(): void {
     this.loadResumoEMovimentacoes();
@@ -164,6 +206,32 @@ export class CaixaComponent implements OnInit {
           this.loading = false;
         }
       });
+  }
+
+  exportarCsv(): void {
+    const linhas: string[] = [];
+    const headers = ['Tipo', 'Produto', 'Valor', 'Descricao', 'Metodo', 'Usuario', 'DataHora'];
+    linhas.push(headers.join(','));
+    for (const m of this.movimentacoes) {
+      const row = [
+        m.tipo,
+        (m.produto_nome || '').replaceAll(',', ' '),
+        (m.valor ?? 0).toFixed(2),
+        (m.descricao || '').replaceAll(',', ' '),
+        this.getMetodoLabel(m.metodo_pagamento || ''),
+        (m.usuario || '').replaceAll(',', ' '),
+        new Date(m.data_movimento).toLocaleString()
+      ];
+      linhas.push(row.join(','));
+    }
+    const csv = linhas.join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `movimentacoes-caixa-${this.filtroModo}-${this.dataSelecionada}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 }
 
