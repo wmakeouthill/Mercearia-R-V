@@ -220,6 +220,8 @@ function createWindow(): void {
         console.log('⏳ Aguardando Angular compilar...');
         console.log('🔧 Desenvolvimento: Janela será exibida automaticamente');
         waitForAngularDev();
+        // Desabilitar GPU em dev para evitar erros de GPU process
+        app.commandLine.appendSwitch('disable-gpu');
     } else {
         if (WAIT_FOR_EVERYTHING_READY) {
             // Em produção, aguardar backend E frontend estarem prontos

@@ -25,10 +25,8 @@ export class ApiService {
     private readonly http: HttpClient,
     private readonly backendDetector: BackendDetectorService
   ) {
-    // Em produção, tentar detectar o backend automaticamente
-    if (environment.production) {
-      this.detectBackend();
-    }
+    // Detectar backend em qualquer ambiente para evitar race no boot
+    this.detectBackend();
 
     // Iniciar monitoramento de conexão
     this.startConnectionMonitoring();
@@ -63,12 +61,14 @@ export class ApiService {
   }
 
   private startConnectionMonitoring(): void {
-    // Evitar health check logo ao iniciar; dar tempo do backend subir
+    // Checagem mais rápida no início para evitar janela sem backend
+    const initialDelayMs = 1000;
+    const intervalMs = environment.production ? 30000 : 10000;
     setTimeout(() => {
       this.connectionCheckInterval = setInterval(() => {
         this.checkConnection();
-      }, 30000);
-    }, 4000);
+      }, intervalMs);
+    }, initialDelayMs);
   }
 
   private checkConnection(): void {
@@ -121,23 +121,22 @@ export class ApiService {
     console.log(`🔄 Tentativa de reconexão ${this.reconnectionAttempts}/${this.maxReconnectionAttempts} em ${delay}ms`);
 
     setTimeout(() => {
-      if (environment.production) {
-        this.backendDetector.forceDetection().subscribe({
-          next: (backendUrl) => {
-            const apiUrl = `${backendUrl}/api`;
-            console.log('✅ Reconectado ao backend:', apiUrl);
-            this.baseUrl = apiUrl;
-            this.backendUrlSubject.next(apiUrl);
-            this.connectionStatus.next(true);
-            this.reconnectionAttempts = 0;
-          },
-          error: () => {
-            this.scheduleReconnection();
-          }
-        });
-      } else {
-        this.checkConnection();
-      }
+      // Sempre tentar auto-detecção na reconexão para ser mais agressivo
+      this.backendDetector.forceDetection().subscribe({
+        next: (backendUrl) => {
+          const apiUrl = `${backendUrl}/api`;
+          console.log('✅ Reconectado ao backend:', apiUrl);
+          this.baseUrl = apiUrl;
+          this.backendUrlSubject.next(apiUrl);
+          this.connectionStatus.next(true);
+          this.reconnectionAttempts = 0;
+        },
+        error: () => {
+          // fallback: checar conexão com base atual
+          this.checkConnection();
+          this.scheduleReconnection();
+        }
+      });
     }, delay);
   }
 
