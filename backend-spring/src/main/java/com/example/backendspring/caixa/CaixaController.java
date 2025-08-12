@@ -56,6 +56,18 @@ public class CaixaController {
                 .orElse(ResponseEntity.ok(Map.of("id", 1, "aberto", false)));
     }
 
+    private static String labelMetodoPagamento(String metodo) {
+        if (metodo == null)
+            return "";
+        return switch (metodo) {
+            case "dinheiro" -> "Dinheiro";
+            case "cartao_credito" -> "Crédito";
+            case "cartao_debito" -> "Débito";
+            case "pix" -> "PIX";
+            default -> metodo;
+        };
+    }
+
     @GetMapping("/resumo-dia")
     public ResponseEntity<Map<String, Object>> resumoDia(@RequestParam(value = "data", required = false) String data) {
         try {
@@ -73,6 +85,7 @@ public class CaixaController {
 
     @GetMapping("/movimentacoes")
     @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    @SuppressWarnings("java:S6863") // Mantemos 200 OK em caso de erro para não quebrar o frontend
     public ResponseEntity<java.util.List<java.util.Map<String, Object>>> listarMovimentacoes(
             @RequestParam(value = "data", required = false) String data,
             @RequestParam(value = "tipo", required = false) String tipo,
@@ -83,94 +96,126 @@ public class CaixaController {
             var dia = data == null ? java.time.LocalDate.now() : java.time.LocalDate.parse(data);
             var lista = new java.util.ArrayList<java.util.Map<String, Object>>();
 
-            java.time.LocalTime tIni = null;
-            java.time.LocalTime tFim = null;
-            try {
-                if (horaInicio != null && !horaInicio.isBlank())
-                    tIni = java.time.LocalTime.parse(horaInicio); // ignore invalid time format
-            } catch (Exception ignored) {
-                /* ignore invalid time format */ }
-            try {
-                if (horaFim != null && !horaFim.isBlank())
-                    tFim = java.time.LocalTime.parse(horaFim); // ignore invalid time format
-            } catch (Exception ignored) {
-                /* ignore invalid time format */ }
+            var tIni = safeParseLocalTime(horaInicio);
+            var tFim = safeParseLocalTime(horaFim);
 
             // Movimentações manuais (entrada/retirada)
-            lista.addAll(movimentacaoRepository.findByDia(dia).stream().map(m -> {
-                java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
-                row.put("id", m.getId());
-                row.put("tipo", m.getTipo());
-                row.put(KEY_VALOR, m.getValor());
-                row.put(KEY_DESCRICAO, m.getDescricao());
-                row.put(KEY_USUARIO, m.getUsuario() != null ? m.getUsuario().getUsername() : null);
-                row.put(KEY_DATA_MOVIMENTO, m.getDataMovimento());
-                return row;
-            }).toList());
+            lista.addAll(buildManualMovRows(dia));
 
             // Vendas simples (tabela vendas)
-            lista.addAll(saleRepository.findByDia(dia).stream().map(v -> {
-                java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
-                row.put("id", v.getId());
-                row.put("tipo", "venda");
-                row.put(KEY_VALOR, v.getPrecoTotal());
-                row.put(KEY_DESCRICAO, "Venda - " + (v.getProduto() != null ? v.getProduto().getNome() : "Produto") +
-                        " x" + v.getQuantidadeVendida() + " (" + v.getMetodoPagamento() + ")");
-                row.put("produto_nome", v.getProduto() != null ? v.getProduto().getNome() : null);
-                row.put(KEY_METODO_PAGAMENTO, v.getMetodoPagamento());
-                row.put(KEY_USUARIO, null);
-                row.put(KEY_DATA_MOVIMENTO, v.getDataVenda());
-                return row;
-            }).toList());
+            lista.addAll(buildSimpleSaleRows(dia));
 
             // Vendas completas (multi-pagamento) da venda_cabecalho
-            lista.addAll(saleOrderRepository.findByDia(dia).stream().flatMap(vo -> {
-                // criar uma linha por método de pagamento para permitir filtro por método
-                return vo.getPagamentos().stream().map(pg -> {
-                    java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
-                    row.put("id", vo.getId());
-                    row.put("tipo", "venda");
-                    row.put(KEY_VALOR, pg.getValor());
-                    row.put(KEY_DESCRICAO, "Venda (multi) - total " + vo.getTotalFinal());
-                    row.put("produto_nome",
-                            vo.getItens().isEmpty() ? null : vo.getItens().get(0).getProduto().getNome());
-                    row.put(KEY_METODO_PAGAMENTO, pg.getMetodo());
-                    row.put(KEY_USUARIO, null);
-                    row.put(KEY_DATA_MOVIMENTO, vo.getDataVenda());
-                    return row;
-                });
-            }).toList());
+            lista.addAll(buildSaleOrderRows(dia));
 
             // Ordenar por data_movimento desc
-            lista.sort((a, b) -> java.time.OffsetDateTime.parse(b.get(KEY_DATA_MOVIMENTO).toString())
-                    .compareTo(java.time.OffsetDateTime.parse(a.get(KEY_DATA_MOVIMENTO).toString())));
+            sortByDataMovimentoDesc(lista);
 
             // Filtros opcionais por tipo, método e faixa horária
-            java.util.stream.Stream<java.util.Map<String, Object>> stream = lista.stream();
-            if (tipo != null && !tipo.isBlank()) {
-                stream = stream.filter(m -> tipo.equals(m.get("tipo")));
-            }
-            if (metodoPagamento != null && !metodoPagamento.isBlank()) {
-                stream = stream.filter(m -> metodoPagamento.equals(m.get(KEY_METODO_PAGAMENTO)));
-            }
-            if (tIni != null || tFim != null) {
-                final java.time.LocalTime ftIni = tIni;
-                final java.time.LocalTime ftFim = tFim;
-                stream = stream.filter(m -> {
-                    var odt = (java.time.OffsetDateTime) m.get(KEY_DATA_MOVIMENTO);
-                    var time = odt.toLocalTime();
-                    boolean okIni = ftIni == null || !time.isBefore(ftIni);
-                    boolean okFim = ftFim == null || !time.isAfter(ftFim);
-                    return okIni && okFim;
-                });
-            }
-
-            var filtrada = stream.toList();
+            var filtrada = applyFilters(lista, tipo, metodoPagamento, tIni, tFim);
             return ResponseEntity.ok(filtrada);
         } catch (Exception e) {
             // Em caso de erro, retornar lista vazia para não quebrar o frontend
             return ResponseEntity.ok(java.util.List.of());
         }
+    }
+
+    private java.util.List<java.util.Map<String, Object>> buildManualMovRows(java.time.LocalDate dia) {
+        return movimentacaoRepository.findByDia(dia).stream().map(m -> {
+            java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
+            row.put("id", m.getId());
+            row.put("tipo", m.getTipo());
+            row.put(KEY_VALOR, m.getValor());
+            row.put(KEY_DESCRICAO, m.getDescricao());
+            row.put(KEY_USUARIO, m.getUsuario() != null ? m.getUsuario().getUsername() : null);
+            row.put(KEY_DATA_MOVIMENTO, m.getDataMovimento());
+            return row;
+        }).toList();
+    }
+
+    private java.util.List<java.util.Map<String, Object>> buildSimpleSaleRows(java.time.LocalDate dia) {
+        return saleRepository.findByDia(dia).stream().map(v -> {
+            java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
+            row.put("id", v.getId());
+            row.put("tipo", "venda");
+            row.put(KEY_VALOR, v.getPrecoTotal());
+            row.put(KEY_DESCRICAO, "Venda - " + (v.getProduto() != null ? v.getProduto().getNome() : "Produto") +
+                    " x" + v.getQuantidadeVendida() + " (" + v.getMetodoPagamento() + ")");
+            row.put("produto_nome", v.getProduto() != null ? v.getProduto().getNome() : null);
+            row.put(KEY_METODO_PAGAMENTO, v.getMetodoPagamento());
+            row.put(KEY_USUARIO, null);
+            row.put(KEY_DATA_MOVIMENTO, v.getDataVenda());
+            return row;
+        }).toList();
+    }
+
+    private java.util.List<java.util.Map<String, Object>> buildSaleOrderRows(java.time.LocalDate dia) {
+        return saleOrderRepository.findByDia(dia).stream().flatMap(vo ->
+        // criar uma linha por método de pagamento para permitir filtro por método
+        vo.getPagamentos().stream().map(pg -> {
+            java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
+            row.put("id", vo.getId());
+            row.put("tipo", "venda");
+            // Mostrar o total da venda na coluna de valor
+            row.put(KEY_VALOR, vo.getTotalFinal());
+            // Guardar o valor parcial do método (se necessário no futuro)
+            row.put("pagamento_valor", pg.getValor());
+            var nf = java.text.NumberFormat.getCurrencyInstance(java.util.Locale.forLanguageTag("pt-BR"));
+            String totalFmt = nf.format(vo.getTotalFinal());
+            String breakdown = vo.getPagamentos().stream()
+                    .map(p -> labelMetodoPagamento(p.getMetodo()) + " " + nf.format(p.getValor()))
+                    .collect(java.util.stream.Collectors.joining(" | "));
+            row.put(KEY_DESCRICAO, "Venda (multi) - total " + totalFmt + " - " + breakdown);
+            row.put("produto_nome",
+                    vo.getItens().isEmpty() ? null : vo.getItens().get(0).getProduto().getNome());
+            row.put(KEY_METODO_PAGAMENTO, pg.getMetodo());
+            row.put(KEY_USUARIO, null);
+            row.put(KEY_DATA_MOVIMENTO, vo.getDataVenda());
+            return row;
+        })).toList();
+    }
+
+    private static void sortByDataMovimentoDesc(java.util.List<java.util.Map<String, Object>> lista) {
+        lista.sort((a, b) -> java.time.OffsetDateTime.parse(b.get(KEY_DATA_MOVIMENTO).toString())
+                .compareTo(java.time.OffsetDateTime.parse(a.get(KEY_DATA_MOVIMENTO).toString())));
+    }
+
+    private static java.util.List<java.util.Map<String, Object>> applyFilters(
+            java.util.List<java.util.Map<String, Object>> lista,
+            String tipo,
+            String metodoPagamento,
+            java.time.LocalTime tIni,
+            java.time.LocalTime tFim) {
+        java.util.stream.Stream<java.util.Map<String, Object>> stream = lista.stream();
+        if (tipo != null && !tipo.isBlank()) {
+            stream = stream.filter(m -> tipo.equals(m.get("tipo")));
+        }
+        if (metodoPagamento != null && !metodoPagamento.isBlank()) {
+            stream = stream.filter(m -> metodoPagamento.equals(m.get(KEY_METODO_PAGAMENTO)));
+        }
+        if (tIni != null || tFim != null) {
+            final java.time.LocalTime ftIni = tIni;
+            final java.time.LocalTime ftFim = tFim;
+            stream = stream.filter(m -> {
+                var odt = (java.time.OffsetDateTime) m.get(KEY_DATA_MOVIMENTO);
+                var time = odt.toLocalTime();
+                boolean okIni = ftIni == null || !time.isBefore(ftIni);
+                boolean okFim = ftFim == null || !time.isAfter(ftFim);
+                return okIni && okFim;
+            });
+        }
+        return stream.toList();
+    }
+
+    private static java.time.LocalTime safeParseLocalTime(String hora) {
+        try {
+            if (hora != null && !hora.isBlank()) {
+                return java.time.LocalTime.parse(hora);
+            }
+        } catch (Exception ignored) {
+            // formato inválido -> ignorar
+        }
+        return null;
     }
 
     @PostMapping("/movimentacoes")

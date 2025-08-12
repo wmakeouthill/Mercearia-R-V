@@ -90,21 +90,43 @@
   <div class="lista">
     <h3>Movimentações do dia</h3>
     @if (!movimentacoes || movimentacoes.length === 0) {<div class="vazia">Sem movimentações</div>}
-    @for (m of movimentacoes; track $index) {<div class="item">
-      <div class="col tipo">
-        <span class="badge" [ngClass]="{entrada: m.tipo === 'entrada', retirada: m.tipo === 'retirada', venda: m.tipo === 'venda'}">
-          @if (m.tipo === 'entrada') {<span class="icon">➕</span>}
-          @if (m.tipo === 'retirada') {<span class="icon">➖</span>}
-          @if (m.tipo === 'venda') {<span class="icon">🛒</span>}
-          <span class="label">{{ m.tipo }}</span>
-        </span>
+    @if (movimentacoes && movimentacoes.length > 0) {
+      <div class="tabela-wrapper">
+        <div class="tabela-cabecalho">
+          <button class="th tipo sort" (click)="setSort('tipo')">Tipo</button>
+          <div class="th produto">Produto</div>
+          <button class="th valor sort" (click)="setSort('valor')">Valor</button>
+          <div class="th descricao">Descrição</div>
+          <button class="th metodo sort" (click)="setSort('metodo')">Método</button>
+          <div class="th usuario">Usuário</div>
+          <button class="th data sort" (click)="setSort('data')">Data/Hora</button>
+        </div>
+        @for (m of movimentacoes; track $index) {
+          <div class="item">
+            <div class="col tipo">
+              <span class="badge" [ngClass]="{entrada: m.tipo === 'entrada', retirada: m.tipo === 'retirada', venda: m.tipo === 'venda'}">
+                @if (m.tipo === 'entrada') {<span class="icon">➕</span>}
+                @if (m.tipo === 'retirada') {<span class="icon">➖</span>}
+                @if (m.tipo === 'venda') {<span class="icon">🛒</span>}
+                <span class="label">{{ m.tipo }}</span>
+              </span>
+            </div>
+            <div class="col produto">{{ m.produto_nome || '-' }}</div>
+            <div class="col valor">R$ {{ m.valor | number:'1.2-2' }}</div>
+            <div class="col descricao">{{ m.descricao || '-' }}</div>
+            <div class="col metodo">
+              @if (m.metodo_pagamento) {
+                <span class="metodo-badge">{{ getMetodoLabel(m.metodo_pagamento) }} · R$ {{ (m.pagamento_valor || 0) | number:'1.2-2' }}</span>
+              } @else {
+                <span>-</span>
+              }
+            </div>
+            <div class="col usuario">{{ m.usuario || '-' }}</div>
+            <div class="col data">{{ m.data_movimento | date:'short' }}</div>
+          </div>
+        }
       </div>
-      <div class="col produto">{{ m.produto_nome || '-' }}</div>
-      <div class="col valor">R$ {{ m.valor | number:'1.2-2' }}</div>
-      <div class="col descricao">{{ m.descricao || '-' }}</div>
-      <div class="col usuario">{{ m.usuario || '-' }}</div>
-      <div class="col data">{{ m.data_movimento | date:'short' }}</div>
-    </div>}
+    }
   </div>
 </div>
 

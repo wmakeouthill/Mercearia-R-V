@@ -21,11 +21,13 @@ export class CaixaComponent implements OnInit {
   dataSelecionada = new Date().toISOString().substring(0, 10);
   resumo: { data: string; saldo_movimentacoes: number } | null = null;
   resumoVendasDia: RelatorioResumo | null = null;
-  movimentacoes: Array<{ id: number; tipo: TipoMovLista; valor: number; descricao?: string; usuario?: string; data_movimento: string; produto_nome?: string; metodo_pagamento?: string }> = [];
+  movimentacoes: Array<{ id: number; tipo: TipoMovLista; valor: number; descricao?: string; usuario?: string; data_movimento: string; produto_nome?: string; metodo_pagamento?: string; pagamento_valor?: number }> = [];
   filtroTipo = '';
   filtroMetodo = '';
   filtroHoraInicio = '';
   filtroHoraFim = '';
+  sortKey: 'tipo' | 'metodo' | 'valor' | 'data' = 'data';
+  sortDir: 'asc' | 'desc' = 'desc';
 
   tipo: TipoMovManual = 'entrada';
   valor: number | null = null;
@@ -64,7 +66,8 @@ export class CaixaComponent implements OnInit {
       next: ({ resumoVendas, resumoMovs, movimentacoes }) => {
         this.resumoVendasDia = resumoVendas;
         this.resumo = resumoMovs as any;
-        this.movimentacoes = movimentacoes as any;
+        this.movimentacoes = (movimentacoes as any) || [];
+        this.applySorting();
         this.loading = false;
       },
       error: (err) => {
@@ -85,6 +88,46 @@ export class CaixaComponent implements OnInit {
     this.filtroHoraInicio = '';
     this.filtroHoraFim = '';
     this.loadResumoEMovimentacoes();
+  }
+
+  setSort(key: 'tipo' | 'metodo' | 'valor' | 'data'): void {
+    if (this.sortKey === key) {
+      this.sortDir = this.sortDir === 'asc' ? 'desc' : 'asc';
+    } else {
+      this.sortKey = key;
+      this.sortDir = key === 'data' ? 'desc' : 'asc';
+    }
+    this.applySorting();
+  }
+
+  private applySorting(): void {
+    const dir = this.sortDir === 'asc' ? 1 : -1;
+    this.movimentacoes.sort((a, b) => {
+      switch (this.sortKey) {
+        case 'valor':
+          return (a.valor - b.valor) * dir;
+        case 'tipo':
+          return (a.tipo.localeCompare(b.tipo)) * dir;
+        case 'metodo': {
+          const la = this.getMetodoLabel(a.metodo_pagamento || '').toLowerCase();
+          const lb = this.getMetodoLabel(b.metodo_pagamento || '').toLowerCase();
+          return la.localeCompare(lb) * dir;
+        }
+        case 'data':
+        default:
+          return (new Date(a.data_movimento).getTime() - new Date(b.data_movimento).getTime()) * dir;
+      }
+    });
+  }
+
+  getMetodoLabel(metodo: string): string {
+    switch (metodo) {
+      case 'dinheiro': return 'Dinheiro';
+      case 'cartao_credito': return 'Crédito';
+      case 'cartao_debito': return 'Débito';
+      case 'pix': return 'PIX';
+      default: return metodo || '';
+    }
   }
 
   get totalVendasHoje(): number {
