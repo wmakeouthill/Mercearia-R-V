@@ -27,7 +27,7 @@
     </div>
   </div>
 
-  <div class="resumo" *ngIf="resumoVendasDia">
+  @if (resumoVendasDia) {<div class="resumo">
     <div class="card">
       <div class="titulo">Receita de Vendas (dia)</div>
       <div class="valor positivo">
@@ -46,22 +46,22 @@
         R$ {{ totalNoCaixaHoje | number:'1.2-2' }}
       </div>
     </div>
-  </div>
+  </div>}
 
   <div class="mensagens">
-    <div class="erro" *ngIf="error" (click)="error = ''" (keydown.enter)="error = ''" (keydown.space)="error = ''">{{ error }}</div>
-    <div class="sucesso" *ngIf="success" (click)="success = ''" (keydown.enter)="success = ''" (keydown.space)="success = ''">{{ success }}</div>
+    @if (error) {<div class="erro" (click)="error = ''" (keydown.enter)="error = ''" (keydown.space)="error = ''">{{ error }}</div>}
+    @if (success) {<div class="sucesso" (click)="success = ''" (keydown.enter)="success = ''" (keydown.space)="success = ''">{{ success }}</div>}
   </div>
 
   <div class="lista">
     <h3>Movimentações do dia</h3>
-    <div class="vazia" *ngIf="!movimentacoes || movimentacoes.length === 0">Sem movimentações</div>
-    <div class="item" *ngFor="let m of movimentacoes">
+    @if (!movimentacoes || movimentacoes.length === 0) {<div class="vazia">Sem movimentações</div>}
+    @for (m of movimentacoes; track $index) {<div class="item">
       <div class="col tipo">
         <span class="badge" [ngClass]="{entrada: m.tipo === 'entrada', retirada: m.tipo === 'retirada', venda: m.tipo === 'venda'}">
-          <span class="icon" *ngIf="m.tipo === 'entrada'">➕</span>
-          <span class="icon" *ngIf="m.tipo === 'retirada'">➖</span>
-          <span class="icon" *ngIf="m.tipo === 'venda'">🛒</span>
+          @if (m.tipo === 'entrada') {<span class="icon">➕</span>}
+          @if (m.tipo === 'retirada') {<span class="icon">➖</span>}
+          @if (m.tipo === 'venda') {<span class="icon">🛒</span>}
           <span class="label">{{ m.tipo }}</span>
         </span>
       </div>
@@ -70,7 +70,7 @@
       <div class="col descricao">{{ m.descricao || '-' }}</div>
       <div class="col usuario">{{ m.usuario || '-' }}</div>
       <div class="col data">{{ m.data_movimento | date:'short' }}</div>
-    </div>
+    </div>}
   </div>
 </div>
 

@@ -4,33 +4,33 @@
         <button (click)="cancelar()" class="btn-voltar">← Voltar ao Dashboard</button>
     </div>
 
-    <div class="error-message" *ngIf="error">
+    @if (error) {<div class="error-message">
         {{ error }}
-    </div>
+    </div>}
 
-    <div class="success-message" *ngIf="sucesso">
+    @if (sucesso) {<div class="success-message">
         {{ sucesso }}
-    </div>
+    </div>}
 
-    <div class="loading" *ngIf="loading">
+    @if (loading) {<div class="loading">
         {{ isEditing ? 'Carregando produto...' : 'Salvando produto...' }}
-    </div>
+    </div>}
 
-    <form (ngSubmit)="onSubmit()" class="form-produto" *ngIf="!loading">
+    @if (!loading) {<form (ngSubmit)="onSubmit()" class="form-produto">
         <!-- Seção de imagem do produto -->
-        <div class="form-group image-section">
-            <label>Imagem do Produto</label>
+            <div class="form-group image-section">
+            <label for="imagem">Imagem do Produto</label>
             <div class="image-upload-container">
                 <!-- Sempre mostrar preview da imagem (com fallback para padrão) -->
                 <div class="image-preview">
                     <img [src]="imagemPreview || getImageUrl(produto.imagem)" alt="Preview do produto"
                         class="preview-image" (error)="onImageError($event)">
-                    <button type="button" *ngIf="imagemPreview || produto.imagem" (click)="removerImagem()" 
+                    @if (imagemPreview || produto.imagem) {<button type="button" (click)="removerImagem()"
                            class="btn-remove-image" title="Remover imagem">
                         ❌
-                    </button>
+                    </button>}
                 </div>
-                
+
                 <!-- Botões de ação -->
                 <div class="image-actions">
                     <input type="file" id="imagem" (change)="onImageSelected($event)" accept="image/*"
@@ -82,11 +82,10 @@
                 ❌ Cancelar
             </button>
             <button type="submit" [disabled]="loading" class="btn-salvar">
-                <span *ngIf="loading">💾 Salvando...</span>
-                <span *ngIf="!loading">{{ isEditing ? '✏️ Atualizar' : '➕ Criar' }}</span>
+                @if (loading) {<span>💾 Salvando...</span>} @else {<span>{{ isEditing ? '✏️ Atualizar' : '➕ Criar' }}</span>}
             </button>
         </div>
-    </form>
+    </form>}
 
     <div class="form-info">
         <h3>Informações</h3>

@@ -21,23 +21,23 @@
   <!-- Content -->
   <div class="admin-content">
     <!-- Loading -->
-    <div *ngIf="loading" class="loading">
+    @if (loading) {<div class="loading">
       <div class="loading-spinner"></div>
       <span>Carregando...</span>
-    </div>
+    </div>}
 
     <!-- Messages -->
-    <div *ngIf="error" class="message error-message" (click)="clearMessages()">
+    @if (error) {<div class="message error-message" (click)="clearMessages()" (keydown.enter)="clearMessages()" (keydown.space)="clearMessages()">
       <span class="message-icon">⚠️</span>
       <span>{{ error }}</span>
       <button class="close-btn">×</button>
-    </div>
+    </div>}
 
-    <div *ngIf="success" class="message success-message" (click)="clearMessages()">
+    @if (success) {<div class="message success-message" (click)="clearMessages()" (keydown.enter)="clearMessages()" (keydown.space)="clearMessages()">
       <span class="message-icon">✅</span>
       <span>{{ success }}</span>
       <button class="close-btn">×</button>
-    </div>
+    </div>}
 
     <!-- Action Buttons -->
     <div class="action-bar">
@@ -54,7 +54,7 @@
     </div>
 
     <!-- Change Password Form -->
-    <div *ngIf="showChangePasswordForm" class="form-section">
+    @if (showChangePasswordForm) {<div class="form-section">
       <div class="form-card">
         <div class="form-header">
           <h3>Alterar Senha</h3>
@@ -88,16 +88,16 @@
               Cancelar
             </button>
             <button type="submit" class="submit-button" [disabled]="loading">
-              <span *ngIf="loading" class="loading-spinner small"></span>
+              @if (loading) {<span class="loading-spinner small"></span>}
               {{ loading ? 'Alterando...' : 'Alterar Senha' }}
             </button>
           </div>
         </form>
       </div>
-    </div>
+    </div>}
 
     <!-- New User Form -->
-    <div *ngIf="showNewUserForm" class="form-section">
+    @if (showNewUserForm) {<div class="form-section">
       <div class="form-card">
         <div class="form-header">
           <h3>Criar Novo Usuário</h3>
@@ -127,13 +127,13 @@
                 placeholder="Digite a senha" required>
             </div>
 
-            <div class="form-group" *ngIf="newUser.role === 'user'">
+            @if (newUser.role === 'user') {<div class="form-group">
               <label class="checkbox-label">
                 <input type="checkbox" [(ngModel)]="newUser.pode_controlar_caixa" name="newUserCaixaPermission">
                 <span class="checkbox-text">Pode controlar caixa</span>
               </label>
               <p class="help-text">Permite ao operador abrir/fechar o caixa</p>
-            </div>
+            </div>}
           </div>
 
           <div class="form-actions">
@@ -141,13 +141,13 @@
               Cancelar
             </button>
             <button type="submit" class="submit-button" [disabled]="loading">
-              <span *ngIf="loading" class="loading-spinner small"></span>
+              @if (loading) {<span class="loading-spinner small"></span>}
               {{ loading ? 'Criando...' : 'Criar Usuário' }}
             </button>
           </div>
         </form>
       </div>
-    </div>
+    </div>}
 
     <!-- Users List -->
     <div class="users-section">
@@ -156,16 +156,16 @@
         <span class="users-count">{{ users.length }} usuários</span>
       </div>
 
-      <div *ngIf="users.length === 0 && !loading" class="empty-state">
+      @if (users.length === 0 && !loading) {<div class="empty-state">
         <div class="empty-icon">👥</div>
         <h3>Nenhum usuário encontrado</h3>
         <p>Ainda não há usuários cadastrados no sistema.</p>
-      </div>
+      </div>}
 
-      <div *ngIf="users.length > 0" class="users-list">
-        <div *ngFor="let user of users" class="user-card" [class.editing]="user.isEditing">
+      @if (users.length > 0) {<div class="users-list">
+        @for (user of users; track user.id) {<div class="user-card" [class.editing]="user.isEditing">
           <!-- View Mode -->
-          <div *ngIf="!user.isEditing" class="user-view">
+          @if (!user.isEditing) {<div class="user-view">
             <div class="user-info">
               <div class="user-avatar">
                 {{ user.username.charAt(0).toUpperCase() }}
@@ -175,19 +175,19 @@
                 <span class="user-role" [class.admin-role]="user.role === 'admin'">
                   {{ getRoleDisplayName(user.role) }}
                 </span>
-                <span *ngIf="user.id === currentUser?.id" class="current-user-badge">Você</span>
+                @if (user.id === currentUser?.id) {<span class="current-user-badge">Você</span>}
                 <div class="user-permissions">
-                  <span *ngIf="user.role === 'admin'" class="permission-badge admin-permission">
+                  @if (user.role === 'admin') {<span class="permission-badge admin-permission">
                     🔐 Acesso Total
-                  </span>
-                  <span *ngIf="user.role === 'user' && user.pode_controlar_caixa"
+                  </span>}
+                  @if (user.role === 'user' && user.pode_controlar_caixa) {<span
                     class="permission-badge caixa-permission">
                     🗝️ Controla Caixa
-                  </span>
-                  <span *ngIf="user.role === 'user' && !user.pode_controlar_caixa"
+                  </span>}
+                  @if (user.role === 'user' && !user.pode_controlar_caixa) {<span
                     class="permission-badge limited-permission">
                     👤 Acesso Limitado
-                  </span>
+                  </span>}
                 </div>
               </div>
             </div>
@@ -201,20 +201,20 @@
                 🗑️
               </button>
             </div>
-          </div>
+          </div>}
 
           <!-- Edit Mode -->
-          <div *ngIf="user.isEditing" class="user-edit">
+          @if (user.isEditing) {<div class="user-edit">
             <div class="edit-form">
               <div class="edit-row">
                 <div class="edit-group">
-                  <label>Nome de Usuário</label>
-                  <input type="text" [(ngModel)]="user.username" placeholder="Nome de usuário">
+                  <label for="editUsername">Nome de Usuário</label>
+                  <input id="editUsername" type="text" [(ngModel)]="user.username" placeholder="Nome de usuário">
                 </div>
 
-                <div class="edit-group">
-                  <label>Perfil</label>
-                  <select [(ngModel)]="user.role">
+              <div class="edit-group">
+                  <label for="editRole">Perfil</label>
+                  <select id="editRole" [(ngModel)]="user.role">
                     <option value="user">Operador</option>
                     <option value="admin">Administrador</option>
                   </select>
@@ -223,17 +223,17 @@
 
               <div class="edit-row">
                 <div class="edit-group">
-                  <label>Nova Senha (opcional)</label>
-                  <input type="password" [(ngModel)]="user.password" placeholder="Deixe em branco para manter a atual">
+                  <label for="newPassOpt">Nova Senha (opcional)</label>
+                  <input id="newPassOpt" type="password" [(ngModel)]="user.password" placeholder="Deixe em branco para manter a atual">
                 </div>
 
-                <div class="edit-group" *ngIf="user.role === 'user'">
+                @if (user.role === 'user') {<div class="edit-group">
                   <label class="checkbox-label">
                     <input type="checkbox" [(ngModel)]="user.pode_controlar_caixa">
                     <span class="checkbox-text">Pode controlar caixa</span>
                   </label>
                   <p class="help-text">Permite ao operador abrir/fechar o caixa</p>
-                </div>
+                </div>}
               </div>
 
               <div class="edit-actions">
@@ -241,14 +241,14 @@
                   Cancelar
                 </button>
                 <button (click)="updateUser(user)" class="save-button" [disabled]="loading">
-                  <span *ngIf="loading" class="loading-spinner small"></span>
+                  @if (loading) {<span class="loading-spinner small"></span>}
                   {{ loading ? 'Salvando...' : 'Salvar' }}
                 </button>
               </div>
             </div>
-          </div>
-        </div>
-      </div>
+          </div>}
+        </div>}
+      </div>}
     </div>
   </div>
 </div>

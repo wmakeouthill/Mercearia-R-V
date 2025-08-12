@@ -1,15 +1,15 @@
 <div class="app-container">
-  <header class="app-header" *ngIf="!isLoginPage()">
+  @if (!isLoginPage()) {<header class="app-header">
     <div class="header-content">
       <div class="logo-section">
         <h1 class="logo">Mercearia R&V</h1>
         <span class="logo-subtitle">Sistema de Gestão</span>
       </div>
-      <div class="header-actions" *ngIf="!isLoginPage()">
+      @if (!isLoginPage()) {<div class="header-actions">
         <span class="user-welcome">Bem-vindo!</span>
-      </div>
+      </div>}
     </div>
-  </header>
+  </header>}
 
   <main class="main-content" [class.full-height]="isLoginPage()">
     <router-outlet />

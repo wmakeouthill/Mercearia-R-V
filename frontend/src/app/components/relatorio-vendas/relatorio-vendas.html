@@ -4,9 +4,9 @@
         <button (click)="voltarAoDashboard()" class="btn-voltar">← Voltar ao Dashboard</button>
     </div>
 
-    <div class="error-message" *ngIf="error">
+    @if (error) {<div class="error-message">
         {{ error }}
-    </div>
+    </div>}
 
     <!-- Estatísticas Gerais -->
     <div class="estatisticas-grid">
@@ -94,11 +94,11 @@
     <div class="relatorio-content">
         <h2>Relatório {{ filtroPeriodo === 'dia' ? 'Diário' : 'Mensal' }}</h2>
 
-        <div class="loading" *ngIf="loading">
+        @if (loading) {<div class="loading">
             Carregando relatório...
-        </div>
+        </div>}
 
-        <div class="relatorio-tabela" *ngIf="!loading">
+        @if (!loading) {<div class="relatorio-tabela">
             <table class="tabela-relatorio">
                 <thead>
                     <tr>
@@ -110,25 +110,25 @@
                     </tr>
                 </thead>
                 <tbody>
-                    <tr *ngFor="let item of (filtroPeriodo === 'dia' ? relatorioDiario : relatorioMensal)">
+                    @for (item of (filtroPeriodo === 'dia' ? relatorioDiario : relatorioMensal); track item.data) {<tr>
                         <td>{{ formatarData(item.data) }}</td>
                         <td>{{ item.total_vendas }}</td>
                         <td>{{ item.quantidade_vendida }}</td>
                         <td>R$ {{ item.receita_total.toFixed(2) }}</td>
                         <td>R$ {{ (item.receita_total / item.total_vendas).toFixed(2) }}</td>
-                    </tr>
+                    </tr>}
                 </tbody>
             </table>
-        </div>
+        </div>}
     </div>
 
     <!-- Receita por forma de pagamento -->
     <div class="relatorio-content">
         <h2>Receita por forma de pagamento</h2>
-        <div class="loading" *ngIf="loading">
+        @if (loading) {<div class="loading">
             Carregando resumo...
-        </div>
-        <div class="relatorio-tabela" *ngIf="!loading">
+        </div>}
+        @if (!loading) {<div class="relatorio-tabela">
             <table class="tabela-relatorio">
                 <thead>
                     <tr>
@@ -142,47 +142,47 @@
                     </tr>
                 </thead>
                 <tbody>
-                    <tr *ngIf="resumoDia?.por_pagamento as pDia">
+                    @if (resumoDia?.por_pagamento) {<tr>
                         <td>Hoje</td>
-                        <td>R$ {{ (pDia['dinheiro'] || 0) | number:'1.2-2' }}</td>
-                        <td>R$ {{ (pDia['cartao_credito'] || 0) | number:'1.2-2' }}</td>
-                        <td>R$ {{ (pDia['cartao_debito'] || 0) | number:'1.2-2' }}</td>
-                        <td>R$ {{ (pDia['pix'] || 0) | number:'1.2-2' }}</td>
+                        <td>R$ {{ (resumoDia?.por_pagamento?.['dinheiro'] || 0) | number:'1.2-2' }}</td>
+                        <td>R$ {{ (resumoDia?.por_pagamento?.['cartao_credito'] || 0) | number:'1.2-2' }}</td>
+                        <td>R$ {{ (resumoDia?.por_pagamento?.['cartao_debito'] || 0) | number:'1.2-2' }}</td>
+                        <td>R$ {{ (resumoDia?.por_pagamento?.['pix'] || 0) | number:'1.2-2' }}</td>
                         <td>R$ {{ (resumoDia?.receita_total || 0) | number:'1.2-2' }}</td>
                         <td>{{ resumoDia?.vendas_com_multiplo_pagamento || 0 }}</td>
-                    </tr>
-                    <tr *ngIf="resumoMes?.por_pagamento as pMes">
+                    </tr>}
+                    @if (resumoMes?.por_pagamento) {<tr>
                         <td>Mês atual</td>
-                        <td>R$ {{ (pMes['dinheiro'] || 0) | number:'1.2-2' }}</td>
-                        <td>R$ {{ (pMes['cartao_credito'] || 0) | number:'1.2-2' }}</td>
-                        <td>R$ {{ (pMes['cartao_debito'] || 0) | number:'1.2-2' }}</td>
-                        <td>R$ {{ (pMes['pix'] || 0) | number:'1.2-2' }}</td>
+                        <td>R$ {{ (resumoMes?.por_pagamento?.['dinheiro'] || 0) | number:'1.2-2' }}</td>
+                        <td>R$ {{ (resumoMes?.por_pagamento?.['cartao_credito'] || 0) | number:'1.2-2' }}</td>
+                        <td>R$ {{ (resumoMes?.por_pagamento?.['cartao_debito'] || 0) | number:'1.2-2' }}</td>
+                        <td>R$ {{ (resumoMes?.por_pagamento?.['pix'] || 0) | number:'1.2-2' }}</td>
                         <td>R$ {{ (resumoMes?.receita_total || 0) | number:'1.2-2' }}</td>
                         <td>{{ resumoMes?.vendas_com_multiplo_pagamento || 0 }}</td>
-                    </tr>
+                    </tr>}
                 </tbody>
             </table>
-        </div>
+        </div>}
 
         <!-- Gráfico simples em barras usando CSS puro -->
-        <div class="chart-bars" *ngIf="resumoDia?.por_pagamento as bars">
+        @if (resumoDia?.por_pagamento) {<div class="chart-bars">
             <div class="chart-row">
                 <div class="chart-label">Hoje</div>
                 <div class="chart-bar-group">
-                    <div class="bar dinheiro" [style.--v]="(bars['dinheiro']||0)" title="Dinheiro"></div>
-                    <div class="bar credito" [style.--v]="(bars['cartao_credito']||0)" title="Crédito"></div>
-                    <div class="bar debito" [style.--v]="(bars['cartao_debito']||0)" title="Débito"></div>
-                    <div class="bar pix" [style.--v]="(bars['pix']||0)" title="PIX"></div>
+                    <div class="bar dinheiro" [style.--v]="(resumoDia?.por_pagamento?.['dinheiro']||0)" title="Dinheiro"></div>
+                    <div class="bar credito" [style.--v]="(resumoDia?.por_pagamento?.['cartao_credito']||0)" title="Crédito"></div>
+                    <div class="bar debito" [style.--v]="(resumoDia?.por_pagamento?.['cartao_debito']||0)" title="Débito"></div>
+                    <div class="bar pix" [style.--v]="(resumoDia?.por_pagamento?.['pix']||0)" title="PIX"></div>
                 </div>
             </div>
-        </div>
+        </div>}
     </div>
 
     <!-- Lista de Vendas Detalhada -->
     <div class="vendas-detalhadas">
         <h2>📋 Vendas Detalhadas</h2>
 
-        <div class="vendas-tabela" *ngIf="vendasFiltradas.length > 0">
+        @if (vendasFiltradas.length > 0) {<div class="vendas-tabela">
             <table class="tabela-vendas">
                 <thead>
                     <tr>
@@ -195,7 +195,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                    <tr *ngFor="let venda of vendasFiltradas; let i = index" class="venda-row">
+                    @for (venda of vendasFiltradas; track venda.id; let i = $index) {<tr class="venda-row">
                         <td class="venda-numero">{{ vendasFiltradas.length - i }}</td>
                         <td class="venda-data">
                             <span class="data-hora-inline">
@@ -210,23 +210,20 @@
                         </td>
                         <td class="quantidade">{{ venda.quantidade_vendida }}</td>
                         <td class="metodo-pagamento">
-                            <div class="pagamentos-resumo" *ngIf="venda['pagamentos_resumo']; else metodoSimplesRel">
+                            @if (venda['pagamentos_resumo']) {<div class="pagamentos-resumo">
                                 {{ venda['pagamentos_resumo'] }}
-                            </div>
-                            <ng-template #metodoSimplesRel>
-                                {{ getMetodoPagamentoNome(venda.metodo_pagamento) }}
-                            </ng-template>
+                            </div>} @else {<ng-template>{{ getMetodoPagamentoNome(venda.metodo_pagamento) }}</ng-template>}
                         </td>
                         <td class="valor-total">R$ {{ venda.preco_total.toFixed(2) }}</td>
-                    </tr>
+                    </tr>}
                 </tbody>
             </table>
-        </div>
+        </div>}
 
-        <div class="vendas-vazias" *ngIf="vendasFiltradas.length === 0">
+        @if (vendasFiltradas.length === 0) {<div class="vendas-vazias">
             <div class="vazio-icon">📊</div>
             <p>Nenhuma venda encontrada para o período selecionado.</p>
-        </div>
+        </div>}
     </div>
 
 

@@ -25,12 +25,12 @@ import { saveLogsToFile, exportLogsToCSV, getLogStats } from '../../utils/file-l
             <option value="API_REQUEST">API Request</option>
             <option value="API_RESPONSE">API Response</option>
           </select>
-          
+
           <select [(ngModel)]="selectedComponent" (change)="filterLogs()">
             <option value="">Todos os componentes</option>
-            <option *ngFor="let comp of components" [value]="comp">{{ comp }}</option>
+            @for (comp of components; track comp) {<option [value]="comp">{{ comp }}</option>}
           </select>
-          
+
           <button (click)="clearLogs()" class="btn-clear">Limpar Logs</button>
           <button (click)="clearOldLogs()" class="btn-clear-old">Limpar Antigos</button>
           <button (click)="showLogStats()" class="btn-stats">Estatísticas</button>
@@ -64,11 +64,11 @@ import { saveLogsToFile, exportLogsToCSV, getLogStats } from '../../utils/file-l
       </div>
 
       <div class="logs-content">
-        <div *ngIf="filteredLogs.length === 0" class="no-logs">
+        @if (filteredLogs.length === 0) {<div class="no-logs">
           Nenhum log encontrado
-        </div>
-        
-        <div *ngFor="let log of filteredLogs" class="log-entry" [class]="'log-' + log.level.toLowerCase()">
+        </div>}
+
+        @for (log of filteredLogs; track log.timestamp) {<div class="log-entry" [class]="'log-' + log.level.toLowerCase()">
           <div class="log-header">
             <span class="log-timestamp">{{ formatTimestamp(log.timestamp) }}</span>
             <span class="log-level" [class]="'level-' + log.level.toLowerCase()">{{ log.level }}</span>
@@ -76,13 +76,13 @@ import { saveLogsToFile, exportLogsToCSV, getLogStats } from '../../utils/file-l
             <span class="log-action">{{ log.action }}</span>
           </div>
           <div class="log-message">{{ log.message }}</div>
-          <div *ngIf="log.data" class="log-data">
+          @if (log.data) {<div class="log-data">
             <pre>{{ formatData(log.data) }}</pre>
-          </div>
-          <div *ngIf="log.error" class="log-error">
+          </div>}
+          @if (log.error) {<div class="log-error">
             <pre>{{ formatData(log.error) }}</pre>
-          </div>
-        </div>
+          </div>}
+        </div>}
       </div>
     </div>
   `,
@@ -325,15 +325,15 @@ import { saveLogsToFile, exportLogsToCSV, getLogStats } from '../../utils/file-l
         flex-direction: column;
         align-items: stretch;
       }
-      
+
       .logs-controls {
         justify-content: center;
       }
-      
+
       .logs-stats {
         justify-content: center;
       }
-      
+
       .log-header {
         flex-direction: column;
         gap: 5px;
@@ -445,4 +445,4 @@ Log mais recente: ${stats.newestLog ? new Date(stats.newestLog).toLocaleString('
   voltarAoDashboard(): void {
     this.router.navigate(['/dashboard']);
   }
-} 
+}

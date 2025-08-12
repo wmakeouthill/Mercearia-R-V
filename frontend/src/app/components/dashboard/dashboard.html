@@ -25,20 +25,24 @@
 
     <main class="dashboard-main">
         <!-- Mensagens -->
-        <div *ngIf="error" class="message error-message" (click)="clearMessages()" (keydown.enter)="clearMessages()" (keydown.space)="clearMessages()">
-            <span class="message-icon">⚠️</span>
-            <span>{{ error }}</span>
-            <button class="close-btn">×</button>
-        </div>
+        @if (error) {
+            <div class="message error-message" (click)="clearMessages()" (keydown.enter)="clearMessages()" (keydown.space)="clearMessages()">
+                <span class="message-icon">⚠️</span>
+                <span>{{ error }}</span>
+                <button class="close-btn">×</button>
+            </div>
+        }
 
-        <div *ngIf="success" class="message success-message" (click)="clearMessages()" (keydown.enter)="clearMessages()" (keydown.space)="clearMessages()">
-            <span class="message-icon">✅</span>
-            <span>{{ success }}</span>
-            <button class="close-btn">×</button>
-        </div>
+        @if (success) {
+            <div class="message success-message" (click)="clearMessages()" (keydown.enter)="clearMessages()" (keydown.space)="clearMessages()">
+                <span class="message-icon">✅</span>
+                <span>{{ success }}</span>
+                <button class="close-btn">×</button>
+            </div>
+        }
 
         <div class="navigation-grid">
-            <div class="nav-card admin-card" *ngIf="isAdmin" (click)="navigateTo('/produtos')" (keydown.enter)="navigateTo('/produtos')" (keydown.space)="navigateTo('/produtos')">
+            @if (isAdmin) {<div class="nav-card admin-card" (click)="navigateTo('/produtos')" (keydown.enter)="navigateTo('/produtos')" (keydown.space)="navigateTo('/produtos')">
                 <div class="card-header">
                     <div class="nav-icon">📦</div>
                     <h3>Produtos</h3>
@@ -47,9 +51,9 @@
                     <p>Gerenciar produtos e estoque</p>
                     <div class="card-accent admin-accent"></div>
                 </div>
-            </div>
+            </div>}
 
-            <div class="nav-card admin-card" *ngIf="isAdmin" (click)="navigateTo('/caixa')" (keydown.enter)="navigateTo('/caixa')" (keydown.space)="navigateTo('/caixa')">
+            @if (isAdmin) {<div class="nav-card admin-card" (click)="navigateTo('/caixa')" (keydown.enter)="navigateTo('/caixa')" (keydown.space)="navigateTo('/caixa')">
                 <div class="card-header">
                     <div class="nav-icon">🧾</div>
                     <h3>Caixa</h3>
@@ -58,7 +62,7 @@
                     <p>Movimentações e saldo do dia</p>
                     <div class="card-accent admin-accent"></div>
                 </div>
-            </div>
+            </div>}
 
                         <div class="nav-card sales-card" [class.blocked]="!isAdmin && statusCaixa && !statusCaixa.aberto" (click)="handlePontoVendaClick()" (keydown.enter)="handlePontoVendaClick()" (keydown.space)="handlePontoVendaClick()">
                 <div class="card-header">
@@ -71,12 +75,14 @@
                 </div>
 
                 <!-- Overlay de bloqueio quando caixa fechado -->
-                <div class="caixa-blocked-overlay" *ngIf="!isAdmin && statusCaixa && !statusCaixa.aberto">
-                    <div class="overlay-content">
-                        <div class="lock-icon">🔒</div>
-                        <span class="blocked-text">Caixa Fechado</span>
+                @if (!isAdmin && statusCaixa && !statusCaixa.aberto) {
+                    <div class="caixa-blocked-overlay">
+                        <div class="overlay-content">
+                            <div class="lock-icon">🔒</div>
+                            <span class="blocked-text">Caixa Fechado</span>
+                        </div>
                     </div>
-                </div>
+                }
             </div>
 
             <div class="nav-card reports-card" (click)="navigateTo('/relatorios')" (keydown.enter)="navigateTo('/relatorios')" (keydown.space)="navigateTo('/relatorios')">
@@ -90,7 +96,7 @@
                 </div>
             </div>
 
-            <div class="nav-card admin-card" *ngIf="isAdmin" (click)="navigateTo('/produtos/estoque')" (keydown.enter)="navigateTo('/produtos/estoque')" (keydown.space)="navigateTo('/produtos/estoque')">
+            @if (isAdmin) {<div class="nav-card admin-card" (click)="navigateTo('/produtos/estoque')" (keydown.enter)="navigateTo('/produtos/estoque')" (keydown.space)="navigateTo('/produtos/estoque')">
                 <div class="card-header">
                     <div class="nav-icon">📋</div>
                     <h3>Gerenciar Estoque</h3>
@@ -99,9 +105,9 @@
                     <p>Ajustar quantidades</p>
                     <div class="card-accent admin-accent"></div>
                 </div>
-            </div>
+            </div>}
 
-            <div class="nav-card admin-card" *ngIf="isAdmin" (click)="navigateTo('/vendas/historico')" (keydown.enter)="navigateTo('/vendas/historico')" (keydown.space)="navigateTo('/vendas/historico')">
+            @if (isAdmin) {<div class="nav-card admin-card" (click)="navigateTo('/vendas/historico')" (keydown.enter)="navigateTo('/vendas/historico')" (keydown.space)="navigateTo('/vendas/historico')">
                 <div class="card-header">
                     <div class="nav-icon">📈</div>
                     <h3>Histórico de Vendas</h3>
@@ -110,9 +116,9 @@
                     <p>Ver todas as vendas</p>
                     <div class="card-accent admin-accent"></div>
                 </div>
-            </div>
+            </div>}
 
-            <div class="nav-card admin-card" *ngIf="isAdmin" (click)="navigateTo('/logs')" (keydown.enter)="navigateTo('/logs')" (keydown.space)="navigateTo('/logs')">
+            @if (isAdmin) {<div class="nav-card admin-card" (click)="navigateTo('/logs')" (keydown.enter)="navigateTo('/logs')" (keydown.space)="navigateTo('/logs')">
                 <div class="card-header">
                     <div class="nav-icon">📋</div>
                     <h3>Logs do Sistema</h3>
@@ -121,9 +127,9 @@
                     <p>Monitorar atividades</p>
                     <div class="card-accent admin-accent"></div>
                 </div>
-            </div>
+            </div>}
 
-            <div class="nav-card admin-card" *ngIf="isAdmin" (click)="navigateTo('/administracao')" (keydown.enter)="navigateTo('/administracao')" (keydown.space)="navigateTo('/administracao')">
+            @if (isAdmin) {<div class="nav-card admin-card" (click)="navigateTo('/administracao')" (keydown.enter)="navigateTo('/administracao')" (keydown.space)="navigateTo('/administracao')">
                 <div class="card-header">
                     <div class="nav-icon">⚙️</div>
                     <h3>Administração</h3>
@@ -132,7 +138,7 @@
                     <p>Gerenciar usuários e sistema</p>
                     <div class="card-accent admin-accent"></div>
                 </div>
-            </div>
+            </div>}
         </div>
 
         <div class="dashboard-info">
@@ -155,7 +161,7 @@
                             <span class="info-label">Permissões:</span>
                             <span class="info-value">{{ isAdmin ? 'Completas' : 'Limitadas' }}</span>
                         </div>
-                        <div class="info-item caixa-control" *ngIf="podeControlarCaixa">
+                        @if (podeControlarCaixa) {<div class="info-item caixa-control">
                             <span class="info-label">Status do Caixa:</span>
                             <span class="info-value" [class.caixa-aberto]="statusCaixa?.aberto"
                                 [class.caixa-fechado]="!statusCaixa?.aberto">
@@ -166,28 +172,26 @@
                             <div class="caixa-actions">
                                 <button (click)="abrirCaixa()" class="action-btn open-btn"
                                     [disabled]="loading || statusCaixa?.aberto" title="Abrir Caixa">
-                                    <span *ngIf="loading">⏳</span>
-                                    <span *ngIf="!loading">📂</span>
+                                    @if (loading) {<span>⏳</span>} @else {<span>📂</span>}
                                     Abrir Caixa
                                 </button>
                                 <button (click)="fecharCaixa()" class="action-btn close-btn"
                                     [disabled]="loading || !statusCaixa?.aberto" title="Fechar Caixa">
-                                    <span *ngIf="loading">⏳</span>
-                                    <span *ngIf="!loading">🔒</span>
+                                    @if (loading) {<span>⏳</span>} @else {<span>🔒</span>}
                                     Fechar Caixa
                                 </button>
-                                <button *ngIf="isAdmin" (click)="toggleHorariosConfig()" class="action-btn config-btn"
+                                @if (isAdmin) {<button (click)="toggleHorariosConfig()" class="action-btn config-btn"
                                     title="Configurar Horários">
                                     ⚙️ Horários
-                                </button>
+                                </button>}
                             </div>
-                        </div>
+                        </div>}
                     </div>
                 </div>
             </div>
 
             <!-- Configuração de Horários (apenas admin) -->
-            <div *ngIf="showHorariosConfig && isAdmin" class="info-card config-card">
+            @if (showHorariosConfig && isAdmin) {<div class="info-card config-card">
                 <div class="card-header">
                     <h3>⏰ Configuração de Horários Automáticos</h3>
                     <button (click)="toggleHorariosConfig()" class="close-config-btn">×</button>
@@ -205,8 +209,7 @@
                         </div>
                         <div class="form-actions">
                             <button (click)="salvarHorarios()" class="save-btn" [disabled]="loading">
-                                <span *ngIf="loading">⏳</span>
-                                <span *ngIf="!loading">💾</span>
+                                @if (loading) {<span>⏳</span>} @else {<span>💾</span>}
                                 Salvar Horários
                             </button>
                         </div>
@@ -216,7 +219,7 @@
                         </p>
                     </div>
                 </div>
-            </div>
+            </div>}
         </div>
     </main>
 </div>

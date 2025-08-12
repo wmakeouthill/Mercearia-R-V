@@ -144,6 +144,8 @@
     overflow: hidden;
     border: 2px solid transparent;
     position: relative;
+    animation: fadeInUp 0.6s ease-out;
+    animation-fill-mode: both;
 
     &:hover {
         transform: translateY(-4px);
@@ -290,6 +292,37 @@
             }
         }
 
+        &.config-card {
+            margin-top: 20px;
+            border: 2px solid rgba(34, 197, 94, 0.2);
+
+            .card-header {
+                background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+                color: var(--white);
+                position: relative;
+
+                .close-config-btn {
+                    position: absolute;
+                    right: 20px;
+                    top: 50%;
+                    transform: translateY(-50%);
+                    background: rgba(255, 255, 255, 0.2);
+                    border: none;
+                    color: var(--white);
+                    font-size: 18px;
+                    width: 32px;
+                    height: 32px;
+                    border-radius: 50%;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+
+                    &:hover {
+                        background: rgba(255, 255, 255, 0.3);
+                    }
+                }
+            }
+        }
+
         .card-body {
             padding: 24px;
 
@@ -324,212 +357,7 @@
                     }
                 }
             }
-        }
-    }
-}
 
-/* Animações */
-@keyframes fadeInUp {
-    from {
-        opacity: 0;
-        transform: translateY(20px);
-    }
-
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-
-.nav-card {
-    animation: fadeInUp 0.6s ease-out;
-    animation-fill-mode: both;
-}
-
-.nav-card:nth-child(1) {
-    animation-delay: 0.1s;
-}
-
-.nav-card:nth-child(2) {
-    animation-delay: 0.2s;
-}
-
-.nav-card:nth-child(3) {
-    animation-delay: 0.3s;
-}
-
-.nav-card:nth-child(4) {
-    animation-delay: 0.4s;
-}
-
-.nav-card:nth-child(5) {
-    animation-delay: 0.5s;
-}
-
-.nav-card:nth-child(6) {
-    animation-delay: 0.6s;
-}
-
-.nav-card:nth-child(7) {
-    animation-delay: 0.7s;
-}
-
-/* Responsividade */
-@media (max-width: 768px) {
-    .dashboard-header {
-        padding: 24px 0;
-
-        .header-content {
-            flex-direction: column;
-            gap: 20px;
-            text-align: center;
-        }
-
-        .welcome-section h1 {
-            font-size: 28px;
-        }
-
-        .user-info {
-            flex-direction: column;
-            gap: 12px;
-
-            .user-details {
-                align-items: center;
-            }
-        }
-    }
-
-    .dashboard-main {
-        padding: 0 16px 32px;
-    }
-
-    .navigation-grid {
-        grid-template-columns: 1fr;
-        gap: 16px;
-    }
-
-    .nav-card {
-        .card-header {
-            padding: 16px 20px;
-
-            .nav-icon {
-                font-size: 28px;
-            }
-
-            h3 {
-                font-size: 18px;
-            }
-        }
-
-        .card-body {
-            padding: 16px 20px;
-        }
-    }
-}
-
-@media (max-width: 480px) {
-    .dashboard-header .welcome-section h1 {
-        font-size: 24px;
-    }
-
-    .nav-card .card-header {
-        flex-direction: column;
-        text-align: center;
-        gap: 12px;
-
-        .nav-icon {
-            font-size: 24px;
-        }
-
-        h3 {
-            font-size: 16px;
-        }
-    }
-}
-
-/* Estilos para mensagens */
-.message {
-    padding: 16px 20px;
-    border-radius: 12px;
-    margin-bottom: 20px;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    animation: slideIn 0.4s ease-out;
-
-    .message-icon {
-        font-size: 20px;
-    }
-
-    .close-btn {
-        background: none;
-        border: none;
-        font-size: 18px;
-        cursor: pointer;
-        margin-left: auto;
-        opacity: 0.7;
-        transition: opacity 0.2s ease;
-
-        &:hover {
-            opacity: 1;
-        }
-    }
-
-    &.error-message {
-        background: rgba(239, 68, 68, 0.1);
-        border: 1px solid rgba(239, 68, 68, 0.3);
-        color: #dc2626;
-    }
-
-    &.success-message {
-        background: rgba(34, 197, 94, 0.1);
-        border: 1px solid rgba(34, 197, 94, 0.3);
-        color: #16a34a;
-    }
-
-    &:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-    }
-}
-
-/* Estilos para controle de caixa */
-.dashboard-info {
-    .info-card {
-        &.config-card {
-            margin-top: 20px;
-            border: 2px solid rgba(34, 197, 94, 0.2);
-
-            .card-header {
-                background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
-                color: var(--white);
-                position: relative;
-
-                .close-config-btn {
-                    position: absolute;
-                    right: 20px;
-                    top: 50%;
-                    transform: translateY(-50%);
-                    background: rgba(255, 255, 255, 0.2);
-                    border: none;
-                    color: var(--white);
-                    font-size: 18px;
-                    width: 32px;
-                    height: 32px;
-                    border-radius: 50%;
-                    cursor: pointer;
-                    transition: all 0.2s ease;
-
-                    &:hover {
-                        background: rgba(255, 255, 255, 0.3);
-                    }
-                }
-            }
-        }
-
-        .card-body {
             .info-item {
                 &.caixa-control {
                     flex-direction: column;
@@ -702,6 +530,170 @@
         }
     }
 }
+
+/* Animações */
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.nav-card:nth-child(1) {
+    animation-delay: 0.1s;
+}
+
+.nav-card:nth-child(2) {
+    animation-delay: 0.2s;
+}
+
+.nav-card:nth-child(3) {
+    animation-delay: 0.3s;
+}
+
+.nav-card:nth-child(4) {
+    animation-delay: 0.4s;
+}
+
+.nav-card:nth-child(5) {
+    animation-delay: 0.5s;
+}
+
+.nav-card:nth-child(6) {
+    animation-delay: 0.6s;
+}
+
+.nav-card:nth-child(7) {
+    animation-delay: 0.7s;
+}
+
+/* Responsividade */
+@media (max-width: 768px) {
+    .dashboard-header {
+        padding: 24px 0;
+
+        .header-content {
+            flex-direction: column;
+            gap: 20px;
+            text-align: center;
+        }
+
+        .welcome-section h1 {
+            font-size: 28px;
+        }
+
+        .user-info {
+            flex-direction: column;
+            gap: 12px;
+
+            .user-details {
+                align-items: center;
+            }
+        }
+    }
+
+    .dashboard-main {
+        padding: 0 16px 32px;
+    }
+
+    .navigation-grid {
+        grid-template-columns: 1fr;
+        gap: 16px;
+    }
+
+    .nav-card {
+        .card-header {
+            padding: 16px 20px;
+
+            .nav-icon {
+                font-size: 28px;
+            }
+
+            h3 {
+                font-size: 18px;
+            }
+        }
+
+        .card-body {
+            padding: 16px 20px;
+        }
+    }
+}
+
+@media (max-width: 480px) {
+    .dashboard-header .welcome-section h1 {
+        font-size: 24px;
+    }
+
+    .nav-card .card-header {
+        flex-direction: column;
+        text-align: center;
+        gap: 12px;
+
+        .nav-icon {
+            font-size: 24px;
+        }
+
+        h3 {
+            font-size: 16px;
+        }
+    }
+}
+
+/* Estilos para mensagens */
+.message {
+    padding: 16px 20px;
+    border-radius: 12px;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    animation: slideIn 0.4s ease-out;
+
+    .message-icon {
+        font-size: 20px;
+    }
+
+    .close-btn {
+        background: none;
+        border: none;
+        font-size: 18px;
+        cursor: pointer;
+        margin-left: auto;
+        opacity: 0.7;
+        transition: opacity 0.2s ease;
+
+        &:hover {
+            opacity: 1;
+        }
+    }
+
+    &.error-message {
+        background: rgba(239, 68, 68, 0.1);
+        border: 1px solid rgba(239, 68, 68, 0.3);
+        color: #dc2626;
+    }
+
+    &.success-message {
+        background: rgba(34, 197, 94, 0.1);
+        border: 1px solid rgba(34, 197, 94, 0.3);
+        color: #16a34a;
+    }
+
+    &:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    }
+}
+
+/* Estilos para controle de caixa - removidos por duplicidade, conteúdo consolidado acima */
 
 /* Animações */
 @keyframes slideIn {

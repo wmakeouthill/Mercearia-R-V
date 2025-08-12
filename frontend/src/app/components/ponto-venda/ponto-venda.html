@@ -4,22 +4,22 @@
         <button (click)="voltarAoDashboard()" class="btn-voltar">← Voltar ao Dashboard</button>
     </div>
 
-    <div class="error-message" *ngIf="error">
+    @if (error) {<div class="error-message">
         {{ error }}
-    </div>
+    </div>}
 
-    <div class="success-message" *ngIf="sucesso">
+    @if (sucesso) {<div class="success-message">
         {{ sucesso }}
-    </div>
+    </div>}
 
     <!-- Notificação Moderna -->
-    <div class="modern-notification" *ngIf="showModernNotification" [class.show]="showModernNotification">
+    @if (showModernNotification) {<div class="modern-notification" [class.show]="showModernNotification">
         <div class="notification-content">
             <div class="notification-icon">✅</div>
             <div class="notification-text">{{ modernNotificationMessage }}</div>
             <button class="notification-close" (click)="hideModernNotification()">×</button>
         </div>
-    </div>
+    </div>}
 
     <div class="ponto-venda-content">
         <!-- Seção de Seleção de Produtos -->
@@ -33,16 +33,16 @@
                         placeholder="Digite o nome ou código do produto..." class="input-pesquisa">
                     <div class="busca-icon">🔍</div>
                 </div>
-                <div class="busca-info" *ngIf="termoPesquisa.trim()">
+                @if (termoPesquisa.trim()) {<div class="busca-info">
                     {{ produtosFiltrados.length }} produto(s) encontrado(s)
-                </div>
+                </div>}
             </div>
 
             <!-- Lista de Produtos -->
             <div class="lista-produtos">
                 <h3>Produtos Disponíveis</h3>
                 <div class="produtos-grid">
-                    <button type="button" *ngFor="let produto of produtosFiltrados" class="produto-card"
+                    @for (produto of produtosFiltrados; track produto.id) {<button type="button" class="produto-card"
                         [class.selecionado]="produtoSelecionado?.id === produto.id"
                         (click)="selecionarProduto(produto)"
                         (keydown.enter)="selecionarProduto(produto)">
@@ -60,31 +60,31 @@
                                 <span class="estoque">Est: {{ produto.quantidade_estoque }}</span>
                             </div>
                         </div>
-                        <div class="produto-actions" *ngIf="produtoSelecionado?.id === produto.id">
+                        @if (produtoSelecionado?.id === produto.id) {<div class="produto-actions">
                             <div class="quantidade-inline">
                                 <input type="number" [(ngModel)]="quantidade" min="1" [max]="produto.quantidade_estoque"
                                     class="input-qtd-inline" (click)="$event.stopPropagation()" (mousedown)="$event.stopPropagation()">
                                 <button (click)="adicionarAoCarrinho(false); $event.stopPropagation()"
                                     class="btn-add-inline">+ Carrinho</button>
                             </div>
-                        </div>
-                    </button>
+                        </div>}
+                    </button>}
                 </div>
             </div>
 
             <!-- Dica de Seleção -->
-            <div class="dica-selecao" *ngIf="!produtoSelecionado && produtosFiltrados.length > 0">
+            @if (!produtoSelecionado && produtosFiltrados.length > 0) {<div class="dica-selecao">
                 <div class="dica-icon">👆</div>
                 <p>Clique em um produto para selecioná-lo e adicionar ao carrinho</p>
                 <small>💡 Pressione <strong>Enter</strong> para adicionar o produto selecionado ao carrinho</small>
-            </div>
+            </div>}
 
             <!-- Nenhum produto encontrado -->
-            <div class="nenhum-produto" *ngIf="termoPesquisa.trim() && produtosFiltrados.length === 0">
+            @if (termoPesquisa.trim() && produtosFiltrados.length === 0) {<div class="nenhum-produto">
                 <div class="nenhum-icon">❌</div>
                 <p>Nenhum produto encontrado para "{{ termoPesquisa }}"</p>
                 <small>Tente buscar por outro nome ou código</small>
-            </div>
+            </div>}
         </div>
 
         <!-- Seção do Carrinho -->
@@ -94,7 +94,7 @@
 
 
             <!-- Resumo Fixo do Carrinho -->
-            <div class="carrinho-resumo-fixo" *ngIf="carrinho.length > 0">
+            @if (carrinho.length > 0) {<div class="carrinho-resumo-fixo">
                 <div class="resumo-info">
                     <span class="resumo-itens">{{ carrinho.length }} item(s)</span>
                     <span class="resumo-total">R$ {{ getTotalCarrinho().toFixed(2) }}</span>
@@ -102,16 +102,16 @@
                 <div class="resumo-acoes">
                     <button (click)="limparCarrinho()" class="btn-limpar-pequeno" title="Limpar carrinho">🗑️</button>
                 </div>
-            </div>
+            </div>}
 
-            <div class="carrinho-vazio" *ngIf="carrinho.length === 0">
+            @if (carrinho.length === 0) {<div class="carrinho-vazio">
                 <div class="vazio-icon">🛒</div>
                 <p>Nenhum produto no carrinho</p>
                 <small>Selecione produtos à esquerda para adicionar</small>
-            </div>
+            </div>}
 
-            <div class="carrinho-items" *ngIf="carrinho.length > 0">
-                <div class="carrinho-item" *ngFor="let item of carrinho; let i = index">
+            @if (carrinho.length > 0) {<div class="carrinho-items">
+                @for (item of carrinho; track i; let i = $index) {<div class="carrinho-item">
                     <div class="item-imagem">
                         <img [src]="getImageUrl(item.produto.imagem)"
                              [alt]="item.produto.nome"
@@ -135,7 +135,7 @@
                         </div>
                         <button (click)="removerDoCarrinho(i)" class="btn-remover" title="Remover item">🗑️</button>
                     </div>
-                </div>
+                </div>}
 
                 <div class="carrinho-total-detalhado">
                     <div class="total-linha total-final">
@@ -149,24 +149,24 @@
                     <div class="pagamentos-header">
                         <span class="metodo-label">Pagamentos:</span>
                         <div class="metodos-opcoes">
-                            <button *ngFor="let metodo of metodosDisponiveis" class="btn-metodo-compacto"
+                            @for (metodo of metodosDisponiveis; track metodo.valor) {<button class="btn-metodo-compacto"
                                     (click)="adicionarPagamento(metodo.valor)" [title]="'Adicionar '+metodo.nome">
                                 <span class="metodo-icone">{{ metodo.icone }}</span>
                                 <span class="metodo-nome-curto">{{ getMetodoLabelCurto(metodo.valor) }}</span>
-                            </button>
+                            </button>}
                         </div>
                     </div>
-                    <div class="pagamentos-lista" *ngIf="pagamentos.length > 0">
-                        <div class="pagamento-item" *ngFor="let p of pagamentos; let i = index">
+                    @if (pagamentos.length > 0) {<div class="pagamentos-lista">
+                        @for (p of pagamentos; track i; let i = $index) {<div class="pagamento-item">
                             <div class="pagamento-metodo">{{ getMetodoPagamentoNome(p.metodo) }}</div>
                             <input type="number" class="pagamento-valor" [(ngModel)]="p.valor" min="0" step="0.01">
                             <button class="btn-remover" (click)="removerPagamento(i)" title="Remover">🗑️</button>
-                        </div>
+                        </div>}
                         <div class="pagamento-total" [class.invalido]="!isPagamentoValido()">
                             <span>Total Pagamentos:</span>
                             <span>R$ {{ getTotalPagamentos().toFixed(2) }} / R$ {{ getTotalCarrinho().toFixed(2) }}</span>
                         </div>
-                    </div>
+                    </div>}
                 </div>
 
                 <div class="carrinho-acoes-principais">
@@ -174,11 +174,10 @@
                         🗑️ Limpar Carrinho
                     </button>
                     <button (click)="finalizarVenda()" [disabled]="loading" class="btn-finalizar">
-                        <span *ngIf="loading">⏳ Finalizando...</span>
-                        <span *ngIf="!loading">💳 Finalizar Venda</span>
+                        @if (loading) {<span>⏳ Finalizando...</span>} @else {<span>💳 Finalizar Venda</span>}
                     </button>
                 </div>
-            </div>
+            </div>}
         </div>
     </div>
 </div>

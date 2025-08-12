@@ -1,20 +1,20 @@
 <div class="produtos-container">
     <div class="produtos-header">
         <h1>Gerenciar Produtos</h1>
-        <button *ngIf="isAdmin" (click)="novoProduto()" class="btn-primary">
+        @if (isAdmin) {<button (click)="novoProduto()" class="btn-primary">
             ➕ Novo Produto
-        </button>
+        </button>}
     </div>
 
-    <div class="error-message" *ngIf="error">
+    @if (error) {<div class="error-message">
         {{ error }}
-    </div>
+    </div>}
 
-    <div class="loading" *ngIf="loading">
+    @if (loading) {<div class="loading">
         Carregando produtos...
-    </div>
+    </div>}
 
-    <div class="produtos-content" *ngIf="!loading">
+    @if (!loading) {<div class="produtos-content">
         <div class="table-container">
             <table class="produtos-table">
                 <thead>
@@ -29,7 +29,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                    <tr *ngFor="let produto of produtos; let i = index" class="produto-row">
+                    @for (produto of produtos; track produto.id; let i = $index) {<tr class="produto-row">
                         <td class="produto-numero">{{ i + 1 }}</td>
                         <td class="produto-imagem">
                             <div class="produto-imagem-container">
@@ -49,16 +49,16 @@
                             <button (click)="editProduto(produto.id!)" class="btn-edit" title="Editar">
                                 ✏️
                             </button>
-                            <button *ngIf="isAdmin" (click)="deleteProduto(produto.id!)" class="btn-delete"
+                            @if (isAdmin) {<button (click)="deleteProduto(produto.id!)" class="btn-delete"
                                 title="Excluir">
                                 🗑️
-                            </button>
-                            <button *ngIf="isAdmin" (click)="updateEstoque(produto.id!, produto.quantidade_estoque + 1)"
+                            </button>}
+                            @if (isAdmin) {<button (click)="updateEstoque(produto.id!, produto.quantidade_estoque + 1)"
                                 class="btn-add" title="Adicionar ao estoque">
                                 ➕
-                            </button>
+                            </button>}
                         </td>
-                    </tr>
+                    </tr>}
                 </tbody>
             </table>
         </div>
@@ -71,7 +71,7 @@
                 <p><strong>Produtos com estoque baixo:</strong> {{ getProdutosEstoqueBaixo() }}</p>
             </div>
         </div>
-    </div>
+    </div>}
 
     <div class="back-button">
         <button (click)="router.navigate(['/dashboard'])">← Voltar ao Dashboard</button>

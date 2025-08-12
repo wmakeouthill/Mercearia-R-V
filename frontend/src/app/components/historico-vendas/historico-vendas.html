@@ -4,9 +4,9 @@
         <button (click)="voltarAoDashboard()" class="btn-voltar">← Voltar ao Dashboard</button>
     </div>
 
-    <div class="error-message" *ngIf="error">
+    @if (error) {<div class="error-message">
         {{ error }}
-    </div>
+    </div>}
 
     <!-- Estatísticas Gerais -->
     <div class="estatisticas-grid">
@@ -85,11 +85,11 @@
     <div class="vendas-detalhadas">
         <h2>📋 Vendas Registradas</h2>
 
-        <div class="loading" *ngIf="loading">
+        @if (loading) {<div class="loading">
             Carregando vendas...
-        </div>
+        </div>}
 
-        <div class="vendas-tabela" *ngIf="!loading && vendasFiltradas.length > 0">
+        @if (!loading && vendasFiltradas.length > 0) {<div class="vendas-tabela">
             <table class="tabela-vendas">
                 <thead>
                     <tr>
@@ -103,7 +103,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                    <tr *ngFor="let venda of vendasFiltradas; let i = index" class="venda-row">
+                    @for (venda of vendasFiltradas; track venda.id; let i = $index) {<tr class="venda-row">
                         <td class="venda-numero">{{ vendasFiltradas.length - i }}</td>
                         <td class="produto-info">
                             <div class="produto-nome com-imagem">
@@ -113,12 +113,9 @@
                         </td>
                         <td class="quantidade">{{ venda.quantidade_vendida }}</td>
                         <td class="metodo-pagamento">
-                            <div class="pagamentos-resumo" *ngIf="venda['pagamentos_resumo']; else metodoSimples">
+                            @if (venda['pagamentos_resumo']) {<div class="pagamentos-resumo">
                                 {{ venda['pagamentos_resumo'] }}
-                            </div>
-                            <ng-template #metodoSimples>
-                                {{ getMetodoPagamentoNome(venda.metodo_pagamento) }}
-                            </ng-template>
+                            </div>} @else {<ng-template>{{ getMetodoPagamentoNome(venda.metodo_pagamento) }}</ng-template>}
                         </td>
                         <td class="valor-total">R$ {{ venda.preco_total.toFixed(2) }}</td>
                         <td class="venda-data">
@@ -129,14 +126,14 @@
                                 🗑️
                             </button>
                         </td>
-                    </tr>
+                    </tr>}
                 </tbody>
             </table>
-        </div>
+        </div>}
 
-        <div class="vendas-vazias" *ngIf="!loading && vendasFiltradas.length === 0">
+        @if (!loading && vendasFiltradas.length === 0) {<div class="vendas-vazias">
             <div class="vazio-icon">📊</div>
             <p>Nenhuma venda encontrada para os filtros aplicados.</p>
-        </div>
+        </div>}
     </div>
 </div>

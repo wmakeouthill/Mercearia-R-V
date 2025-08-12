@@ -29,8 +29,8 @@ import { logger } from '../../utils/logger';
           >
         </div>
 
-        <div class="produtos-grid" *ngIf="!loading; else loadingTemplate">
-          <div *ngFor="let produto of produtosFiltrados" class="produto-card">
+        @if (!loading) {<div class="produtos-grid">
+          @for (produto of produtosFiltrados; track produto.id) {<div class="produto-card">
             <div class="produto-info">
               <h3>{{ produto.nome }}</h3>
               <p class="codigo">Código: {{ produto.codigo_barras || 'N/A' }}</p>
@@ -62,16 +62,14 @@ import { logger } from '../../utils/logger';
                 </button>
               </div>
             </div>
-          </div>
-        </div>
+          </div>}
+        </div>}
 
-        <ng-template #loadingTemplate>
-          <div class="loading">Carregando produtos...</div>
-        </ng-template>
+        @if (loading) {<div class="loading">Carregando produtos...</div>}
 
-        <div *ngIf="produtosFiltrados.length === 0 && !loading" class="no-produtos">
+        @if (produtosFiltrados.length === 0 && !loading) {<div class="no-produtos">
           Nenhum produto encontrado
-        </div>
+        </div>}
       </div>
 
       <div class="stats-section">
