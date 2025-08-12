@@ -60,8 +60,21 @@ export class CaixaService {
         );
     }
 
-    listarMovimentacoes(data?: string): Observable<Array<{ id: number; tipo: string; valor: number; descricao?: string; usuario?: string; data_movimento: string }>> {
-        const url = data ? `${this.baseUrl}/caixa/movimentacoes?data=${data}` : `${this.baseUrl}/caixa/movimentacoes`;
+    listarMovimentacoes(
+        data?: string,
+        tipo?: string,
+        metodo_pagamento?: string,
+        hora_inicio?: string,
+        hora_fim?: string,
+    ): Observable<Array<{ id: number; tipo: string; valor: number; descricao?: string; usuario?: string; data_movimento: string }>> {
+        const params: string[] = [];
+        if (data) params.push(`data=${encodeURIComponent(data)}`);
+        if (tipo) params.push(`tipo=${encodeURIComponent(tipo)}`);
+        if (metodo_pagamento) params.push(`metodo_pagamento=${encodeURIComponent(metodo_pagamento)}`);
+        if (hora_inicio) params.push(`hora_inicio=${encodeURIComponent(hora_inicio)}`);
+        if (hora_fim) params.push(`hora_fim=${encodeURIComponent(hora_fim)}`);
+        const query = params.length ? `?${params.join('&')}` : '';
+        const url = `${this.baseUrl}/caixa/movimentacoes${query}`;
         return this.makeRequest('LISTAR_MOVIMENTACOES', () => this.http.get<any[]>(url));
     }
 

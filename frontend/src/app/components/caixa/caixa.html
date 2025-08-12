@@ -27,6 +27,40 @@
     </div>
   </div>
 
+  <div class="top-bar filtros-secundarios">
+    <div class="filtros">
+      <label>
+        Tipo
+        <select [(ngModel)]="filtroTipo" (change)="aplicarFiltrosMovs()">
+          <option value="">Todos</option>
+          <option value="entrada">Entrada</option>
+          <option value="retirada">Retirada</option>
+          <option value="venda">Venda</option>
+        </select>
+      </label>
+      <label>
+        Método
+        <select [(ngModel)]="filtroMetodo" (change)="aplicarFiltrosMovs()">
+          <option value="">Todos</option>
+          <option value="dinheiro">Dinheiro</option>
+          <option value="cartao_credito">Cartão Crédito</option>
+          <option value="cartao_debito">Cartão Débito</option>
+          <option value="pix">PIX</option>
+        </select>
+      </label>
+      <label>
+        Início
+        <input type="time" [(ngModel)]="filtroHoraInicio" (change)="aplicarFiltrosMovs()" />
+      </label>
+      <label>
+        Fim
+        <input type="time" [(ngModel)]="filtroHoraFim" (change)="aplicarFiltrosMovs()" />
+      </label>
+      <button class="action-btn config-btn" (click)="aplicarFiltrosMovs()">Filtrar</button>
+      <button class="action-btn close-btn" (click)="limparFiltrosMovs()">Limpar</button>
+    </div>
+  </div>
+
   @if (resumoVendasDia) {<div class="resumo">
     <div class="card">
       <div class="titulo">Receita de Vendas (dia)</div>

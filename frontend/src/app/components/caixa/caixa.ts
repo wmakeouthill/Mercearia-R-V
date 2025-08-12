@@ -21,7 +21,11 @@ export class CaixaComponent implements OnInit {
   dataSelecionada = new Date().toISOString().substring(0, 10);
   resumo: { data: string; saldo_movimentacoes: number } | null = null;
   resumoVendasDia: RelatorioResumo | null = null;
-  movimentacoes: Array<{ id: number; tipo: TipoMovLista; valor: number; descricao?: string; usuario?: string; data_movimento: string; produto_nome?: string }> = [];
+  movimentacoes: Array<{ id: number; tipo: TipoMovLista; valor: number; descricao?: string; usuario?: string; data_movimento: string; produto_nome?: string; metodo_pagamento?: string }> = [];
+  filtroTipo = '';
+  filtroMetodo = '';
+  filtroHoraInicio = '';
+  filtroHoraFim = '';
 
   tipo: TipoMovManual = 'entrada';
   valor: number | null = null;
@@ -50,7 +54,12 @@ export class CaixaComponent implements OnInit {
     forkJoin({
       resumoVendas: this.api.getResumoDia(this.dataSelecionada),
       resumoMovs: this.caixaService.getResumoMovimentacoesDia(data),
-      movimentacoes: this.caixaService.listarMovimentacoes(data)
+      movimentacoes: this.caixaService.listarMovimentacoes(
+        data,
+        this.filtroTipo || undefined,
+        this.filtroMetodo || undefined,
+        this.filtroHoraInicio || undefined,
+        this.filtroHoraFim || undefined)
     }).subscribe({
       next: ({ resumoVendas, resumoMovs, movimentacoes }) => {
         this.resumoVendasDia = resumoVendas;
@@ -64,6 +73,18 @@ export class CaixaComponent implements OnInit {
         logger.error('CAIXA_COMPONENT', 'LOAD_DADOS', 'Erro ao carregar', err);
       }
     });
+  }
+
+  aplicarFiltrosMovs(): void {
+    this.loadResumoEMovimentacoes();
+  }
+
+  limparFiltrosMovs(): void {
+    this.filtroTipo = '';
+    this.filtroMetodo = '';
+    this.filtroHoraInicio = '';
+    this.filtroHoraFim = '';
+    this.loadResumoEMovimentacoes();
   }
 
   get totalVendasHoje(): number {

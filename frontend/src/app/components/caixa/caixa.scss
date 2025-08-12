@@ -24,7 +24,7 @@
     height: 100%;
 
     label { font-weight: 600; color: var(--primary-blue); font-size: 14px; }
-    input[type="date"], select, input[type="number"], input[type="text"] {
+    input[type="date"], select, input[type="number"], input[type="text"], input[type="time"] {
       padding: 8px 10px;
       border: 2px solid var(--medium-gray);
       border-radius: 8px;
@@ -48,6 +48,23 @@
     label { display: flex; flex-direction: column; font-size: 12px; color: var(--primary-blue); }
     .flex-1 { flex: 1; }
     button { background: var(--primary-blue); color: var(--white); border: none; padding: 10px 16px; border-radius: 8px; font-weight: 600; }
+  }
+}
+
+.filtros-secundarios {
+  .filtros {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    button.action-btn {
+      padding: 10px 16px;
+      border-radius: 8px;
+      font-weight: 600;
+      border: none;
+      cursor: pointer;
+    }
+    .config-btn { background: var(--primary-blue); color: var(--white); }
+    .close-btn { background: #ef4444; color: var(--white); }
   }
 }
 
