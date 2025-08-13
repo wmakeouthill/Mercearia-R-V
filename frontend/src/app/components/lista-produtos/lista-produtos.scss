@@ -47,6 +47,33 @@
     }
 }
 
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.btn-voltar {
+    background: linear-gradient(135deg, var(--dark-gray) 0%, #5a6268 100%);
+    color: var(--white);
+    border: none;
+    padding: 12px 24px;
+    border-radius: 12px;
+    cursor: pointer;
+    font-size: 1rem;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    box-shadow: 0 4px 12px rgba(108, 117, 125, 0.3);
+
+    &:hover {
+        background: linear-gradient(135deg, #5a6268 0%, #495057 100%);
+        transform: translateY(-2px);
+        box-shadow: 0 6px 16px rgba(108, 117, 125, 0.4);
+    }
+}
+
 .error-message {
     background: linear-gradient(135deg, #fee 0%, #fdd 100%);
     color: var(--danger);
@@ -332,31 +359,7 @@
     }
 }
 
-.back-button {
-    margin-top: 24px;
-    text-align: center;
-
-    button {
-        background: linear-gradient(135deg, var(--dark-gray) 0%, #5a6268 100%);
-        color: var(--white);
-        border: none;
-        padding: 12px 24px;
-        border-radius: 12px;
-        cursor: pointer;
-        font-size: 1rem;
-        font-weight: 600;
-        transition: all 0.3s ease;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        box-shadow: 0 4px 12px rgba(108, 117, 125, 0.3);
-
-        &:hover {
-            background: linear-gradient(135deg, #5a6268 0%, #495057 100%);
-            transform: translateY(-2px);
-            box-shadow: 0 6px 16px rgba(108, 117, 125, 0.4);
-        }
-    }
-}
+// back-button removido: botão padronizado no topo à direita
 
 // Responsividade
 @media (max-width: 768px) {

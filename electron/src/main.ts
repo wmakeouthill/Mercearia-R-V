@@ -419,15 +419,17 @@ function createWindow(): void {
             loadProductionFrontend();
         }
 
-        // Fallback de segurança para produção - mostrar após 15 segundos independente do estado
-        setTimeout(() => {
-            if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
-                console.log('🚨 Fallback de segurança: Forçando exibição da janela após 15s');
-                mainWindow.setOpacity(1.0);
-                mainWindow.show();
-                mainWindow.focus();
-            }
-        }, 15000);
+        // Fallback de segurança somente quando não exigimos aguardar tudo
+        if (!WAIT_FOR_EVERYTHING_READY) {
+            setTimeout(() => {
+                if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
+                    console.log('🚨 Fallback de segurança: Forçando exibição da janela após 15s');
+                    mainWindow.setOpacity(1.0);
+                    mainWindow.show();
+                    mainWindow.focus();
+                }
+            }, 15000);
+        }
     }
 
     mainWindow.on('closed', () => {
@@ -580,16 +582,7 @@ function waitForProductionReady(): void {
     checkFrontendReady();
     checkBackendReady();
 
-    // Timeout de segurança - mostrar após 5 segundos mesmo se não estiver 100% pronto
-    setTimeout(() => {
-        if (!mainWindow?.isVisible()) {
-            console.log('⚠️ Timeout atingido, mostrando aplicação mesmo sem tudo pronto');
-            console.log(`   - Frontend: ${frontendReady ? '✅' : '❌'}`);
-            console.log(`   - Backend: ${backendReady ? '✅' : '❌'}`);
-            console.log('💡 A aplicação será exibida e tentará conectar automaticamente');
-            showWhenReady();
-        }
-    }, 5000); // Reduzir para 5 segundos para ser mais responsivo
+    // Sem fallback: só mostrar quando backend e frontend estiverem prontos
 }
 
 function loadProductionFrontendHidden(): void {

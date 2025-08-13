@@ -13,10 +13,10 @@ import { saveLogsToFile, exportLogsToCSV, getLogStats } from '../../utils/file-l
     <div class="logs-container">
       <div class="logs-header">
         <div class="header-left">
-          <button (click)="voltarAoDashboard()" class="btn-voltar">← Voltar ao Dashboard</button>
           <h2>📊 Logs do Sistema</h2>
         </div>
         <div class="logs-controls">
+          <button (click)="voltarAoDashboard()" class="btn-voltar">← Voltar ao Dashboard</button>
           <select [(ngModel)]="selectedLevel" (change)="filterLogs()">
             <option value="">Todos os níveis</option>
             <option value="INFO">Info</option>

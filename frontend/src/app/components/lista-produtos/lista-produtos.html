@@ -1,9 +1,12 @@
 <div class="produtos-container">
     <div class="produtos-header">
         <h1>Gerenciar Produtos</h1>
-        @if (isAdmin) {<button (click)="novoProduto()" class="btn-primary">
-            ➕ Novo Produto
-        </button>}
+        <div class="header-actions">
+            <button (click)="router.navigate(['/dashboard'])" class="btn-voltar">← Voltar ao Dashboard</button>
+            @if (isAdmin) {<button (click)="novoProduto()" class="btn-primary">
+                ➕ Novo Produto
+            </button>}
+        </div>
     </div>
 
     @if (error) {<div class="error-message">
@@ -73,7 +76,5 @@
         </div>
     </div>}
 
-    <div class="back-button">
-        <button (click)="router.navigate(['/dashboard'])">← Voltar ao Dashboard</button>
-    </div>
+
 </div>
