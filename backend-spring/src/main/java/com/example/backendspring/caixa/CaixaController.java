@@ -221,7 +221,8 @@ public class CaixaController {
         } else if (inicio != null && fim != null) {
             base = saleRepository.findByPeriodo(inicio, fim);
         } else {
-            base = java.util.Collections.emptyList();
+            // modo "tudo": trazer todas as vendas simples
+            base = saleRepository.findAllOrderByData();
         }
         return base.stream().map(v -> {
             java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
@@ -246,7 +247,8 @@ public class CaixaController {
         } else if (inicio != null && fim != null) {
             base = saleOrderRepository.findByPeriodo(inicio, fim);
         } else {
-            base = java.util.Collections.emptyList();
+            // modo "tudo": trazer todas as vendas multi-pagamento
+            base = saleOrderRepository.findAllOrderByData();
         }
         return base.stream().flatMap(vo ->
         // criar uma linha por método de pagamento para permitir filtro por método

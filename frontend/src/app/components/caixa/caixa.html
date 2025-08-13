@@ -159,10 +159,10 @@
             <div class="col data">{{ m.data_movimento | date:'short' }}</div>
           </div>
         }
-         <div class="paginacao" style="display:flex; gap:12px; padding:12px 16px; align-items:center; justify-content:flex-end;">
+         <div class="paginacao">
            <button class="action-btn close-btn" (click)="prevPage()" [disabled]="page<=1">Anterior</button>
-           <div style="min-width:60px; text-align:center; font-weight:700; color: var(--primary-blue);">{{ page }}</div>
-           <button class="action-btn config-btn" (click)="nextPage()">Próxima</button>
+           <div class="page-indicator">{{ page }}</div>
+           <button class="action-btn config-btn" (click)="nextPage()" [disabled]="!hasMore">Próxima</button>
          </div>
       </div>
     }

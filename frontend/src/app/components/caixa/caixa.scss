@@ -149,6 +149,24 @@
   .badge.retirada { background: rgba(220,38,38,0.12); color: #7f1d1d; border: 1px solid rgba(220,38,38,0.3); }
   .badge.venda { background: rgba(14,165,233,0.12); color: #0c4a6e; border: 1px solid rgba(14,165,233,0.3); }
   .metodo-badge { background: rgba(0,0,0,0.05); border: 1px solid var(--light-gray); padding: 4px 8px; border-radius: 999px; font-weight: 600; font-size: 12px; color: var(--primary-blue); }
+
+  .paginacao {
+    display: flex;
+    gap: 12px;
+    padding: 12px 16px;
+    align-items: center;
+    justify-content: flex-end;
+    .page-indicator {
+      min-width: 60px;
+      text-align: center;
+      font-weight: 700;
+      color: var(--primary-blue);
+    }
+    button.action-btn[disabled] {
+      opacity: .5;
+      cursor: not-allowed;
+    }
+  }
 }
 
 

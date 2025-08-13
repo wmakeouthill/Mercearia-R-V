@@ -23,4 +23,7 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
 
     @Query(value = "SELECT * FROM vendas v WHERE DATE(v.data_venda) = :dia ORDER BY v.data_venda DESC", nativeQuery = true)
     List<Sale> findByDia(@Param("dia") LocalDate dia);
+
+    @Query(value = "SELECT * FROM vendas v ORDER BY v.data_venda DESC", nativeQuery = true)
+    List<Sale> findAllOrderByData();
 }

@@ -42,6 +42,7 @@ export class CaixaComponent implements OnInit {
   sumRetiradas = 0;
   sumVendas = 0;
   hasMore = false;
+  total = 0;
 
   constructor(
     private readonly api: ApiService,
@@ -99,6 +100,7 @@ export class CaixaComponent implements OnInit {
         const lista = payload?.items || [];
         this.movimentacoes = lista;
         this.hasMore = !!payload?.hasNext;
+        this.total = Number(payload?.total || 0);
         this.sumEntradas = Number(payload?.sum_entradas || 0);
         this.sumRetiradas = Number(payload?.sum_retiradas || 0);
         this.sumVendas = Number(payload?.sum_vendas || 0);
@@ -117,7 +119,7 @@ export class CaixaComponent implements OnInit {
   page = 1;
   pageSize: 20 | 50 | 100 = 20;
   setPageSize(n: 20 | 50 | 100) { this.pageSize = n; this.page = 1; this.loadResumoEMovimentacoes(); }
-  nextPage() { this.page++; this.loadResumoEMovimentacoes(); }
+  nextPage() { if (this.hasMore) { this.page++; this.loadResumoEMovimentacoes(); } }
   prevPage() { if (this.page > 1) { this.page--; this.loadResumoEMovimentacoes(); } }
 
   aplicarFiltrosMovs(): void {
