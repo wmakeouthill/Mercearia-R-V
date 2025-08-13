@@ -33,69 +33,80 @@ public class PostgresEmbeddedConfig {
 
     @Bean(destroyMethod = "close")
     public EmbeddedPostgres embeddedPostgres() throws IOException {
-        // Em dev, por padrão, usar diretório TEMPORÁRIO único por execução para evitar
-        // conflitos de postmaster.pid quando um processo anterior não terminou
-        // corretamente.
-        // Para persistir dados entre execuções, defina PERSIST_EMBEDDED_PG=true.
-
-        // Persistência por padrão; defina PERSIST_EMBEDDED_PG=false para usar diretório
-        // temporário
-        boolean persist = !"false".equalsIgnoreCase(System.getenv("PERSIST_EMBEDDED_PG"));
-
-        Path dataDir = null;
-        if (persist) {
-            // Permitir sobrescrever diretório de dados via variável de ambiente
-            // (recomendado em produção)
-            String pgDataDirEnv = System.getenv("PG_DATA_DIR");
-            Path persistentDir = (pgDataDirEnv != null && !pgDataDirEnv.isBlank())
-                    ? Paths.get(pgDataDirEnv).toAbsolutePath()
-                    : Paths.get("data", "pg").toAbsolutePath();
-            try {
-                Files.createDirectories(persistentDir);
-            } catch (IOException ignored) {
-                log.debug("Ignorando falha ao garantir diretório {}: {}", persistentDir, ignored.getMessage());
-            }
-
-            // Se existir lock (postmaster.pid), tentar remover (stale) antes de decidir por
-            // fallback
-            Path lockFile = persistentDir.resolve("postmaster.pid");
-            if (Files.exists(lockFile)) {
-                try {
-                    log.warn("Lock do Postgres encontrado em {}. Tentando remover lock obsoleto...", lockFile);
-                    Files.deleteIfExists(lockFile);
-                    log.info("Lock removido com sucesso. Prosseguindo com diretório persistente.");
-                } catch (IOException e) {
-                    log.warn("Falha ao remover lock {} ({}). Usando diretório temporário nesta execução.", lockFile,
-                            e.getMessage());
-                    dataDir = Files.createTempDirectory(TEMP_DIR_PREFIX);
-                }
-            }
-            if (dataDir == null) {
-                dataDir = persistentDir;
-            }
-        } else {
-            dataDir = Files.createTempDirectory(TEMP_DIR_PREFIX);
-        }
-
+        boolean persist = shouldPersistData();
+        Path dataDir = resolveInitialDataDirectory(persist);
         log.info("Embedded Postgres data directory: {} (persist={})", dataDir, persist);
+        return startEmbeddedPostgresWithRetries(dataDir, persist, 3);
+    }
 
-        // Tentar iniciar com algumas tentativas extras (ambientes Windows podem
-        // demorar)
+    private boolean shouldPersistData() {
+        return !"false".equalsIgnoreCase(System.getenv("PERSIST_EMBEDDED_PG"));
+    }
+
+    private Path resolveInitialDataDirectory(boolean persist) throws IOException {
+        if (!persist) {
+            return createTempDataDirectory();
+        }
+        Path persistentDir = resolvePersistentDataDirectoryFromEnv();
+        ensureDirectory(persistentDir);
+        if (!handleStaleLockIfPresent(persistentDir)) {
+            return createTempDataDirectory();
+        }
+        return persistentDir;
+    }
+
+    private Path resolvePersistentDataDirectoryFromEnv() {
+        String pgDataDirEnv = System.getenv("PG_DATA_DIR");
+        return (pgDataDirEnv != null && !pgDataDirEnv.isBlank())
+                ? Paths.get(pgDataDirEnv).toAbsolutePath()
+                : Paths.get("data", "pg").toAbsolutePath();
+    }
+
+    private void ensureDirectory(Path dir) {
+        try {
+            Files.createDirectories(dir);
+        } catch (IOException ignored) {
+            log.debug("Ignorando falha ao garantir diretório {}: {}", dir, ignored.getMessage());
+        }
+    }
+
+    private boolean handleStaleLockIfPresent(Path persistentDir) {
+        Path lockFile = persistentDir.resolve("postmaster.pid");
+        if (!Files.exists(lockFile)) {
+            return true;
+        }
+        try {
+            log.warn("Lock do Postgres encontrado em {}. Tentando remover lock obsoleto...", lockFile);
+            Files.deleteIfExists(lockFile);
+            log.info("Lock removido com sucesso. Prosseguindo com diretório persistente.");
+            return true;
+        } catch (IOException e) {
+            log.warn("Falha ao remover lock {} ({}). Será usado diretório temporário nesta execução.", lockFile,
+                    e.getMessage());
+            return false;
+        }
+    }
+
+    private Path createTempDataDirectory() throws IOException {
+        return Files.createTempDirectory(TEMP_DIR_PREFIX);
+    }
+
+    private EmbeddedPostgres startEmbeddedPostgresWithRetries(Path dataDir, boolean persist, int maxAttempts)
+            throws IOException {
         IOException lastError = null;
-        for (int attempt = 1; attempt <= 3; attempt++) {
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
-                log.info("Iniciando Embedded Postgres (tentativa {}/{})...", attempt, 3);
+                log.info("Iniciando Embedded Postgres (tentativa {}/{})...", attempt, maxAttempts);
                 return EmbeddedPostgres.builder()
                         .setDataDirectory(dataDir)
                         .setCleanDataDirectory(!persist)
                         .start();
             } catch (IOException ex) {
                 lastError = ex;
-                log.warn("Falha ao iniciar Embedded Postgres (tentativa {}/{}): {}", attempt, 3, ex.getMessage());
-                // Na próxima tentativa, usar diretório temporário para evitar qualquer
-                // lock/cache
+                log.warn("Falha ao iniciar Embedded Postgres (tentativa {}/{}): {}", attempt, maxAttempts,
+                        ex.getMessage());
                 try {
-                    dataDir = Files.createTempDirectory(TEMP_DIR_PREFIX);
+                    dataDir = createTempDataDirectory();
                     log.info("Usando diretório temporário para próxima tentativa: {}", dataDir);
                 } catch (IOException ioe) {
                     log.warn("Não foi possível criar diretório temporário para próxima tentativa: {}",

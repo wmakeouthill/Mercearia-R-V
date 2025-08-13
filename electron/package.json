@@ -9,10 +9,10 @@
         "dev": "tsc && electron .",
         "watch": "tsc --watch",
         "build:frontend": "cd ../frontend && npm run build -- --configuration=production",
-        "build:backend": "node -e \"console.log('Skipping backend build: using Spring JAR from root build')\"",
-        "build:all": "npm run build:frontend && npm run build",
-        "dist": "npm run build && electron-builder",
-        "dist:win": "npm run build && electron-builder --win",
+        "build:backend": "cd ../backend-spring && mvn -q -DskipTests package",
+        "build:all": "npm run build:frontend && npm run build:backend && npm run build",
+        "dist": "npm run build:all && electron-builder",
+        "dist:win": "npm run build:all && electron-builder --win",
         "dist:mac": "npm run build:all && electron-builder --mac",
         "dist:linux": "npm run build:all && electron-builder --linux",
         "pack": "npm run build:all && electron-builder --dir"
@@ -35,7 +35,8 @@
         "appId": "com.sistemaestoque.app",
         "productName": "Sistema de Gestão de Estoque",
         "directories": {
-            "output": "dist-installer"
+            "output": "dist-installer2",
+            "buildResources": "../resources"
         },
         "icon": "icon/icon.ico",
         "files": [
@@ -48,8 +49,24 @@
         ],
         "extraResources": [
             {
+                "from": "jdk-21",
+                "to": "jdk/win"
+            },
+            {
+                "from": "jre/win",
+                "to": "jre/win"
+            },
+            {
                 "from": "../backend-spring/target/backend-spring-0.0.1-SNAPSHOT.jar",
                 "to": "backend-spring/backend-spring-0.0.1-SNAPSHOT.jar"
+            },
+            {
+                "from": "../backend-spring/data/pg",
+                "to": "backend-spring/data/pg"
+            },
+            {
+                "from": "../backend-spring/uploads/produtos",
+                "to": "backend-spring/uploads/produtos"
             },
             {
                 "from": "../frontend/dist/sistema-estoque/browser",

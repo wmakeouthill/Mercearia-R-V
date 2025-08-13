@@ -1,9 +1,10 @@
 import { Injectable } from '@angular/core';
-import { BehaviorSubject } from 'rxjs';
+import { BehaviorSubject, firstValueFrom } from 'rxjs';
 import { Router } from '@angular/router';
 import { Usuario, LoginRequest, LoginResponse } from '../models';
 import { logger } from '../utils/logger';
 import { environment } from '../../environments/environment';
+import { BackendDetectorService } from './backend-detector';
 
 @Injectable({
   providedIn: 'root'
@@ -12,7 +13,7 @@ export class AuthService {
   private readonly currentUserSubject = new BehaviorSubject<Usuario | null>(null);
   public currentUser$ = this.currentUserSubject.asObservable();
 
-  constructor(private readonly router: Router) {
+  constructor(private readonly router: Router, private readonly backendDetector: BackendDetectorService) {
     this.loadUserFromStorage();
   }
 
@@ -32,18 +33,31 @@ export class AuthService {
     }
   }
 
+  private async getApiUrl(): Promise<string> {
+    const current = this.backendDetector.getCurrentUrl();
+    if (current) {
+      return `${current}/api`;
+    }
+    try {
+      const detected = await firstValueFrom(this.backendDetector.detectBackendUrl());
+      return `${detected}/api`;
+    } catch {
+      return environment.apiUrl;
+    }
+  }
+
   login(credentials: LoginRequest): Promise<boolean> {
     return new Promise((resolve, reject) => {
       logger.info('AUTH_SERVICE', 'LOGIN', 'Tentativa de login', { username: credentials.username });
 
-      // Chamada real à API
-      fetch(`${environment.apiUrl}/auth/login`, {
+      // Chamada real à API (resolver URL dinamicamente)
+      this.getApiUrl().then((apiUrl) => fetch(`${apiUrl}/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(credentials)
-      })
+      }))
         .then(response => {
           if (!response.ok) {
             logger.error('AUTH_SERVICE', 'LOGIN', 'Credenciais inválidas', { username: credentials.username });
@@ -127,7 +141,8 @@ export class AuthService {
     }
 
     try {
-      const response = await fetch(`${environment.apiUrl}/auth/me`, {
+      const apiUrl = await this.getApiUrl();
+      const response = await fetch(`${apiUrl}/auth/me`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,

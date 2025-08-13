@@ -37,8 +37,12 @@ frontend/coverage/
 ############################################################
 electron/dist/
 electron/dist-installer/
+electron/dist-installer2/
+electron/resources/jdk-21/
 electron/out/
-electron/*.asar
+electron/jdk-21/
+electron/*.
+resources/jdk-21/
 
 ############################################################
 # Backend (Spring/Maven)

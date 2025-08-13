@@ -7,20 +7,32 @@ import { catchError, timeout, retry, map, switchMap, take } from 'rxjs/operators
   providedIn: 'root'
 })
 export class BackendDetectorService {
-  private possibleUrls = [
-    // Tentar IPs primeiro em produção, depois localhost
-    'http://127.0.0.1:3000',
-    'http://localhost:3000',
-    'http://0.0.0.0:3000',
-    // Fallbacks para outras portas
-    'http://127.0.0.1:3001',
-    'http://localhost:3001'
-  ];
+  private readonly possibleUrls = this.buildPossibleUrls();
 
   private currentWorkingUrl: string | null = null;
   private detectionInProgress = false;
 
-  constructor(private http: HttpClient) { }
+  constructor(private readonly http: HttpClient) { }
+
+  private buildPossibleUrls(): string[] {
+    const ports = [3000, 3001, 3002];
+    const maybeHost = (typeof window !== 'undefined' && window?.location?.hostname) ? window.location.hostname : '';
+    const hosts = [
+      '127.0.0.1',
+      'localhost',
+      maybeHost
+    ].filter((h): h is string => Boolean(h));
+
+    const urls: string[] = [];
+    for (const host of hosts) {
+      for (const port of ports) {
+        urls.push(`http://${host}:${port}`);
+      }
+    }
+    // Garantir algumas opções clássicas
+    urls.push('http://0.0.0.0:3000');
+    return Array.from(new Set(urls));
+  }
 
   /**
    * Detecta automaticamente qual URL do backend está funcionando
@@ -56,6 +68,7 @@ export class BackendDetectorService {
     console.log(`🔍 Testando backend ${index + 1}/${this.possibleUrls.length}: ${url}`);
 
     // Primeiro tentar endpoint de health check, depois /test
+    // Tentar health, depois test, depois root sequencialmente
     this.testEndpoint(url, '/health').pipe(
       catchError(() => this.testEndpoint(url, '/test')),
       catchError(() => this.testEndpoint(url, '/'))
@@ -92,9 +105,16 @@ export class BackendDetectorService {
         throw new Error(`Status ${response.status}`);
       }),
       catchError(error => {
-        const message = error.name === 'TimeoutError' ? 'Timeout' :
-          error.status ? `HTTP ${error.status}` :
-            error.message || 'Erro desconhecido';
+        let message: string;
+        if (error && error.name === 'TimeoutError') {
+          message = 'Timeout';
+        } else if (error && typeof error.status === 'number') {
+          message = `HTTP ${error.status}`;
+        } else if (error && typeof error.message === 'string') {
+          message = error.message;
+        } else {
+          message = 'Erro desconhecido';
+        }
         return throwError(() => new Error(message));
       })
     );

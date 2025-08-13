@@ -3,7 +3,7 @@ server:
 
 spring:
   config:
-    import: optional:file:./backend-spring/secrets/application-secrets.yml,optional:file:./backend-spring/secrets/application-secrets.properties
+    import: optional:file:./secrets/application-secrets.yml,optional:file:./secrets/application-secrets.properties
   datasource:
     url: ${DB_URL:}
     username: ${DB_USERNAME:}
@@ -30,6 +30,7 @@ app:
 
 # CORS permissivo similar ao Express
 cors:
+  # Usamos allowed-origin-patterns internamente quando '*' para cobrir IPs/dominios variados e 'null' origin (apps desktop/webviews)
   allowed-origins: "*"
   allowed-methods: "GET,POST,PUT,DELETE,OPTIONS,PATCH"
   allowed-headers: "Authorization,Content-Type,Accept,Origin,X-Requested-With,Access-Control-Request-Method,Access-Control-Request-Headers"

@@ -3,7 +3,8 @@ import type { Input, OnHeadersReceivedListenerDetails, HeadersReceivedResponse, 
 import { inspect } from 'util';
 import * as path from 'path';
 import * as childProcess from 'child_process';
-import { execSync } from 'child_process';
+// execSync removido; usando spawnSync para evitar exceptions sem tratamento
+import * as net from 'net';
 import * as fs from 'fs';
 
 let mainWindow: BrowserWindow | null = null;
@@ -14,6 +15,191 @@ let isBackendReady = false;
 let backendRestartAttempts = 0;
 const maxBackendRestartAttempts = 5; // Aumentar tentativas
 let backendShouldBeRunning = false; // Flag para saber se backend deveria estar rodando
+let currentBackendPort = 3000;
+const backendCandidatePorts = [3000, 3001, 3002];
+let backendStdoutStream: fs.WriteStream | null = null;
+let backendStderrStream: fs.WriteStream | null = null;
+
+function isPortFree(port: number): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
+        const server = net.createServer();
+        server.once('error', () => resolve(false));
+        server.once('listening', () => {
+            server.close(() => resolve(true));
+        });
+        server.listen(port, '0.0.0.0');
+    });
+}
+
+async function findFirstFreePort(candidatePorts: number[]): Promise<number> {
+    for (const port of candidatePorts) {
+        // eslint-disable-next-line no-await-in-loop
+        const free = await isPortFree(port);
+        if (free) return port;
+    }
+    return candidatePorts[0];
+}
+
+function resolveJavaExecutable(): string | null {
+    const embeddedJavaPathWin = process.resourcesPath
+        ? path.join(process.resourcesPath, 'jre', 'win', 'bin', 'java.exe')
+        : path.join(__dirname, '../resources/jre/win/bin/java.exe');
+    const embeddedJavaPathUnix = process.resourcesPath
+        ? path.join(process.resourcesPath, 'jre', 'bin', 'java')
+        : path.join(__dirname, '../resources/jre/bin/java');
+    const embeddedJdkPathWin = process.resourcesPath
+        ? path.join(process.resourcesPath, 'jdk', 'win', 'bin', 'java.exe')
+        : path.join(__dirname, '../resources/jdk/win/bin/java.exe');
+    const embeddedJdkPathUnix = process.resourcesPath
+        ? path.join(process.resourcesPath, 'jdk', 'bin', 'java')
+        : path.join(__dirname, '../resources/jdk/bin/java');
+
+    if (process.platform === 'win32' && fs.existsSync(embeddedJavaPathWin)) {
+        console.log('✅ Usando Java embarcado (Windows)');
+        return embeddedJavaPathWin;
+    }
+    if (fs.existsSync(embeddedJavaPathUnix)) {
+        console.log('✅ Usando Java embarcado (Unix-like)');
+        return embeddedJavaPathUnix;
+    }
+    if (process.platform === 'win32' && fs.existsSync(embeddedJdkPathWin)) {
+        console.log('✅ Usando JDK embarcado (Windows)');
+        return embeddedJdkPathWin;
+    }
+    if (fs.existsSync(embeddedJdkPathUnix)) {
+        console.log('✅ Usando JDK embarcado (Unix-like)');
+        return embeddedJdkPathUnix;
+    }
+    const check = childProcess.spawnSync('java', ['-version'], { stdio: 'pipe' });
+    if (check.status === 0) {
+        console.log('✅ Java do sistema disponível');
+        return 'java';
+    }
+    console.error('❌ Java não encontrado (nem embarcado, nem no sistema).');
+    console.error('💡 Instale o Java Runtime (JRE/JDK) ou inclua um JRE embarcado.');
+    return null;
+}
+
+function buildBackendArgs(jarPath: string, port: number): string[] {
+    return ['-jar', jarPath, `--server.port=${port}`, '--server.address=0.0.0.0'];
+}
+
+function computeJarPath(): string {
+    if (process.resourcesPath) {
+        return path.join(process.resourcesPath, 'backend-spring/backend-spring-0.0.1-SNAPSHOT.jar');
+    }
+    return path.join(__dirname, '../resources/backend-spring/backend-spring-0.0.1-SNAPSHOT.jar');
+}
+
+function determineWorkingDir(): string {
+    return process.resourcesPath
+        ? path.join(process.resourcesPath, 'backend-spring')
+        : path.join(__dirname, '../resources/backend-spring');
+}
+
+function attachBackendListeners(proc: childProcess.ChildProcess): void {
+    if (proc.stdout) {
+        proc.stdout.on('data', (data: Buffer) => {
+            const output = data.toString();
+            console.log('Backend STDOUT:', output);
+            // Escrever em arquivo dedicado (produção)
+            try {
+                if (!app.isPackaged) {
+                    // Em desenvolvimento, também gravar para facilitar suporte remoto
+                    const dir = getLogsDirectory();
+                    if (!backendStdoutStream) {
+                        backendStdoutStream = fs.createWriteStream(path.join(dir, 'backend-stdout.log'), { flags: 'a' });
+                    }
+                    backendStdoutStream.write(output);
+                } else if (backendStdoutStream) {
+                    backendStdoutStream.write(output);
+                }
+            } catch { }
+            const springStarted = output.indexOf('Started') !== -1 ||
+                output.indexOf('Tomcat started') !== -1 ||
+                output.indexOf('JVM running') !== -1;
+            if (springStarted) {
+                console.log('✅ Backend (Spring) parece iniciado. Confirmando com health check...');
+            }
+            // Detectar conflito de porta relatado pelo Spring/Tomcat
+            const portInUse = /already in use/i.test(output) || /Address already in use/i.test(output);
+            if (portInUse) {
+                console.error(`❌ Porta ${currentBackendPort} reportada como em uso pelo backend. Tentando próxima...`);
+                const nextIndex = backendCandidatePorts.indexOf(currentBackendPort) + 1;
+                if (nextIndex < backendCandidatePorts.length) {
+                    currentBackendPort = backendCandidatePorts[nextIndex];
+                    stopBackend();
+                    setTimeout(() => { void startBackend(); }, 1000);
+                }
+            }
+        });
+    }
+
+    if (proc.stderr) {
+        proc.stderr.on('data', (data: Buffer) => {
+            const error = data.toString();
+            console.error('Backend STDERR:', error);
+            // Escrever em arquivo dedicado (produção)
+            try {
+                if (!app.isPackaged) {
+                    const dir = getLogsDirectory();
+                    if (!backendStderrStream) {
+                        backendStderrStream = fs.createWriteStream(path.join(dir, 'backend-stderr.log'), { flags: 'a' });
+                    }
+                    backendStderrStream.write(error);
+                } else if (backendStderrStream) {
+                    backendStderrStream.write(error);
+                }
+            } catch { }
+            if (error.includes('EADDRINUSE')) {
+                console.error(`❌ Porta ${currentBackendPort} já está em uso! Tentando próxima...`);
+                const nextIndex = backendCandidatePorts.indexOf(currentBackendPort) + 1;
+                if (nextIndex < backendCandidatePorts.length) {
+                    currentBackendPort = backendCandidatePorts[nextIndex];
+                    stopBackend();
+                    setTimeout(() => { void startBackend(); }, 1000);
+                }
+            } else if (/already in use/i.test(error) || /Address already in use/i.test(error)) {
+                console.error(`❌ Porta ${currentBackendPort} em uso (detectado no STDERR). Tentando próxima...`);
+                const nextIndex = backendCandidatePorts.indexOf(currentBackendPort) + 1;
+                if (nextIndex < backendCandidatePorts.length) {
+                    currentBackendPort = backendCandidatePorts[nextIndex];
+                    stopBackend();
+                    setTimeout(() => { void startBackend(); }, 1000);
+                }
+            } else if (error.includes('ENOENT')) {
+                console.error('❌ Arquivo não encontrado!');
+            } else if (error.includes('EACCES')) {
+                console.error('❌ Permissão negada!');
+            }
+        });
+    }
+
+    proc.on('close', (code: number, signal: string) => {
+        console.log(`❌ Backend process exited with code ${code}, signal: ${signal || 'none'}`);
+        isBackendReady = false;
+        if (backendHealthCheckInterval) {
+            clearInterval(backendHealthCheckInterval);
+            backendHealthCheckInterval = null;
+        }
+        const shouldRestart = backendRestartAttempts < maxBackendRestartAttempts;
+        if (shouldRestart) {
+            backendRestartAttempts++;
+            console.log(`🔄 Reiniciando backend automaticamente (tentativa ${backendRestartAttempts}/${maxBackendRestartAttempts})...`);
+            const reason = signal ? 'sinal ' + signal : 'código ' + code;
+            console.log('   - Motivo: ' + reason);
+            setTimeout(() => { void startBackend(); }, 3000);
+        } else {
+            console.error('🚫 Máximo de tentativas de restart atingido. Backend não será reiniciado automaticamente.');
+            console.log('💡 Use Ctrl+Shift+B ou o menu para reiniciar manualmente');
+        }
+    });
+
+    proc.on('error', (error: Error) => {
+        console.error('❌ Erro ao iniciar backend:', error);
+        isBackendReady = false;
+    });
+}
 
 // ==== LOG EM ARQUIVO (FRONTEND VIA IPC) ====
 function getLogsDirectory(): string {
@@ -339,7 +525,7 @@ function waitForProductionReady(): void {
         const scheduleRecheck = () => setTimeout(runCheckReady, 500);
         const runCheckReady = () => {
             const webContents = mainWindow.webContents;
-            const script = "(document.readyState === 'complete' && window.angular && document.querySelector('app-root')) ? true : (() => { throw new Error('not ready') })()";
+            const script = "document.readyState === 'complete' && !!document.querySelector('app-root')";
             webContents
                 .executeJavaScript(script)
                 .then(() => {
@@ -606,7 +792,7 @@ function createMenu(): void {
     Menu.setApplicationMenu(menu);
 }
 
-function startBackend(): void {
+async function startBackend(): Promise<void> {
     // Garantir que NODE_ENV esteja definido corretamente
     if (!process.env.NODE_ENV) {
         process.env.NODE_ENV = app.isPackaged ? 'production' : 'development';
@@ -634,12 +820,7 @@ function startBackend(): void {
     backendShouldBeRunning = true;
 
     // Em produção, iniciar o backend Spring Boot embutido (JAR)
-    let jarPath = path.join(__dirname, '../resources/backend-spring/backend-spring-0.0.1-SNAPSHOT.jar');
-
-    // Verificar se estamos no executável empacotado
-    if (process.resourcesPath) {
-        jarPath = path.join(process.resourcesPath, 'backend-spring/backend-spring-0.0.1-SNAPSHOT.jar');
-    }
+    const jarPath = computeJarPath();
 
     // Verificar se os arquivos existem nos recursos extraídos
     console.log('📋 Verificando recursos extraídos:');
@@ -655,33 +836,58 @@ function startBackend(): void {
     // Em produção, persistir dados do Postgres embutido na pasta do usuário (userData)
     const userDataDir = app.getPath('userData');
     const pgDataDir = path.join(userDataDir, 'data', 'pg');
-    try { fs.mkdirSync(pgDataDir, { recursive: true }); } catch { }
+    try {
+        fs.mkdirSync(pgDataDir, { recursive: true });
+    } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn('⚠️ Não foi possível criar diretório de dados do Postgres:', message);
+    }
     const env = {
         ...process.env,
         NODE_ENV: 'production',
         PG_DATA_DIR: pgDataDir,
-        PERSIST_EMBEDDED_PG: 'true'
+        PERSIST_EMBEDDED_PG: 'true',
+        LOG_FILE: path.join(userDataDir, 'backend.log')
     } as NodeJS.ProcessEnv;
 
     try {
         console.log('🚀 Iniciando processo do backend (Java)...');
 
-        const workingDir = process.resourcesPath
-            ? path.join(process.resourcesPath, 'backend-spring')
-            : path.join(__dirname, '../resources/backend-spring');
+        const workingDir = determineWorkingDir();
 
-        // Usar Java do sistema
-        let javaExecutable = 'java';
+        // Resolver Java preferindo embarcado
+        const javaExecutable = resolveJavaExecutable();
+        if (!javaExecutable) return;
+
+        // Tentar fixar a 3000, com fallback somente se ocupada
+        const primaryPort = 3000;
+        const free3000 = await isPortFree(primaryPort);
+        currentBackendPort = free3000 ? primaryPort : await findFirstFreePort(backendCandidatePorts);
+
+        const args = buildBackendArgs(jarPath, currentBackendPort);
+
+        // Abrir streams de log (produção e desenvolvimento) antes do spawn
         try {
-            execSync('java -version', { stdio: 'pipe' });
-            console.log('✅ Java encontrado no sistema');
-        } catch (error) {
-            console.error('❌ Java não encontrado no sistema:', error);
-            console.error('💡 Instale o Java Runtime (JRE/JDK) para executar o backend.');
-            return;
+            const logsDir = getLogsDirectory();
+            backendStdoutStream = fs.createWriteStream(path.join(logsDir, 'backend-stdout.log'), { flags: 'a' });
+            backendStderrStream = fs.createWriteStream(path.join(logsDir, 'backend-stderr.log'), { flags: 'a' });
+            const banner = `\n===== Backend start @ ${new Date().toISOString()} =====\n`;
+            backendStdoutStream.write(banner);
+            backendStderrStream.write(banner);
+            // Registrar contexto útil
+            const context = {
+                javaExecutable,
+                jarPath,
+                workingDir,
+                currentBackendPort,
+                userDataDir,
+                envKeys: Object.keys(env)
+            } as Record<string, unknown>;
+            const contextLine = `[electron] startBackend context: ${JSON.stringify(context)}\n`;
+            backendStdoutStream.write(contextLine);
+        } catch (e) {
+            console.error('⚠️ Falha ao preparar arquivos de log do backend:', (e as Error)?.message || e);
         }
-
-        const args = ['-jar', jarPath, '--server.port=3000'];
 
         backendProcess = childProcess.spawn(javaExecutable, args, {
             stdio: 'pipe',
@@ -691,78 +897,17 @@ function startBackend(): void {
             windowsHide: true,
             shell: false
         });
-
-        if (backendProcess.stdout) {
-            backendProcess.stdout.on('data', (data: Buffer) => {
-                const output = data.toString();
-                console.log('Backend STDOUT:', output);
-                // Heurísticas de startup do Spring - sem template literals aninhados
-                const springStarted = output.indexOf('Started') !== -1 ||
-                    output.indexOf('Tomcat started') !== -1 ||
-                    output.indexOf('JVM running') !== -1;
-                if (springStarted) {
-                    console.log('✅ Backend (Spring) parece iniciado. Confirmando com health check...');
-                }
-            });
-        }
-
-        if (backendProcess.stderr) {
-            backendProcess.stderr.on('data', (data: Buffer) => {
-                const error = data.toString();
-                console.error('Backend STDERR:', error);
-
-                // Verificar erros específicos
-                if (error.includes('EADDRINUSE')) {
-                    console.error('❌ Porta 3000 já está em uso!');
-                } else if (error.includes('ENOENT')) {
-                    console.error('❌ Arquivo não encontrado!');
-                } else if (error.includes('EACCES')) {
-                    console.error('❌ Permissão negada!');
-                }
-            });
-        }
-
-        backendProcess.on('close', (code: number, signal: string) => {
-            console.log(`❌ Backend process exited with code ${code}, signal: ${signal || 'none'}`);
-            isBackendReady = false;
-
-            // Limpar health check
-            if (backendHealthCheckInterval) {
-                clearInterval(backendHealthCheckInterval);
-                backendHealthCheckInterval = null;
-            }
-
-            // SEMPRE tentar reiniciar o backend se o Electron ainda estiver rodando
-            // A menos que seja um shutdown intencional controlado
-            const shouldRestart = backendRestartAttempts < maxBackendRestartAttempts;
-
-            if (shouldRestart) {
-                backendRestartAttempts++;
-                console.log(`🔄 Reiniciando backend automaticamente (tentativa ${backendRestartAttempts}/${maxBackendRestartAttempts})...`);
-                const reason = signal ? 'sinal ' + signal : 'código ' + code;
-                console.log('   - Motivo: ' + reason);
-                setTimeout(() => {
-                    startBackend(); // Usar startBackend ao invés de restartBackend para evitar loop
-                }, 3000); // Aumentar delay para 3 segundos
-            } else {
-                console.error('🚫 Máximo de tentativas de restart atingido. Backend não será reiniciado automaticamente.');
-                console.log('💡 Use Ctrl+Shift+B ou o menu para reiniciar manualmente');
-            }
-        });
-
-        backendProcess.on('error', (error: Error) => {
-            console.error('❌ Erro ao iniciar backend:', error);
-            isBackendReady = false;
-        });
+        attachBackendListeners(backendProcess);
+        startBackendHealthCheck();
 
         // Timeout para startup do backend
         backendStartupTimeout = setTimeout(() => {
             if (!isBackendReady) {
-                console.error('⚠️ Backend não respondeu após 15 segundos, pode haver um problema');
+                console.error('⚠️ Backend não respondeu após 30 segundos, pode haver um problema');
                 // Tentar reiniciar
                 restartBackend();
             }
-        }, 15000);
+        }, 30000);
 
         console.log('🔄 Backend startup iniciado, aguardando confirmação...');
 
@@ -815,7 +960,7 @@ function testBackendConnection(): Promise<BackendStatus> {
         const http: typeof import('http') = require('http');
         const options = {
             hostname: '127.0.0.1',
-            port: 3000,
+            port: currentBackendPort,
             path: '/health',
             method: 'GET',
             timeout: 5000
@@ -898,6 +1043,17 @@ function stopBackend(): void {
             console.error('❌ Erro ao parar backend:', error);
         }
     }
+    // Fechar streams de log
+    try {
+        if (backendStdoutStream) {
+            backendStdoutStream.end();
+            backendStdoutStream = null;
+        }
+        if (backendStderrStream) {
+            backendStderrStream.end();
+            backendStderrStream = null;
+        }
+    } catch { }
 }
 
 async function clearCache(): Promise<void> {
