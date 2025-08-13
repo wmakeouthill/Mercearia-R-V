@@ -13,7 +13,7 @@ try {
     try {
         const nodeVersion = execSync('node --version', { encoding: 'utf8' }).trim();
         console.log(`✅ Node.js encontrado: ${nodeVersion}`);
-    } catch (error) {
+    } catch {
         console.error('❌ Node.js não encontrado no sistema!');
         console.error('💡 Instale Node.js no sistema para melhor performance');
         process.exit(1);
@@ -75,23 +75,7 @@ try {
     console.log('🧹 Limpando arquivos desnecessários do backend...');
     const backendNodeModulesPath = path.join(__dirname, '../backend/node_modules');
     if (fs.existsSync(backendNodeModulesPath)) {
-        // Remover arquivos de desenvolvimento e documentação para reduzir tamanho
-        const cleanupPatterns = [
-            '**/*.test.js',
-            '**/*.spec.js',
-            '**/test/**',
-            '**/tests/**',
-            '**/docs/**',
-            '**/examples/**',
-            '**/coverage/**',
-            '**/.nyc_output/**',
-            '**/README.md',
-            '**/CHANGELOG.md',
-            '**/LICENSE*',
-            '**/*.d.ts',
-            '**/*.map'
-        ];
-
+        // Apenas log; variáveis não utilizadas removidas para evitar alerta do Sonar
         console.log('  ✅ Configurações de limpeza aplicadas no electron-builder');
     }
 
