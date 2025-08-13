@@ -14,8 +14,10 @@ import { logger } from '../../utils/logger';
   template: `
     <div class="estoque-container">
       <div class="header">
-        <button (click)="voltarAoDashboard()" class="btn-voltar">← Voltar ao Dashboard</button>
         <h2>📋 Gerenciar Estoque</h2>
+        <div class="header-actions">
+          <button (click)="voltarAoDashboard()" class="btn-voltar">← Voltar ao Dashboard</button>
+        </div>
       </div>
 
       <div class="content">
@@ -102,22 +104,37 @@ import { logger } from '../../utils/logger';
     .header {
       display: flex;
       align-items: center;
+      justify-content: space-between;
       gap: 20px;
       margin-bottom: 30px;
+      padding-bottom: 12px;
+      border-bottom: 2px solid #e0e0e0;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
     }
 
     .btn-voltar {
-      padding: 10px 20px;
-      background: #6c757d;
-      color: white;
+      background: linear-gradient(135deg, var(--dark-gray) 0%, #5a6268 100%);
+      color: var(--white);
       border: none;
-      border-radius: 6px;
+      padding: 12px 24px;
+      border-radius: 12px;
       cursor: pointer;
-      font-weight: 500;
+      font-size: 1rem;
+      font-weight: 600;
+      transition: all 0.3s ease;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      box-shadow: 0 4px 12px rgba(108, 117, 125, 0.3);
     }
 
     .btn-voltar:hover {
-      background: #5a6268;
+      background: linear-gradient(135deg, #5a6268 0%, #495057 100%);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 16px rgba(108, 117, 125, 0.4);
     }
 
     .header h2 {

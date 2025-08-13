@@ -3,17 +3,15 @@
   <div class="admin-header">
     <div class="header-content">
       <div class="title-section">
-        <button (click)="goBack()" class="back-button">
-          <span>←</span>
-        </button>
         <div class="title-info">
           <h1>Administração</h1>
           <p>Gerenciar usuários e configurações do sistema</p>
         </div>
       </div>
-      <div class="user-info">
+      <div class="user-info header-actions">
         <span class="current-user">{{ currentUser?.username }}</span>
         <span class="user-badge">Administrador</span>
+        <button (click)="goBack()" class="btn-voltar">← Voltar ao Dashboard</button>
       </div>
     </div>
   </div>

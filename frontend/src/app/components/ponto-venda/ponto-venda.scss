@@ -34,23 +34,23 @@
 }
 
 .btn-voltar {
-    background: linear-gradient(135deg, var(--dark-gray) 0%, #5a6268 100%);
-    color: var(--white);
+    background: linear-gradient(135deg, #DBC27D 0%, #D1B867 100%);
+    color: var(--primary-blue);
     border: none;
     padding: 12px 24px;
     border-radius: 12px;
     cursor: pointer;
     font-size: 1rem;
-    font-weight: 600;
+    font-weight: 700;
     transition: all 0.3s ease;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    box-shadow: 0 4px 12px rgba(108, 117, 125, 0.3);
+    box-shadow: 0 4px 12px rgba(219, 194, 125, 0.3);
 
     &:hover {
-        background: linear-gradient(135deg, #5a6268 0%, #495057 100%);
+        background: linear-gradient(135deg, #D1B867 0%, #C9AA55 100%);
         transform: translateY(-2px);
-        box-shadow: 0 6px 16px rgba(108, 117, 125, 0.4);
+        box-shadow: 0 6px 16px rgba(219, 194, 125, 0.45);
     }
 }
 

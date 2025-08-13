@@ -1,7 +1,9 @@
 <div class="form-produto-container">
     <div class="form-produto-header">
         <h1>{{ isEditing ? 'Editar Produto' : 'Novo Produto' }}</h1>
-        <button (click)="cancelar()" class="btn-voltar">← Voltar ao Dashboard</button>
+        <div class="header-actions">
+            <button (click)="cancelar()" class="btn-voltar">← Voltar ao Dashboard</button>
+        </div>
     </div>
 
     @if (error) {<div class="error-message">

@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { logger, LogEntry } from '../../utils/logger';
-import { saveLogsToFile, exportLogsToCSV, getLogStats } from '../../utils/file-logger';
+import { saveLogsToFile, exportLogsToCSV } from '../../utils/file-logger';
 
 @Component({
   selector: 'app-logs-viewer',
@@ -15,7 +15,7 @@ import { saveLogsToFile, exportLogsToCSV, getLogStats } from '../../utils/file-l
         <div class="header-left">
           <h2>📊 Logs do Sistema</h2>
         </div>
-        <div class="logs-controls">
+        <div class="logs-controls header-actions">
           <button (click)="voltarAoDashboard()" class="btn-voltar">← Voltar ao Dashboard</button>
           <select [(ngModel)]="selectedLevel" (change)="filterLogs()">
             <option value="">Todos os níveis</option>
@@ -109,18 +109,25 @@ import { saveLogsToFile, exportLogsToCSV, getLogStats } from '../../utils/file-l
     }
 
     .btn-voltar {
-      padding: 8px 16px;
-      background: #6c757d;
-      color: white;
+      background: linear-gradient(135deg, #DBC27D 0%, #D1B867 100%);
+      color: var(--primary-blue);
       border: none;
-      border-radius: 4px;
+      padding: 12px 24px;
+      border-radius: 12px;
       cursor: pointer;
-      font-weight: 500;
+      font-size: 1rem;
+      font-weight: 700;
+      transition: all 0.3s ease;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      box-shadow: 0 4px 12px rgba(219, 194, 125, 0.3);
       text-decoration: none;
     }
 
     .btn-voltar:hover {
-      background: #5a6268;
+      background: linear-gradient(135deg, #D1B867 0%, #C9AA55 100%);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 16px rgba(219, 194, 125, 0.45);
     }
 
     .logs-header h2 {
@@ -348,7 +355,7 @@ export class LogsViewerComponent implements OnInit {
   selectedComponent = '';
   components: string[] = [];
 
-  constructor(private router: Router) { }
+  constructor(private readonly router: Router) { }
 
   ngOnInit(): void {
     this.loadLogs();
@@ -363,7 +370,7 @@ export class LogsViewerComponent implements OnInit {
   extractComponents(): void {
     const componentSet = new Set<string>();
     this.logs.forEach(log => componentSet.add(log.component));
-    this.components = Array.from(componentSet).sort();
+    this.components = Array.from(componentSet).sort((a, b) => a.localeCompare(b));
   }
 
   filterLogs(): void {

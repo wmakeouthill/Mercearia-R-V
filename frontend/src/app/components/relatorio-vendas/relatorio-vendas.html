@@ -1,7 +1,9 @@
 <div class="relatorio-container">
     <div class="relatorio-header">
         <h1>Relatório de Vendas</h1>
-        <button (click)="voltarAoDashboard()" class="btn-voltar">← Voltar ao Dashboard</button>
+        <div class="header-actions">
+            <button (click)="voltarAoDashboard()" class="btn-voltar">← Voltar ao Dashboard</button>
+        </div>
     </div>
 
     @if (error) {<div class="error-message">
