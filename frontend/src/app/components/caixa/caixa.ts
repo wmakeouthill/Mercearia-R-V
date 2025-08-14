@@ -7,6 +7,7 @@ import { logger } from '../../utils/logger';
 import { forkJoin } from 'rxjs';
 import { RelatorioResumo } from '../../models';
 import { Router } from '@angular/router';
+import { getCurrentDateForInput } from '../../utils/date-utils';
 
 type TipoMovManual = 'entrada' | 'retirada';
 type TipoMovLista = 'entrada' | 'retirada' | 'venda';
@@ -20,8 +21,8 @@ type TipoMovLista = 'entrada' | 'retirada' | 'venda';
 })
 export class CaixaComponent implements OnInit {
   filtroModo: 'tudo' | 'dia' | 'mes' = 'tudo';
-  dataSelecionada = new Date().toISOString().substring(0, 10);
-  mesSelecionado = new Date().toISOString().substring(0, 7);
+  dataSelecionada = getCurrentDateForInput();
+  mesSelecionado = getCurrentDateForInput().substring(0, 7);
   resumo: { data: string; saldo_movimentacoes: number } | null = null;
   resumoVendasDia: RelatorioResumo | null = null;
   movimentacoes: Array<{ id: number; tipo: TipoMovLista; valor: number; descricao?: string; usuario?: string; data_movimento: string; produto_nome?: string; metodo_pagamento?: string; pagamento_valor?: number }> = [];
@@ -153,8 +154,8 @@ export class CaixaComponent implements OnInit {
         case 'tipo':
           return (a.tipo.localeCompare(b.tipo)) * dir;
         case 'metodo': {
-          const la = this.getMetodoLabel(a.metodo_pagamento || '').toLowerCase();
-          const lb = this.getMetodoLabel(b.metodo_pagamento || '').toLowerCase();
+          const la = this.getMetodosTexto(a).toLowerCase();
+          const lb = this.getMetodosTexto(b).toLowerCase();
           return la.localeCompare(lb) * dir;
         }
         case 'data':
@@ -183,7 +184,11 @@ export class CaixaComponent implements OnInit {
   }
 
   get totalNoCaixaHoje(): number {
-    return this.totalVendasHoje + this.saldoMovimentacoesHoje;
+    if (this.filtroModo === 'dia') {
+      return this.totalVendasHoje + this.saldoMovimentacoesHoje;
+    }
+    const saldoMovPeriodo = (this.sumEntradas || 0) - (this.sumRetiradas || 0);
+    return (this.sumVendas || 0) + saldoMovPeriodo;
   }
 
   registrar(): void {
@@ -220,9 +225,9 @@ export class CaixaComponent implements OnInit {
         (m.produto_nome || '').replaceAll(',', ' '),
         (m.valor ?? 0).toFixed(2),
         (m.descricao || '').replaceAll(',', ' '),
-        this.getMetodoLabel(m.metodo_pagamento || ''),
+        this.getMetodosTexto(m).replaceAll(',', ' '),
         (m.usuario || '').replaceAll(',', ' '),
-        new Date(m.data_movimento).toLocaleString()
+        new Date(m.data_movimento).toLocaleString('pt-BR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })
       ];
       linhas.push(row.join(','));
     }
@@ -234,6 +239,31 @@ export class CaixaComponent implements OnInit {
     a.download = `movimentacoes-caixa-${this.filtroModo}-${this.dataSelecionada}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  getMetodosTexto(m: { metodo_pagamento?: string; pagamento_valor?: number; descricao?: string; total_venda?: number }): string {
+    if (m && m.total_venda != null && typeof m.descricao === 'string') {
+      const parts = m.descricao.split(' - ');
+      const last = parts[parts.length - 1];
+      return last?.trim() || '';
+    }
+    const label = this.getMetodoLabel(m.metodo_pagamento || '');
+    if (m.pagamento_valor != null) {
+      return `${label} · R$ ${(Number(m.pagamento_valor) || 0).toFixed(2)}`;
+    }
+    return label || '-';
+  }
+
+  formatMesCompacto(ym: string): string {
+    if (!ym || ym.length < 7) return '';
+    const [yStr, mStr] = ym.split('-');
+    const year = Number(yStr);
+    const month = Number(mStr);
+    if (!year || !month) return '';
+    const dt = new Date(year, month - 1, 1);
+    const mes = dt.toLocaleString('pt-BR', { month: 'short' }).replace('.', '');
+    const yy = String(year).slice(-2);
+    return `${mes.charAt(0).toUpperCase()}${mes.slice(1)}/${yy}`;
   }
 }
 

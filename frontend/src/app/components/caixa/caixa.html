@@ -1,23 +1,5 @@
 <div class="caixa-container">
   <div class="top-bar">
-    <div class="filtros">
-      <label>
-        Modo
-        <select [(ngModel)]="filtroModo" (change)="onChangeModo()">
-          <option value="tudo">Tudo</option>
-          <option value="dia">Dia</option>
-          <option value="mes">Mês</option>
-        </select>
-      </label>
-      <label>
-        Data
-        <input type="date" [(ngModel)]="dataSelecionada" (change)="onChangeData()" [disabled]="filtroModo!=='dia'" />
-      </label>
-      <label>
-        Mês
-        <input type="month" [(ngModel)]="mesSelecionado" (change)="onChangeMes()" [disabled]="filtroModo!=='mes'" />
-      </label>
-    </div>
     <div class="form-mov">
       <h3>Nova Movimentação</h3>
       <label>
@@ -35,40 +17,48 @@
         Descrição
         <input type="text" [(ngModel)]="descricao" placeholder="Opcional" />
       </label>
-      <button (click)="registrar()" [disabled]="loading">Registrar</button>
+      <div class="acoes-form">
+        <button class="btn-primary" (click)="registrar()" [disabled]="loading">Registrar</button>
+        <button class="btn-secondary" (click)="exportarCsv()">Exportar CSV</button>
+        <button class="btn-voltar btn-voltar-compact" (click)="voltarAoDashboard()">← Voltar ao Dashboard</button>
+      </div>
     </div>
   </div>
 
-  <div class="top-bar filtros-secundarios">
-    <div class="filtros">
+  <div class="top-bar filtros-secundarios filtros-combinados">
+    <div class="filtros grupo-modo">
       <label>
-        Exibir
-        <select [(ngModel)]="pageSize" (change)="setPageSize(pageSize)">
-          <option [ngValue]="20">20</option>
-          <option [ngValue]="50">50</option>
-          <option [ngValue]="100">100</option>
+        Modo
+        <select class="compact select-modo" [(ngModel)]="filtroModo" (change)="onChangeModo()">
+          <option value="tudo">Tudo</option>
+          <option value="dia">Dia</option>
+          <option value="mes">Mês</option>
         </select>
       </label>
-      <div style="flex:1"></div>
-      <button class="action-btn" (click)="exportarCsv()">Exportar CSV</button>
-      <button class="btn-voltar" (click)="voltarAoDashboard()">← Voltar ao Dashboard</button>
+      <label>
+        Data
+        <input class="compact input-data" type="date" [(ngModel)]="dataSelecionada" (change)="onChangeData()" [disabled]="filtroModo!=='dia'" />
+      </label>
+      <label class="label-mes-compacto" title="Selecionar mês">
+        Mês
+        <input class="month-compact compact" type="month" [(ngModel)]="mesSelecionado" (change)="onChangeMes()" [disabled]="filtroModo!=='mes'" />
+        <span class="mes-compacto">{{ formatMesCompacto(mesSelecionado) }}</span>
+      </label>
     </div>
-  </div>
-
-  <div class="top-bar filtros-secundarios">
-    <div class="filtros">
+    <div class="spacer"></div>
+    <div class="filtros grupo-filtro">
       <label>
         Tipo
-        <select [(ngModel)]="filtroTipo" (change)="aplicarFiltrosMovs()">
+        <select class="compact" [(ngModel)]="filtroTipo" (change)="aplicarFiltrosMovs()">
           <option value="">Todos</option>
           <option value="entrada">Entrada</option>
           <option value="retirada">Retirada</option>
           <option value="venda">Venda</option>
         </select>
       </label>
-      <label>
+      <label class="min-width">
         Método
-        <select [(ngModel)]="filtroMetodo" (change)="aplicarFiltrosMovs()">
+        <select class="compact" [(ngModel)]="filtroMetodo" (change)="aplicarFiltrosMovs()">
           <option value="">Todos</option>
           <option value="dinheiro">Dinheiro</option>
           <option value="cartao_credito">Cartão Crédito</option>
@@ -76,13 +66,21 @@
           <option value="pix">PIX</option>
         </select>
       </label>
-      <label>
+      <label class="min-width">
         Início
-        <input type="time" [(ngModel)]="filtroHoraInicio" (change)="aplicarFiltrosMovs()" />
+        <input class="compact" type="time" [(ngModel)]="filtroHoraInicio" (change)="aplicarFiltrosMovs()" />
       </label>
-      <label>
+      <label class="min-width">
         Fim
-        <input type="time" [(ngModel)]="filtroHoraFim" (change)="aplicarFiltrosMovs()" />
+        <input class="compact" type="time" [(ngModel)]="filtroHoraFim" (change)="aplicarFiltrosMovs()" />
+      </label>
+      <label class="min-width">
+        Exibir
+        <select class="compact" [(ngModel)]="pageSize" (change)="setPageSize(pageSize)">
+          <option [ngValue]="20">20</option>
+          <option [ngValue]="50">50</option>
+          <option [ngValue]="100">100</option>
+        </select>
       </label>
       <button class="action-btn config-btn" (click)="aplicarFiltrosMovs()">Filtrar</button>
       <button class="action-btn close-btn" (click)="limparFiltrosMovs()">Limpar</button>
@@ -149,14 +147,10 @@
             <div class="col valor">R$ {{ m.valor | number:'1.2-2' }}</div>
             <div class="col descricao">{{ m.descricao || '-' }}</div>
             <div class="col metodo">
-              @if (m.metodo_pagamento) {
-                <span class="metodo-badge">{{ getMetodoLabel(m.metodo_pagamento) }} · R$ {{ (m.pagamento_valor || 0) | number:'1.2-2' }}</span>
-              } @else {
-                <span>-</span>
-              }
+              <span class="metodo-badge">{{ getMetodosTexto(m) }}</span>
             </div>
             <div class="col usuario">{{ m.usuario || '-' }}</div>
-            <div class="col data">{{ m.data_movimento | date:'short' }}</div>
+            <div class="col data">{{ m.data_movimento | date:'dd/MM/yyyy HH:mm' }}</div>
           </div>
         }
          <div class="paginacao">

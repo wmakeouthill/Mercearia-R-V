@@ -39,16 +39,39 @@
     border: 2px solid rgba(219, 194, 125, 0.3);
     padding: 16px;
     display: flex;
-    align-items: center;
+    align-items: flex-end;
     gap: 12px;
-    flex: 1;
+    width: 100%;
     min-width: 0;
 
     h3 { margin: 0 8px 0 0; font-size: 16px; color: var(--primary-blue); padding-left: 8px; }
     label { display: flex; flex-direction: column; font-size: 12px; color: var(--primary-blue); }
     .flex-1 { flex: 1; }
-    button { background: var(--primary-blue); color: var(--white); border: none; padding: 10px 16px; border-radius: 8px; font-weight: 600; }
+    .acoes-form { display: flex; gap: 8px; align-items: center; }
+    .btn-primary, .btn-secondary, .btn-voltar-compact {
+      height: 36px;
+      padding: 0 16px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 8px;
+      font-weight: 700;
+      border: none;
+    }
+    .btn-primary { background: var(--primary-blue); color: var(--white); }
+    .btn-secondary { background: #0ea5e9; color: var(--white); }
+    .btn-voltar-compact { background: linear-gradient(135deg, #DBC27D 0%, #D1B867 100%); color: var(--primary-blue); }
+
+    input[type="number"], input[type="text"], select {
+      padding: 8px 10px;
+      border: 2px solid var(--medium-gray);
+      border-radius: 8px;
+      font-size: 14px;
+      height: 36px;
+    }
   }
+
+  .acoes-topo { margin-left: auto; }
 }
 
 .filtros-secundarios {
@@ -56,6 +79,31 @@
     display: flex;
     align-items: center;
     gap: 12px;
+    flex-wrap: wrap;
+    label.min-width { min-width: 120px; }
+    select.compact, input.compact, input[type="date"].compact, input[type="month"].compact, input[type="time"].compact {
+      padding: 6px 8px;
+      font-size: 13px;
+      max-width: 160px;
+    }
+    input[type="date"].compact { width: 120px; }
+    .label-mes-compacto { display: flex; align-items: center; gap: 8px; position: relative; width: 84px; }
+    .label-mes-compacto .month-compact { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+    .label-mes-compacto .mes-compacto {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 400;
+      font-size: 13px;
+      color: var(--primary-blue);
+      min-width: 74px;
+      height: 30px;
+      border: 2px solid var(--medium-gray);
+      border-radius: 8px;
+      background: var(--white);
+      padding: 0 6px;
+      text-align: center;
+    }
     button.action-btn {
       padding: 10px 16px;
       border-radius: 8px;
@@ -66,6 +114,16 @@
     .config-btn { background: var(--primary-blue); color: var(--white); }
     .close-btn { background: #ef4444; color: var(--white); }
   }
+}
+
+.filtros-combinados {
+  display: grid;
+  grid-template-columns: 1fr 12px auto; /* esquerda ocupa o que sobrar, direita só o necessário */
+  align-items: center;
+  gap: 12px;
+  .spacer { width: 12px; }
+  .grupo-modo { width: 100%; gap: 8px; }
+  .grupo-filtro { width: auto; gap: 8px; justify-content: flex-end; }
 }
 
 .btn-voltar {
