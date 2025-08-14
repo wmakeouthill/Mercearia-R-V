@@ -52,6 +52,14 @@
     gap: 12px;
 }
 
+.card-voltar {
+    background: var(--white);
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0, 46, 89, 0.08);
+    border: 2px solid rgba(0, 46, 89, 0.1);
+    padding: 8px;
+}
+
 .btn-voltar {
     background: linear-gradient(135deg, #DBC27D 0%, #D1B867 100%);
     color: var(--primary-blue);

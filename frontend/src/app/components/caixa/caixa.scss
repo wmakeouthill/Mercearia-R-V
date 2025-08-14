@@ -159,9 +159,15 @@
     box-shadow: 0 4px 20px rgba(0, 46, 89, 0.08);
     border: 2px solid rgba(0, 46, 89, 0.1);
     padding: 12px 16px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    min-height: 120px;
   }
   .titulo { color: var(--primary-blue); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; }
-  .valor { font-size: 22px; margin-top: 6px; }
+  .valor { font-size: 22px; margin-top: 6px; width: 100%; text-align: center; }
   .valor.positivo { color: #16a34a; }
   .valor.negativo { color: #dc2626; }
 }
@@ -191,7 +197,7 @@
     display: grid;
     grid-template-columns: 120px 220px 120px 1fr 160px 160px 200px;
     gap: 12px;
-    padding: 10px 16px;
+    padding: 6px 16px;
     border-bottom: 2px solid var(--light-gray);
     background: rgba(0, 46, 89, 0.03);
     font-weight: 700;
@@ -199,6 +205,10 @@
     text-transform: uppercase;
     font-size: 12px;
     letter-spacing: .5px;
+    align-items: center;
+    .th { display: flex; align-items: center; }
+    .th.tipo, .th.valor, .th.metodo, .th.usuario, .th.data { justify-content: center; text-align: center; }
+    .th.produto, .th.descricao { justify-content: flex-start; text-align: left; }
     .th.sort {
       background: transparent;
       border: none;
@@ -217,17 +227,21 @@
     display: grid;
     grid-template-columns: 120px 220px 120px 1fr 160px 160px 200px;
     gap: 12px;
-    padding: 10px 16px;
+    padding: 6px 16px;
     border-bottom: 1px solid var(--light-gray);
+    align-items: center;
   }
   .item:last-child { border-bottom: none; }
   .item .tipo { display: flex; align-items: center; }
+  .item .col { display: flex; align-items: center; justify-content: center; }
+  .item .col.produto, .item .col.descricao { justify-content: flex-start; }
   .badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 999px; font-weight: 600; font-size: 12px; }
   .badge .icon { font-size: 14px; line-height: 1; }
   .badge.entrada { background: rgba(22,163,74,0.12); color: #166534; border: 1px solid rgba(22,163,74,0.3); }
   .badge.retirada { background: rgba(220,38,38,0.12); color: #7f1d1d; border: 1px solid rgba(220,38,38,0.3); }
   .badge.venda { background: rgba(14,165,233,0.12); color: #0c4a6e; border: 1px solid rgba(14,165,233,0.3); }
-  .metodo-badge { background: rgba(0,0,0,0.05); border: 1px solid var(--light-gray); padding: 4px 8px; border-radius: 999px; font-weight: 600; font-size: 12px; color: var(--primary-blue); }
+  .metodo-badge { background: rgba(0,0,0,0.05); border: 1px solid var(--light-gray); padding: 2px 6px; border-radius: 999px; font-weight: 600; font-size: 12px; line-height: 1.15; color: var(--primary-blue); white-space: nowrap; }
+  .metodo-multi { display: flex; flex-direction: column; gap: 2px; align-items: center; margin-top: -4px; margin-bottom: -4px; }
 
   .paginacao {
     display: flex;

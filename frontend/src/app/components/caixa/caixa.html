@@ -146,8 +146,10 @@
             <div class="col produto">{{ m.produto_nome || '-' }}</div>
             <div class="col valor">R$ {{ m.valor | number:'1.2-2' }}</div>
             <div class="col descricao">{{ m.descricao || '-' }}</div>
-            <div class="col metodo">
-              <span class="metodo-badge">{{ getMetodosTexto(m) }}</span>
+            <div class="col metodo metodo-multi">
+              @for (b of getMetodoBadges(m); track $index) {
+                <span class="metodo-badge">{{ b }}</span>
+              }
             </div>
             <div class="col usuario">{{ m.usuario || '-' }}</div>
             <div class="col data">{{ m.data_movimento | date:'dd/MM/yyyy HH:mm' }}</div>

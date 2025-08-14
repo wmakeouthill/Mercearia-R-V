@@ -242,7 +242,7 @@ export class CaixaComponent implements OnInit {
   }
 
   getMetodosTexto(m: { metodo_pagamento?: string; pagamento_valor?: number; descricao?: string; total_venda?: number }): string {
-    if (m && m.total_venda != null && typeof m.descricao === 'string') {
+    if (m?.total_venda != null && typeof m?.descricao === 'string') {
       const parts = m.descricao.split(' - ');
       const last = parts[parts.length - 1];
       return last?.trim() || '';
@@ -252,6 +252,20 @@ export class CaixaComponent implements OnInit {
       return `${label} · R$ ${(Number(m.pagamento_valor) || 0).toFixed(2)}`;
     }
     return label || '-';
+  }
+
+  getMetodoBadges(m: { metodo_pagamento?: string; pagamento_valor?: number; descricao?: string; total_venda?: number }): string[] {
+    if (m?.total_venda != null && typeof m?.descricao === 'string') {
+      const parts = m.descricao.split(' - ');
+      const last = (parts[parts.length - 1] || '').trim();
+      return last.split('|').map(s => s.trim()).filter(Boolean);
+    }
+    const label = this.getMetodoLabel(m.metodo_pagamento || '');
+    if (!label) return [];
+    if (m.pagamento_valor != null) {
+      return [`${label} · R$ ${(Number(m.pagamento_valor) || 0).toFixed(2)}`];
+    }
+    return [label];
   }
 
   formatMesCompacto(ym: string): string {

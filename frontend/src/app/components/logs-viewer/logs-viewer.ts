@@ -12,11 +12,15 @@ import { saveLogsToFile, exportLogsToCSV } from '../../utils/file-logger';
   template: `
     <div class="logs-container">
       <div class="logs-header">
-        <div class="header-left">
-          <h2>📊 Logs do Sistema</h2>
+        <div class="header-top">
+          <div class="header-left">
+            <h2>📊 Logs do Sistema</h2>
+          </div>
+          <div class="header-actions">
+            <button (click)="voltarAoDashboard()" class="btn-voltar">← Voltar ao Dashboard</button>
+          </div>
         </div>
-        <div class="logs-controls header-actions">
-          <button (click)="voltarAoDashboard()" class="btn-voltar">← Voltar ao Dashboard</button>
+        <div class="logs-controls">
           <select [(ngModel)]="selectedLevel" (change)="filterLogs()">
             <option value="">Todos os níveis</option>
             <option value="INFO">Info</option>
@@ -31,12 +35,12 @@ import { saveLogsToFile, exportLogsToCSV } from '../../utils/file-logger';
             @for (comp of components; track comp) {<option [value]="comp">{{ comp }}</option>}
           </select>
 
-          <button (click)="clearLogs()" class="btn-clear">Limpar Logs</button>
-          <button (click)="clearOldLogs()" class="btn-clear-old">Limpar Antigos</button>
-          <button (click)="showLogStats()" class="btn-stats">Estatísticas</button>
-          <button (click)="exportLogs()" class="btn-export">Exportar JSON</button>
-          <button (click)="exportLogsCSV()" class="btn-export">Exportar CSV</button>
-          <button (click)="saveLogsFile()" class="btn-save">Salvar Arquivo</button>
+          <button (click)="clearLogs()" class="btn btn-clear">Limpar Logs</button>
+          <button (click)="clearOldLogs()" class="btn btn-clear-old">Limpar Antigos</button>
+          <button (click)="showLogStats()" class="btn btn-stats">Estatísticas</button>
+          <button (click)="exportLogs()" class="btn btn-export">Exportar JSON</button>
+          <button (click)="exportLogsCSV()" class="btn btn-export">Exportar CSV</button>
+          <button (click)="saveLogsFile()" class="btn btn-save">Salvar Arquivo</button>
         </div>
       </div>
 
@@ -93,14 +97,8 @@ import { saveLogsToFile, exportLogsToCSV } from '../../utils/file-logger';
       margin: 0 auto;
     }
 
-    .logs-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 20px;
-      flex-wrap: wrap;
-      gap: 10px;
-    }
+    .logs-header { margin-bottom: 16px; }
+    .header-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
 
     .header-left {
       display: flex;
@@ -135,26 +133,13 @@ import { saveLogsToFile, exportLogsToCSV } from '../../utils/file-logger';
       color: #333;
     }
 
-    .logs-controls {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
+    .logs-controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 
-    .logs-controls select {
-      padding: 8px;
-      border: 1px solid #ddd;
-      border-radius: 4px;
-      background: white;
-    }
 
-    .btn-clear, .btn-export {
-      padding: 8px 16px;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-      font-weight: 500;
-    }
+
+    .logs-controls select { padding: 8px 10px; height: 36px; border: 1px solid #ddd; border-radius: 8px; background: white; }
+
+    .btn { height: 36px; padding: 0 16px; border: none; border-radius: 8px; cursor: pointer; font-weight: 700; display: inline-flex; align-items: center; }
 
     .btn-clear {
       background: #dc3545;
@@ -166,10 +151,7 @@ import { saveLogsToFile, exportLogsToCSV } from '../../utils/file-logger';
       color: white;
     }
 
-    .btn-save {
-      background: #007bff;
-      color: white;
-    }
+    .btn-save { background: #007bff; color: white; }
 
     .btn-clear-old {
       background: #ffc107;
