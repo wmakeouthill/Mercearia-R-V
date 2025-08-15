@@ -33,6 +33,25 @@
     }
 }
 
+// Agrupamento dos botões de ações no cabeçalho
+.header-actions {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 12px; // Espaço entre "Gráficos" e "Voltar"
+
+    // Evitar que um botão quebre para a linha de cima em telas médias
+    flex-wrap: nowrap;
+}
+
+@media (max-width: 560px) {
+    .header-actions {
+        flex-wrap: wrap; // Em telas muito pequenas permitimos quebra
+        gap: 8px;
+        justify-content: center;
+    }
+}
+
 .btn-voltar {
     background: linear-gradient(135deg, #DBC27D 0%, #D1B867 100%);
     color: var(--primary-blue);

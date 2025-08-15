@@ -59,7 +59,97 @@ const valueLabelPlugin = {
   }
 };
 
-Chart.register(...registerables, valueLabelPlugin);
+// Plugin para melhorar precisão do hover em fatias pequenas de pizza
+const betterPieHoverPlugin = {
+  id: 'betterPieHover',
+  afterEvent(chart: any, args: any) {
+    if (chart.config.type !== 'pie') return;
+    const e = args.event; if (e?.type !== 'mousemove') return;
+    const meta = chart.getDatasetMeta(0); const arcs = meta?.data; if (!arcs?.length) return;
+    const cssX = e.native?.offsetX ?? e.x;
+    const cssY = e.native?.offsetY ?? e.y;
+
+    let hitIndex = detectNative(chart, e);
+    hitIndex ??= detectInRange(arcs, cssX, cssY);
+    hitIndex ??= detectWithTolerance(arcs, cssX, cssY);
+    if (hitIndex === chart._lastActiveBetterPieIndex) return;
+    updateActive(chart, hitIndex, cssX, cssY);
+  }
+};
+
+function detectNative(chart: any, e: any): number | null {
+  const els = chart.getElementsAtEventForMode(e, 'nearest', { intersect: true }, true);
+  return els?.length ? els[0].index : null;
+}
+
+function detectInRange(arcs: any[], x: number, y: number): number | null {
+  for (let i = 0; i < arcs.length; i++) if (arcs[i].inRange(x, y, 'mouse')) return i;
+  return null;
+}
+
+function detectWithTolerance(arcs: any[], x: number, y: number): number | null {
+  const centerX = arcs[0].x, centerY = arcs[0].y;
+  const dx = x - centerX, dy = y - centerY;
+  const ang = ((Math.atan2(dy, dx) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+  const dist = Math.hypot(dx, dy);
+  for (let i = 0; i < arcs.length; i++) {
+    const a: any = arcs[i];
+    const startRaw = a.startAngle, endRaw = a.endAngle;
+    const start = ((startRaw % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+    const end = ((endRaw % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+    const wedge = end >= start ? end - start : (Math.PI * 2 - start + end);
+    const { extraRad, angleTol } = pieHitTolerances(wedge);
+    const startTol = start - angleTol;
+    const endTol = end + angleTol;
+    const withinAngle = start <= end ? (ang >= startTol && ang <= endTol) : (ang >= startTol || ang <= endTol);
+    if (!withinAngle) continue;
+    if (dist >= a.innerRadius - extraRad && dist <= a.outerRadius + extraRad) return i;
+  }
+  return null;
+}
+
+function pieHitTolerances(wedge: number) {
+  // wedge em radianos
+  let extraRad: number;
+  if (wedge < 0.08) extraRad = 8; else if (wedge < 0.12) extraRad = 5; else extraRad = 3;
+  let angleTol: number;
+  if (wedge < 0.06) angleTol = 0.045; else if (wedge < 0.10) angleTol = 0.03; else angleTol = 0;
+  return { extraRad, angleTol };
+}
+
+function findArcHit(arcs: any[], mx: number, my: number, cx: number, cy: number): number | null {
+  const dx = mx - cx, dy = my - cy;
+  const angle = ((Math.atan2(dy, dx) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+  const dist = Math.hypot(dx, dy);
+  const baseTol = 6;
+  for (let i = 0; i < arcs.length; i++) {
+    const a: any = arcs[i];
+    const start = ((a.startAngle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+    const end = ((a.endAngle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+    const withinAngle = start <= end ? (angle >= start && angle <= end) : (angle >= start || angle <= end);
+    if (!withinAngle) continue;
+    const wedgeAngle = end >= start ? end - start : (Math.PI * 2 - start + end);
+    let extra = 0;
+    if (wedgeAngle < 0.06) extra = 10; else if (wedgeAngle < 0.12) extra = 6;
+    const tol = baseTol + extra;
+    if (dist >= a.innerRadius - tol && dist <= a.outerRadius + tol) return i;
+  }
+  return null;
+}
+
+function updateActive(chart: any, idx: number | null, mx: number, my: number) {
+  if (idx == null) {
+    chart.setActiveElements([]);
+    chart.tooltip.setActiveElements([], { x: mx, y: my });
+  } else {
+    chart.setActiveElements([{ datasetIndex: 0, index: idx }]);
+    chart.tooltip.setActiveElements([{ datasetIndex: 0, index: idx }], { x: mx, y: my });
+  }
+  chart._lastActiveBetterPieIndex = idx;
+  chart.update();
+}
+
+Chart.register(...registerables, valueLabelPlugin, betterPieHoverPlugin);
 
 interface SerieTemporalPoint { label: string; valor: number; }
 type Granularidade = 'dia' | 'mes' | 'trimestre' | 'semestre' | 'ano';
