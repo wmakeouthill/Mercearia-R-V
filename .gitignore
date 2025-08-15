@@ -1,3 +1,30 @@
+# Node
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Build outputs
+frontend/dist/
+electron/dist/
+electron/dist-installer2/
+deploy/package/
+
+# Java/Maven
+backend-spring/target/
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+/.vscode/
+
+# Secrets and runtime data
+backend-spring/secrets/
+backend-spring/data/
+electron/resources/backend-spring/data/
+
+# logs
+*.log
+
 ############################################################
 # Raiz do projeto - regras gerais de segurança e build
 ############################################################

@@ -1,0 +1,72 @@
+databaseChangeLog:
+  - changeSet:
+      id: 001-create-usuarios-table
+      author: system
+      changes:
+        - createTable:
+            tableName: usuarios
+            ifNotExists: true
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: username
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: false
+                    unique: true
+              - column:
+                  name: password
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: role
+                  type: VARCHAR(50)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: pode_controlar_caixa
+                  type: BOOLEAN
+                  defaultValueBoolean: false
+
+  - changeSet:
+      id: 002-create-app-schema-version
+      author: system
+      changes:
+        - createTable:
+            tableName: app_schema_version
+            ifNotExists: true
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: version
+                  type: VARCHAR(50)
+                  constraints:
+                    nullable: false
+        - insert:
+            tableName: app_schema_version
+            columns:
+              - column:
+                  name: version
+                  value: "1"
+
+  - changeSet:
+      id: 003-seed-default-users
+      author: system
+      changes:
+        - customChange:
+            class: com.example.backendspring.db.LiquibaseSeedUsers
+
+

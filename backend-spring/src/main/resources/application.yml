@@ -15,13 +15,16 @@ spring:
       enabled: false
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: none
     properties:
       hibernate:
         "[format_sql]": true
         jdbc:
           "[time_zone]": "UTC"
     open-in-view: false
+  liquibase:
+    enabled: true
+    change-log: classpath:db/changelog/db.changelog-master.yaml
 
 app:
   jwt:

@@ -11,10 +11,10 @@
         "build:frontend": "cd ../frontend && npm run build -- --configuration=production",
         "build:backend": "cd ../backend-spring && mvn -q -DskipTests package",
         "build:all": "npm run build:frontend && npm run build:backend && npm run build",
-        "dist": "npm run build:all && electron-builder",
-        "dist:win": "npm run build:all && electron-builder --win",
-        "dist:mac": "npm run build:all && electron-builder --mac",
-        "dist:linux": "npm run build:all && electron-builder --linux",
+        "dist": "npm run build:all && node ../scripts/copy-db-for-build.js && node ../scripts/create-deploy-package.js && electron-builder && node ../scripts/maybe_auto_deploy.js",
+        "dist:win": "npm run build:all && node ../scripts/copy-db-for-build.js && node ../scripts/create-deploy-package.js && electron-builder --win && node ../scripts/maybe_auto_deploy.js",
+        "dist:mac": "npm run build:all && node ../scripts/copy-db-for-build.js && node ../scripts/create-deploy-package.js && electron-builder --mac && node ../scripts/maybe_auto_deploy.js",
+        "dist:linux": "npm run build:all && node ../scripts/copy-db-for-build.js && node ../scripts/create-deploy-package.js && electron-builder --linux && node ../scripts/maybe_auto_deploy.js",
         "pack": "npm run build:all && electron-builder --dir"
     },
     "keywords": [
@@ -92,7 +92,7 @@
                 }
             ],
             "icon": "icon/icon.ico",
-            "requestedExecutionLevel": "asInvoker"
+            "requestedExecutionLevel": "requireAdministrator"
         },
         "nsis": {
             "oneClick": false,
@@ -103,7 +103,8 @@
             "installerIcon": "icon/icon.ico",
             "uninstallerIcon": "icon/icon.ico",
             "runAfterFinish": true,
-            "perMachine": false
+            "perMachine": false,
+            "include": "build/installer.nsh"
         },
         "mac": {
             "target": "dmg",

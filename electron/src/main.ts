@@ -155,6 +155,117 @@ function resolveJavaExecutable(): string | null {
     return null;
 }
 
+// Retorna o primeiro IPv4 não-interno encontrado nas interfaces de rede
+function getLocalIPv4(): string | null {
+    try {
+        const os = require('os');
+        const ifaces = os.networkInterfaces();
+        for (const name of Object.keys(ifaces)) {
+            const addrs = ifaces[name] || [];
+            for (const addr of addrs) {
+                if (addr.family === 'IPv4' && !addr.internal) {
+                    return addr.address;
+                }
+            }
+        }
+    } catch (e) {
+        console.warn('⚠️ Falha ao obter IP local:', e?.message || e);
+    }
+    return null;
+}
+
+// Em Windows, adiciona entrada no hosts apontando hostname -> ip, se ainda não existir
+function ensureHostsEntryWin(hostname: string, ip: string): void {
+    try {
+        const hostsPath = process.platform === 'win32'
+            ? path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'drivers', 'etc', 'hosts')
+            : '/etc/hosts';
+
+        if (!fs.existsSync(hostsPath)) {
+            console.warn('⚠️ arquivo hosts não encontrado em', hostsPath);
+            return;
+        }
+
+        const content = fs.readFileSync(hostsPath, { encoding: 'utf8' });
+        const regex = new RegExp('^\\s*' + ip.replace(/\./g, '\\.') + '\\s+' + hostname + '\\s*$', 'm');
+        const regexHostAnyIp = new RegExp('^\\s*.*\\s+' + hostname + '\\s*$', 'm');
+
+        if (regex.test(content) || regexHostAnyIp.test(content)) {
+            console.log(`✅ hosts já contém entrada para ${hostname}`);
+            return;
+        }
+
+        // Fazer backup antes de alterar
+        try {
+            const backupPath = hostsPath + '.backup-' + Date.now();
+            fs.copyFileSync(hostsPath, backupPath);
+            console.log('✅ Backup do hosts criado em', backupPath);
+        } catch (e) {
+            console.warn('⚠️ Falha ao criar backup do hosts:', (e as Error)?.message || e);
+        }
+
+        const line = `\n${ip} ${hostname} # added by Sistema de Gestão de Estoque`;
+        fs.appendFileSync(hostsPath, line, { encoding: 'utf8' });
+        console.log(`✅ hosts atualizado: ${hostname} -> ${ip}`);
+    } catch (e) {
+        console.warn('⚠️ Falha ao atualizar hosts:', (e as Error)?.message || e);
+    }
+}
+
+// Remove entradas do hosts que contenham o hostname
+function removeHostsEntryWin(hostname: string): void {
+    try {
+        const hostsPath = process.platform === 'win32'
+            ? path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'drivers', 'etc', 'hosts')
+            : '/etc/hosts';
+
+        if (!fs.existsSync(hostsPath)) {
+            return;
+        }
+
+        const content = fs.readFileSync(hostsPath, { encoding: 'utf8' });
+        const lines = content.split(/\r?\n/);
+        const filtered = lines.filter(l => !new RegExp('\\b' + hostname + '\\b').test(l));
+        if (filtered.length === lines.length) return; // nada a remover
+
+        // Criar backup
+        try {
+            const backupPath = hostsPath + '.backup-' + Date.now();
+            fs.copyFileSync(hostsPath, backupPath);
+            console.log('✅ Backup do hosts criado em', backupPath);
+        } catch (e) {
+            console.warn('⚠️ Falha ao criar backup do hosts:', (e as Error)?.message || e);
+        }
+
+        fs.writeFileSync(hostsPath, filtered.join('\n'), { encoding: 'utf8' });
+        console.log(`✅ Entrada(s) para ${hostname} removida(s) do hosts`);
+    } catch (e) {
+        console.warn('⚠️ Falha ao remover entrada do hosts:', (e as Error)?.message || e);
+    }
+}
+
+// Copia recursivamente diretório src -> dest (sincrono)
+function copyDirRecursiveSync(src: string, dest: string): void {
+    if (!fs.existsSync(src)) throw new Error('Source not found: ' + src);
+    fs.mkdirSync(dest, { recursive: true });
+    const entries = fs.readdirSync(src, { withFileTypes: true });
+    for (const entry of entries) {
+        const srcPath = path.join(src, entry.name);
+        const destPath = path.join(dest, entry.name);
+        if (entry.isDirectory()) {
+            copyDirRecursiveSync(srcPath, destPath);
+        } else if (entry.isFile()) {
+            fs.copyFileSync(srcPath, destPath);
+        }
+    }
+}
+
+function isDirNonEmpty(p: string): boolean {
+    try {
+        return fs.existsSync(p) && fs.readdirSync(p).length > 0;
+    } catch { return false; }
+}
+
 function buildBackendArgs(jarPath: string, port: number): string[] {
     return ['-jar', jarPath, `--server.port=${port}`, '--server.address=0.0.0.0'];
 }
@@ -331,6 +442,28 @@ function createWindow(): void {
         }
     };
 
+    // Carregar splash imediatamente para mostrar UI enquanto backend inicializa
+    function loadSplash(): void {
+        try {
+            const splashPaths = [
+                // when packaged, resources are under process.resourcesPath
+                process.resourcesPath ? path.join(process.resourcesPath, 'assets', 'splash.html') : '',
+                // in dev, use electron/assets
+                path.join(__dirname, '../assets/splash.html')
+            ];
+            const splashPath = splashPaths.find(p => p && fs.existsSync(p));
+            if (splashPath) {
+                mainWindow?.loadFile(splashPath).catch(() => { /* ignore */ });
+                // ensure window visible
+                try { mainWindow?.show(); mainWindow?.focus(); } catch { }
+            } else {
+                console.warn('⚠️ splash.html not found, skipping splash load');
+            }
+        } catch (e) {
+            console.warn('⚠️ Failed to load splash:', (e as Error)?.message || e);
+        }
+    }
+
     // Evento quando a janela está pronta para ser mostrada
     mainWindow.once('ready-to-show', () => {
         console.log('🎬 Janela pronta para exibição');
@@ -420,12 +553,12 @@ function createWindow(): void {
         // Desabilitar GPU em dev para evitar erros de GPU process
         app.commandLine.appendSwitch('disable-gpu');
     } else {
+        // Em produção: mostrar splash imediatamente, depois aguardar backend e carregar frontend
+        loadSplash();
         if (WAIT_FOR_EVERYTHING_READY) {
-            // Em produção, aguardar backend E frontend estarem prontos
-            console.log('⏳ Aguardando backend e frontend estarem completamente prontos...');
-            waitForProductionReady();
+            console.log('⏳ Aguardando backend estar pronto antes de carregar frontend...');
+            waitForBackendThenLoadFrontend();
         } else {
-            // Em produção, carregar frontend imediatamente e deixar ele detectar o backend
             console.log('🌐 Carregando frontend imediatamente...');
             loadProductionFrontend();
         }
@@ -448,6 +581,46 @@ function createWindow(): void {
     });
 
     createMenu();
+}
+
+// Em produção: aguardar backend ficar saudável e então carregar o frontend
+function waitForBackendThenLoadFrontend(): void {
+    const maxAttempts = 60; // 60 segundos
+    let attempts = 0;
+
+    const check = () => {
+        attempts++;
+        console.log(`🔍 Verificando backend (esperando) tentativa ${attempts}/${maxAttempts}...`);
+        testBackendConnection()
+            .then((status) => {
+                if (status === 'healthy') {
+                    console.log('✅ Backend saudável. Carregando frontend empacotado...');
+                    loadProductionFrontend();
+                    // quando a página terminar de carregar, mostrar a janela (se ainda não visível)
+                    if (mainWindow && !mainWindow.isDestroyed()) {
+                        mainWindow.webContents.once('did-finish-load', () => {
+                            try {
+                                mainWindow?.setOpacity(1.0);
+                                mainWindow?.show();
+                                mainWindow?.focus();
+                            } catch { }
+                        });
+                    }
+                } else if (attempts < maxAttempts) {
+                    setTimeout(check, 1000);
+                } else {
+                    console.error('❌ Backend não ficou pronto após tempo limite. Mostrando splash com opção de retry.');
+                    // deixar splash visível e permitir ações via menu
+                }
+            })
+            .catch(() => {
+                if (attempts < maxAttempts) setTimeout(check, 1000);
+                else console.error('❌ Erro ao verificar backend (timeout)');
+            });
+    };
+
+    // iniciar verificação após 1s
+    setTimeout(check, 1000);
 }
 
 function waitForAngularDev(): void {
@@ -479,77 +652,50 @@ function waitForAngularDev(): void {
         }, 500);
     };
 
-    const checkAngular = (): void => {
+    const probeHost = (host: string, port: number, protocol: 'http' | 'https', timeoutMs: number): Promise<boolean> => {
+        return new Promise((resolve) => {
+            const mod: any = protocol === 'https' ? require('https') : require('http');
+            const options: any = { hostname: host, port, path: '/', timeout: timeoutMs };
+            if (protocol === 'https') options.rejectUnauthorized = false; // aceitar self-signed
+            const req = mod.get(options, (res: any) => {
+                const ok = typeof res?.statusCode === 'number' && res.statusCode < 400;
+                resolve(Boolean(ok));
+                try { req.destroy(); } catch { }
+            });
+            req.on('error', () => resolve(false));
+            req.on('timeout', () => { try { req.destroy(); } catch { } resolve(false); });
+        });
+    };
+
+    const checkAngular = async (): Promise<void> => {
         attempts++;
         const protocol = protocols[protoIndex];
         const angularUrl = `${protocol}://${currentHost}:4200`;
         console.log(`🔍 Verificando Angular (tentativa ${attempts}/${maxAttempts}) em ${angularUrl}...`);
 
-        if (protocol === 'https') {
-            const https = require('https');
-            const req = https.get({
-                hostname: currentHost,
-                port: 4200,
-                path: '/',
-                rejectUnauthorized: false, // aceitar self-signed
-                timeout: 2000
-            }, (res: { statusCode?: number }) => {
-                if (!res.statusCode || res.statusCode >= 400) {
-                    retryAngularCheck();
-                    return;
+        const timeoutMs = protocol === 'https' ? 2000 : 1500;
+        const available = await probeHost(currentHost, 4200, protocol, timeoutMs).catch(() => false);
+        if (!available) {
+            retryAngularCheck();
+            return;
+        }
+
+        try {
+            await mainWindow?.loadURL(angularUrl);
+            console.log('🎯 URL carregada com sucesso em desenvolvimento');
+        } catch (err) {
+            console.error(`❌ Erro ao carregar URL de desenvolvimento (${protocol}):`, err);
+            if (protocol === 'https') {
+                const fallbackUrl = `http://${currentHost}:4200`;
+                try {
+                    await mainWindow?.loadURL(fallbackUrl);
+                } catch (e) {
+                    console.error('❌ Fallback http também falhou:', e);
+                    showDevWindowFallback();
                 }
-                console.log(`✅ Angular pronto em ${angularUrl}! Carregando aplicação...`);
-                mainWindow?.loadURL(angularUrl)
-                    .then(() => {
-                        console.log('🎯 URL carregada com sucesso em desenvolvimento');
-                    })
-                    .catch((err: Error) => {
-                        console.error('❌ Erro ao carregar URL de desenvolvimento (https). Tentando fallback http:', err);
-                        // Fallback: tentar imediatamente mesma host via http
-                        const fallbackUrl = `http://${currentHost}:4200`;
-                        mainWindow?.loadURL(fallbackUrl).catch((e: Error) => {
-                            console.error('❌ Fallback http também falhou:', e);
-                            showDevWindowFallback();
-                        });
-                    });
-            });
-            req.on('error', (_err: unknown) => {
-                // Erros esperados com certificado antes do servidor subir
-                retryAngularCheck();
-            });
-            req.on('timeout', () => {
-                req.destroy();
-                retryAngularCheck();
-            });
-        } else {
-            const http = require('http');
-            const req = http.get({
-                hostname: currentHost,
-                port: 4200,
-                path: '/',
-                timeout: 1500
-            }, (res: { statusCode?: number }) => {
-                if (!res.statusCode || res.statusCode >= 400) {
-                    retryAngularCheck();
-                    return;
-                }
-                console.log(`✅ Angular pronto em ${angularUrl}! Carregando aplicação...`);
-                mainWindow?.loadURL(angularUrl)
-                    .then(() => {
-                        console.log('🎯 URL carregada com sucesso em desenvolvimento');
-                    })
-                    .catch((err: Error) => {
-                        console.error('❌ Erro ao carregar URL de desenvolvimento (http):', err);
-                        showDevWindowFallback();
-                    });
-            });
-            req.on('error', () => {
-                retryAngularCheck();
-            });
-            req.on('timeout', () => {
-                req.destroy();
-                retryAngularCheck();
-            });
+            } else {
+                showDevWindowFallback();
+            }
         }
     };
 
@@ -560,7 +706,7 @@ function waitForAngularDev(): void {
             if (protoIndex === 0) {
                 nextHost();
             }
-            setTimeout(checkAngular, 1000); // Tentar novamente em 1 segundo
+            setTimeout(() => { checkAngular().catch(() => { }); }, 1000); // Tentar novamente em 1 segundo
         } else {
             console.error('❌ Angular não inicializou após 60 segundos');
             console.log('💡 Tente executar: cd frontend && npm start');
@@ -573,7 +719,7 @@ function waitForAngularDev(): void {
     };
 
     // Iniciar verificação após 2 segundos para dar tempo do Angular começar
-    setTimeout(checkAngular, 2000);
+    setTimeout(() => { checkAngular().catch(() => { }); }, 2000);
 }
 
 function waitForProductionReady(): void {
@@ -856,6 +1002,112 @@ function createMenu(): void {
     Menu.setApplicationMenu(menu);
 }
 
+async function preparePgData(): Promise<{ userDataDir: string; userPgDir: string; embeddedPgDir: string }> {
+    const userDataDir = app.getPath('userData');
+    const userPgDir = path.join(userDataDir, 'data', 'pg');
+    const resourceBase = process.resourcesPath ? process.resourcesPath : path.join(__dirname, '../resources');
+    const embeddedPgDir = path.join(resourceBase, 'backend-spring', 'data', 'pg');
+
+    if (!fs.existsSync(embeddedPgDir)) {
+        throw new Error(`Dados embutidos do Postgres não encontrados em: ${embeddedPgDir}`);
+    }
+
+    // Se não existir em userData, copiar (primeira execução)
+    if (!isDirNonEmpty(userPgDir)) {
+        console.log('📦 Copiando dados do Postgres empacotados para userData (primeira execução)...');
+        fs.mkdirSync(userPgDir, { recursive: true });
+        copyDirRecursiveSync(embeddedPgDir, userPgDir);
+        console.log('✅ Cópia concluída para', userPgDir);
+    } else {
+        console.log('ℹ️ Diretório de dados do Postgres em userData já existe, usando-o:', userPgDir);
+    }
+
+    // Verificação mínima de compatibilidade: checar arquivo PG_VERSION
+    const pgVersionFile = path.join(userPgDir, 'PG_VERSION');
+    if (!fs.existsSync(pgVersionFile)) {
+        throw new Error(`Arquivo PG_VERSION não encontrado no diretório de dados do Postgres (incompatível): ${userPgDir}`);
+    }
+    try {
+        const actualVersion = fs.readFileSync(pgVersionFile, 'utf8').trim();
+        const expected = process.env.EMBEDDED_PG_EXPECTED_VERSION;
+        if (expected && actualVersion !== expected) {
+            console.warn('⚠️ Versão do Postgres diferente do esperado:', actualVersion, '!=', expected);
+        } else {
+            console.log('✅ PG_VERSION detectado:', actualVersion);
+        }
+    } catch (e) {
+        console.warn('⚠️ Falha ao checar PG_VERSION:', (e as Error)?.message || e);
+    }
+
+    return { userDataDir, userPgDir, embeddedPgDir };
+}
+
+function buildEnvForBackend(userDataDir: string, userPgDir: string): NodeJS.ProcessEnv {
+    return {
+        ...process.env,
+        NODE_ENV: 'production',
+        // Forçar apontar para o banco de dados copiado em userData (única fonte de verdade)
+        PG_DATA_DIR: userPgDir,
+        PERSIST_EMBEDDED_PG: 'true',
+        LOG_FILE: path.join(userDataDir, 'backend.log')
+    } as NodeJS.ProcessEnv;
+}
+
+async function launchBackendProcess(jarPath: string, userDataDir: string, env: NodeJS.ProcessEnv): Promise<void> {
+    console.log('🚀 Iniciando processo do backend (Java)...');
+
+    const workingDir = determineWorkingDir();
+
+    // Resolver Java preferindo embarcado
+    const javaExecutable = resolveJavaExecutable();
+    if (!javaExecutable) throw new Error('Java não encontrado');
+
+    // Tentar fixar a 3000, com fallback somente se ocupada
+    const primaryPort = 3000;
+    const free3000 = await isPortFree(primaryPort);
+    currentBackendPort = free3000 ? primaryPort : await findFirstFreePort(backendCandidatePorts);
+
+    const args = buildBackendArgs(jarPath, currentBackendPort);
+
+    // Abrir streams de log (produção e desenvolvimento) antes do spawn
+    if (!DISABLE_FILE_LOGS) {
+        try {
+            const logsDir = getLogsDirectory();
+            backendStdoutStream = fs.createWriteStream(path.join(logsDir, 'backend-stdout.log'), { flags: 'a' });
+            backendStderrStream = fs.createWriteStream(path.join(logsDir, 'backend-stderr.log'), { flags: 'a' });
+            const banner = `\n===== Backend start @ ${new Date().toISOString()} =====\n`;
+            backendStdoutStream.write(banner);
+            backendStderrStream.write(banner);
+            const context = { javaExecutable, jarPath, workingDir, currentBackendPort, userDataDir, envKeys: Object.keys(env) } as Record<string, unknown>;
+            backendStdoutStream.write(`[electron] startBackend context: ${JSON.stringify(context)}\n`);
+        } catch (e) {
+            console.error('⚠️ Falha ao preparar arquivos de log do backend:', (e as Error)?.message || e);
+        }
+    }
+
+    backendProcess = childProcess.spawn(javaExecutable, args, {
+        stdio: 'pipe',
+        detached: false,
+        env: env,
+        cwd: workingDir,
+        windowsHide: true,
+        shell: false
+    });
+    attachBackendListeners(backendProcess);
+    startBackendHealthCheck();
+
+    // Timeout para startup do backend
+    backendStartupTimeout = setTimeout(() => {
+        if (!isBackendReady) {
+            console.error('⚠️ Backend não respondeu após 30 segundos, pode haver um problema');
+            // Tentar reiniciar
+            restartBackend();
+        }
+    }, 30000);
+
+    console.log('🔄 Backend startup iniciado, aguardando confirmação...');
+}
+
 async function startBackend(): Promise<void> {
     // Garantir que NODE_ENV esteja definido corretamente
     if (!process.env.NODE_ENV) {
@@ -896,78 +1148,10 @@ async function startBackend(): Promise<void> {
         return;
     }
 
-    // Configurar variáveis de ambiente para o backend Spring (mínimas)
-    // Em produção, persistir dados do Postgres embutido na pasta do usuário (userData)
-    const userDataDir = app.getPath('userData');
-    const pgDataDir = path.join(userDataDir, 'data', 'pg');
     try {
-        fs.mkdirSync(pgDataDir, { recursive: true });
-    } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        console.warn('⚠️ Não foi possível criar diretório de dados do Postgres:', message);
-    }
-    const env = {
-        ...process.env,
-        NODE_ENV: 'production',
-        PG_DATA_DIR: pgDataDir,
-        PERSIST_EMBEDDED_PG: 'true',
-        LOG_FILE: path.join(userDataDir, 'backend.log')
-    } as NodeJS.ProcessEnv;
-
-    try {
-        console.log('🚀 Iniciando processo do backend (Java)...');
-
-        const workingDir = determineWorkingDir();
-
-        // Resolver Java preferindo embarcado
-        const javaExecutable = resolveJavaExecutable();
-        if (!javaExecutable) return;
-
-        // Tentar fixar a 3000, com fallback somente se ocupada
-        const primaryPort = 3000;
-        const free3000 = await isPortFree(primaryPort);
-        currentBackendPort = free3000 ? primaryPort : await findFirstFreePort(backendCandidatePorts);
-
-        const args = buildBackendArgs(jarPath, currentBackendPort);
-
-        // Abrir streams de log (produção e desenvolvimento) antes do spawn
-        if (!DISABLE_FILE_LOGS) {
-            try {
-                const logsDir = getLogsDirectory();
-                backendStdoutStream = fs.createWriteStream(path.join(logsDir, 'backend-stdout.log'), { flags: 'a' });
-                backendStderrStream = fs.createWriteStream(path.join(logsDir, 'backend-stderr.log'), { flags: 'a' });
-                const banner = `\n===== Backend start @ ${new Date().toISOString()} =====\n`;
-                backendStdoutStream.write(banner);
-                backendStderrStream.write(banner);
-                const context = { javaExecutable, jarPath, workingDir, currentBackendPort, userDataDir, envKeys: Object.keys(env) } as Record<string, unknown>;
-                backendStdoutStream.write(`[electron] startBackend context: ${JSON.stringify(context)}\n`);
-            } catch (e) {
-                console.error('⚠️ Falha ao preparar arquivos de log do backend:', (e as Error)?.message || e);
-            }
-        }
-
-        backendProcess = childProcess.spawn(javaExecutable, args, {
-            stdio: 'pipe',
-            detached: false,
-            env: env,
-            cwd: workingDir,
-            windowsHide: true,
-            shell: false
-        });
-        attachBackendListeners(backendProcess);
-        startBackendHealthCheck();
-
-        // Timeout para startup do backend
-        backendStartupTimeout = setTimeout(() => {
-            if (!isBackendReady) {
-                console.error('⚠️ Backend não respondeu após 30 segundos, pode haver um problema');
-                // Tentar reiniciar
-                restartBackend();
-            }
-        }, 30000);
-
-        console.log('🔄 Backend startup iniciado, aguardando confirmação...');
-
+        const { userDataDir, userPgDir } = await preparePgData();
+        const env = buildEnvForBackend(userDataDir, userPgDir);
+        await launchBackendProcess(jarPath, userDataDir, env);
     } catch (error) {
         console.error('❌ Erro ao iniciar backend:', error);
         isBackendReady = false;
@@ -1217,6 +1401,28 @@ async function fullReset(): Promise<void> {
     }
 }
 
+// Ao executar reset completo, remover também a entrada do hosts criada
+// (apenas em produção pois em desenvolvimento não alteramos hosts)
+const ORIGINAL_fullReset = fullReset;
+async function fullResetWithHostsCleanup(): Promise<void> {
+    await ORIGINAL_fullReset();
+    try {
+        if (app.isPackaged) {
+            removeHostsEntryWin('merceariarv.app');
+        }
+    } catch (e) {
+        console.warn('⚠️ Falha ao limpar hosts durante reset:', (e as Error)?.message || e);
+    }
+}
+
+// Substituir referência usada por menu para apontar para versão com cleanup
+// (o menu chama fullReset() diretamente; alterar para a nova implementação)
+// Encontramos createMenu() que usa fullReset; portanto apenas sobrescrever a função global
+// com a nova versão para manter compatibilidade
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore
+fullReset = fullResetWithHostsCleanup;
+
 function restartBackend(): void {
     if (backendRestartAttempts >= maxBackendRestartAttempts) {
         console.error('🚫 Máximo de tentativas de restart já atingido');
@@ -1246,6 +1452,20 @@ app.whenReady().then(() => {
 
     // OTIMIZAÇÃO: Criar janela imediatamente para melhor UX
     createWindow();
+
+    // Em produção, tentar mapear `merceariarv.app` para o IP local no arquivo hosts (Windows)
+    if (!isDev) {
+        try {
+            const localIp = getLocalIPv4();
+            if (localIp) {
+                ensureHostsEntryWin('merceariarv.app', localIp);
+            } else {
+                console.warn('⚠️ Não foi possível detectar IP local para mapear merceariarv.app');
+            }
+        } catch (e) {
+            console.warn('⚠️ Erro ao tentar mapear hosts:', (e as Error)?.message || e);
+        }
+    }
 
     if (!isDev) {
         // Em produção, iniciar backend em paralelo (não bloquear UI)

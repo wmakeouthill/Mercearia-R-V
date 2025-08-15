@@ -25,8 +25,15 @@ Ou para HTTPS direto:
 
 Hosts (C:\Windows\System32\drivers\etc\hosts):
   127.0.0.1 merceariarv.app www.merceariarv.app
+  127.0.0.1 merceariarv.lan
 Ou usando IP local para outros devices:
   192.168.1.14 merceariarv.app www.merceariarv.app
+  192.168.1.14 merceariarv.lan
+
+Se adicionar novo domínio (ex: merceariarv.lan) e o certificado existente não contém o SAN correspondente:
+  1. Apague os arquivos merceariarv.app.pem e merceariarv.app-key.pem
+  2. Rode: npm run cert:generate
+O script regenerado incluirá merceariarv.app, merceariarv.lan, localhost, 127.0.0.1 e o IP LAN detectado.
 
 Dispositivos móveis: precisam confiar no CA (mkcert - instalar CA no device) ou usar proxy reverso com certificado público.
 

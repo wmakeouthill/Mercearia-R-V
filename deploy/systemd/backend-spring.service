@@ -1,0 +1,26 @@
+[Unit]
+Description=Backend Spring Boot - Mercearia R-V
+After=network.target
+
+[Service]
+# User and group to run the service as. Change to a specific service user if desired.
+User=www-data
+Group=www-data
+
+# Environment file (optional) with variables like JAVA_OPTS or DB overrides
+EnvironmentFile=-/etc/default/backend-spring
+
+# Path to the JAR deployed on the server. Copy the jar to /opt/backend/
+WorkingDirectory=/opt/backend
+ExecStart=/usr/bin/java $JAVA_OPTS -jar /opt/backend/backend-spring-0.0.1-SNAPSHOT.jar --server.port=3000 --server.address=127.0.0.1
+
+Restart=on-failure
+RestartSec=5s
+
+# File descriptor and process limits (adjust if necessary)
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+
+

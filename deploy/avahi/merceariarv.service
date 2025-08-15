@@ -1,0 +1,9 @@
+<?xml version="1.0" standalone='no'?>
+<service-group>
+  <name replace-wildcards="yes">merceariarv</name>
+  <service>
+    <type>_http._tcp</type>
+    <port>80</port>
+    <txt-record>path=/</txt-record>
+  </service>
+</service-group>
