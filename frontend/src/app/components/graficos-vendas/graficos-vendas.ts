@@ -9,7 +9,8 @@ import { Venda } from '../../models';
 import { parseDate, extractLocalDate } from '../../utils/date-utils';
 import { logger } from '../../utils/logger';
 
-// Plugin simples para desenhar valores sobre barras e pontos (evita corte e tenta ficar acima)
+// Plugin para desenhar valores sobre barras, pontos e fatias de pizza.
+// Para pizza: fatias grandes recebem % interno; fatias pequenas recebem rótulo externo (% + valor).
 const valueLabelPlugin = {
   id: 'valueLabel',
   afterDatasetsDraw(chart: Chart) {
@@ -18,60 +19,154 @@ const valueLabelPlugin = {
     chart.data.datasets.forEach((dataset: any, datasetIndex: number) => {
       const meta: any = chart.getDatasetMeta(datasetIndex);
       if (meta.hidden) return;
-      // Só desenhar para barras e linhas (evitar pizza)
-      if (!['bar', 'line'].includes(meta.type)) return;
-      meta.data.forEach((element: any, index: number) => {
-        const rawVal = dataset.data[index];
-        if (rawVal == null) return;
-        let x: number; let yTop: number;
-        if (meta.type === 'bar') {
-          // Para barra vertical (indexAxis default) o topo é element.y
-          x = element.x;
-          yTop = element.y; // menor y = topo
-        } else { // line/point
-          const pos = element.tooltipPosition();
-          x = pos.x; yTop = pos.y;
-        }
-        // Converter valor para string
-        let valStr: string;
-        if (typeof rawVal === 'number') {
-          valStr = rawVal >= 1000 ? rawVal.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) : rawVal.toFixed(0);
-        } else {
-          valStr = String(rawVal);
-        }
-        // Posição alvo: acima do topo da barra / ponto
-        let drawY = yTop - 8;
-        // Se a barra encosta o chartArea.top, queremos ficar no padding acima (fora da barra)
-        if (yTop <= chartArea.top + 0.5) {
-          drawY = chartArea.top - 8; // acima da área de plotagem
-        }
-        // Segurança: não permitir sair do canvas totalmente
-        if (drawY < canvasTop + 2) drawY = canvasTop + 2;
-        ctx.save();
-        ctx.font = '600 10px "Segoe UI", sans-serif';
-        ctx.fillStyle = '#002E59';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'bottom';
-        ctx.fillText(valStr, x, drawY);
-        ctx.restore();
-      });
+      // Barras e linhas (lógica existente)
+      if (['bar', 'line'].includes(meta.type)) {
+        meta.data.forEach((element: any, index: number) => {
+          const rawVal = dataset.data[index];
+          if (rawVal == null) return;
+          let x: number; let yTop: number;
+          if (meta.type === 'bar') {
+            x = element.x;
+            yTop = element.y; // menor y = topo
+          } else { // line/point
+            const pos = element.tooltipPosition();
+            x = pos.x; yTop = pos.y;
+          }
+          let valStr: string;
+          if (typeof rawVal === 'number') {
+            valStr = rawVal >= 1000 ? rawVal.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) : rawVal.toFixed(0);
+          } else {
+            valStr = String(rawVal);
+          }
+          let drawY = yTop - 8;
+          if (yTop <= chartArea.top + 0.5) {
+            drawY = chartArea.top - 8;
+          }
+          if (drawY < canvasTop + 2) drawY = canvasTop + 2;
+          ctx.save();
+          ctx.font = '600 10px "Segoe UI", sans-serif';
+          ctx.fillStyle = '#002E59';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'bottom';
+          ctx.fillText(valStr, x, drawY);
+          ctx.restore();
+        });
+        return; // nada a fazer para pizza neste bloco
+      }
+      // Pizza: desenhar percentuais delicados dentro das fatias
+      if (meta.type === 'pie') {
+        const arcs = meta.data;
+        if (!arcs?.length) return;
+        const total = (dataset.data as any[]).reduce((s, v) => s + (Number(v) || 0), 0) || 1;
+        const bgArray = dataset.backgroundColor as any[];
+        const SMALL_THRESHOLD = 0.05; // <5% vira rótulo externo
+        const exteriorLabels: Array<{ x: number; y: number; text: string; color: string; angle: number; arc: any; }> = [];
+
+        // Desenhar internos para grandes, acumular pequenos para externos
+        arcs.forEach((arc: any, index: number) => {
+          const rawVal = Number(dataset.data[index]);
+          if (!rawVal) return;
+          const pct = rawVal / total;
+          const pctStr = pct >= 0.10 ? (pct * 100).toFixed(0) + '%' : (pct * 100).toFixed(1) + '%';
+          const valorStr = 'R$ ' + rawVal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          const combined = `${pctStr}\n${valorStr}`;
+          const angle = (arc.startAngle + arc.endAngle) / 2;
+          // Raio reduzido (encolhe pizza para dar espaço externo visual)
+          const inner = arc.innerRadius;
+          const outer = arc.outerRadius * 0.90; // reduz 10%
+          const r = inner + (outer - inner) * 0.60;
+          const x = arc.x + Math.cos(angle) * r;
+          const y = arc.y + Math.sin(angle) * r;
+          const colorHex = bgArray?.[index] || '#666';
+          const lum = hexLuminance(colorHex);
+          const textColor = lum < 0.55 ? 'rgba(255,255,255,0.92)' : '#14303F';
+          if (pct < SMALL_THRESHOLD) {
+            exteriorLabels.push({ x, y, text: `${pctStr}  |  ${valorStr}`, color: textColor, angle, arc });
+            return; // não desenha interno
+          }
+          ctx.save();
+          ctx.font = '600 11px "Segoe UI", sans-serif';
+          ctx.fillStyle = textColor;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.shadowColor = lum < 0.55 ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.4)';
+          ctx.shadowBlur = 4;
+          // duas linhas: % e valor
+          const lines = combined.split('\n');
+          lines.forEach((ln, li) => ctx.fillText(ln, x, y + (li === 0 ? -6 : 8)));
+          ctx.restore();
+        });
+
+        // Desenhar rótulos externos (simples: sem resolução elaborada de colisão; desloca verticalmente se necessário)
+        const used: Array<{ y: number; h: number; }> = [];
+        exteriorLabels.sort((a, b) => a.angle - b.angle); // ordena pelo ângulo
+        exteriorLabels.forEach(lbl => {
+          const arc = lbl.arc;
+          const angle = lbl.angle;
+          const outer = arc.outerRadius * 0.90; // coerente com redução interna
+          const startPtX = arc.x + Math.cos(angle) * (outer * 0.92);
+          const startPtY = arc.y + Math.sin(angle) * (outer * 0.92);
+          const midPtX = arc.x + Math.cos(angle) * (outer + 16);
+          let midPtY = arc.y + Math.sin(angle) * (outer + 16);
+          // Direção vertical preferencial: se na metade superior sobe, senão desce
+          let verticalDir = Math.sin(angle) < 0 ? -1 : 1;
+          const lineHeight = 14;
+          let attempts = 0;
+          while (used.some(u => Math.abs(midPtY - u.y) < (u.h + 2)) && attempts < 24) {
+            midPtY += verticalDir * 12;
+            // Evitar sair fora do topo
+            if (midPtY < 18) { midPtY = 18; verticalDir = 1; }
+            attempts++;
+          }
+          // Garantir margem superior/inferior
+          midPtY = Math.min(Math.max(midPtY, 18), chart.height - 18);
+          used.push({ y: midPtY, h: lineHeight });
+          const endX = midPtX + (Math.cos(angle) >= 0 ? 40 : -40);
+          ctx.save();
+          ctx.strokeStyle = 'rgba(0,0,0,0.30)';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(startPtX, startPtY);
+          ctx.lineTo(midPtX, midPtY);
+          ctx.lineTo(endX, midPtY);
+          ctx.stroke();
+          ctx.font = '600 11px "Segoe UI", sans-serif';
+          ctx.fillStyle = '#14303F';
+          ctx.textAlign = Math.cos(angle) >= 0 ? 'left' : 'right';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(lbl.text, endX + (Math.cos(angle) >= 0 ? 4 : -4), midPtY);
+          ctx.restore();
+        });
+      }
     });
   }
 };
+
+// Utilitário para luminância aproximada de um hex (#RRGGBB)
+function hexLuminance(hex: string): number {
+  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex.trim());
+  if (!m) return 0.5;
+  const r = parseInt(m[1], 16) / 255;
+  const g = parseInt(m[2], 16) / 255;
+  const b = parseInt(m[3], 16) / 255;
+  // fórmula simples perceptiva
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
 
 // Plugin para melhorar precisão do hover em fatias pequenas de pizza
 const betterPieHoverPlugin = {
   id: 'betterPieHover',
   afterEvent(chart: any, args: any) {
     if (chart.config.type !== 'pie') return;
-    const e = args.event; if (e?.type !== 'mousemove') return;
+    const e = args.event; if (!e) return;
     const meta = chart.getDatasetMeta(0); const arcs = meta?.data; if (!arcs?.length) return;
-    const cssX = e.native?.offsetX ?? e.x;
-    const cssY = e.native?.offsetY ?? e.y;
+    const cssX = e.native?.offsetX ?? e.x; const cssY = e.native?.offsetY ?? e.y;
+    // Aceitar mais tipos de evento para atualização responsiva
+    if (!['mousemove', 'pointermove', 'mouseenter'].includes(e.type)) return;
 
     let hitIndex = detectNative(chart, e);
     hitIndex ??= detectInRange(arcs, cssX, cssY);
-    hitIndex ??= detectWithTolerance(arcs, cssX, cssY);
+    hitIndex ??= detectWithTolerance(arcs, cssX, cssY, 1.1); // tolerância angular moderada
     if (hitIndex === chart._lastActiveBetterPieIndex) return;
     updateActive(chart, hitIndex, cssX, cssY);
   }
@@ -87,7 +182,7 @@ function detectInRange(arcs: any[], x: number, y: number): number | null {
   return null;
 }
 
-function detectWithTolerance(arcs: any[], x: number, y: number): number | null {
+function detectWithTolerance(arcs: any[], x: number, y: number, angleBoost = 1): number | null {
   const centerX = arcs[0].x, centerY = arcs[0].y;
   const dx = x - centerX, dy = y - centerY;
   const ang = ((Math.atan2(dy, dx) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
@@ -99,8 +194,8 @@ function detectWithTolerance(arcs: any[], x: number, y: number): number | null {
     const end = ((endRaw % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
     const wedge = end >= start ? end - start : (Math.PI * 2 - start + end);
     const { extraRad, angleTol } = pieHitTolerances(wedge);
-    const startTol = start - angleTol;
-    const endTol = end + angleTol;
+    const startTol = start - angleTol * angleBoost;
+    const endTol = end + angleTol * angleBoost;
     const withinAngle = start <= end ? (ang >= startTol && ang <= endTol) : (ang >= startTol || ang <= endTol);
     if (!withinAngle) continue;
     if (dist >= a.innerRadius - extraRad && dist <= a.outerRadius + extraRad) return i;
@@ -228,7 +323,8 @@ export class GraficosVendasComponent implements OnInit {
     this.chartOptionsPie = {
       responsive: true,
       interaction: { mode: 'nearest', intersect: true },
-      layout: { padding: { top: 4, bottom: 4 } },
+      // Mais espaço superior para rótulos externos não serem cortados
+      layout: { padding: { top: 56, bottom: 8, left: 8, right: 8 } },
       plugins: {
         legend: {
           position: 'bottom',
@@ -248,7 +344,7 @@ export class GraficosVendasComponent implements OnInit {
           canvas.style.cursor = activeEls?.length ? 'pointer' : 'default';
         }
       },
-      elements: { arc: { hoverOffset: 8 } },
+      elements: { arc: { hoverOffset: 10 } },
       animation: { duration: 140 }
     };
   }
@@ -412,17 +508,24 @@ export class GraficosVendasComponent implements OnInit {
         {
           label: 'Receita',
           data: [soma['dinheiro'], soma['cartao_credito'], soma['cartao_debito'], soma['pix']],
+          // Paleta menos pastel; débito em vermelho destacado
           backgroundColor: [
-            '#CFE9D6', // Dinheiro (pastel verde)
-            '#C3D4E6', // Crédito (pastel azul)
-            '#C7ECE5', // Débito (pastel aqua)
-            '#F2E4BF'  // PIX (pastel dourado)
+            '#4CAF50', // Dinheiro - verde médio
+            '#3F51B5', // Crédito - azul/indigo
+            '#E53935', // Débito - vermelho solicitado
+            '#FFB74D'  // PIX - âmbar médio
           ],
-          borderColor: 'rgba(0,0,0,0.05)',
-          borderWidth: 1,
-          hoverOffset: 10,
+          hoverBackgroundColor: [
+            '#43A047',
+            '#3949AB',
+            '#D32F2F',
+            '#FFA726'
+          ],
+          borderColor: '#ffffff',
+          borderWidth: 1, // linha divisória mais fina
+          hoverOffset: 12,
           hoverBorderColor: '#002E59',
-          hoverBorderWidth: 1.2
+          hoverBorderWidth: 1.6
         }
       ]
     };
