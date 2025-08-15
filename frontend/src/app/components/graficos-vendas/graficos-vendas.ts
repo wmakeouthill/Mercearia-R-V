@@ -9,34 +9,50 @@ import { Venda } from '../../models';
 import { parseDate, extractLocalDate } from '../../utils/date-utils';
 import { logger } from '../../utils/logger';
 
-// Plugin simples para desenhar valores sobre barras e pontos
+// Plugin simples para desenhar valores sobre barras e pontos (evita corte e tenta ficar acima)
 const valueLabelPlugin = {
   id: 'valueLabel',
   afterDatasetsDraw(chart: Chart) {
-    const { ctx } = chart;
-    chart.data.datasets.forEach((dataset: any, datasetIndex) => {
-      const meta = chart.getDatasetMeta(datasetIndex);
+    const { ctx, chartArea } = chart as any;
+    const canvasTop = 0; // topo do canvas
+    chart.data.datasets.forEach((dataset: any, datasetIndex: number) => {
+      const meta: any = chart.getDatasetMeta(datasetIndex);
       if (meta.hidden) return;
+      // Só desenhar para barras e linhas (evitar pizza)
+      if (!['bar', 'line'].includes(meta.type)) return;
       meta.data.forEach((element: any, index: number) => {
-        const value = dataset.data[index];
-        if (value == null) return;
+        const rawVal = dataset.data[index];
+        if (rawVal == null) return;
+        let x: number; let yTop: number;
+        if (meta.type === 'bar') {
+          // Para barra vertical (indexAxis default) o topo é element.y
+          x = element.x;
+          yTop = element.y; // menor y = topo
+        } else { // line/point
+          const pos = element.tooltipPosition();
+          x = pos.x; yTop = pos.y;
+        }
+        // Converter valor para string
+        let valStr: string;
+        if (typeof rawVal === 'number') {
+          valStr = rawVal >= 1000 ? rawVal.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) : rawVal.toFixed(0);
+        } else {
+          valStr = String(rawVal);
+        }
+        // Posição alvo: acima do topo da barra / ponto
+        let drawY = yTop - 8;
+        // Se a barra encosta o chartArea.top, queremos ficar no padding acima (fora da barra)
+        if (yTop <= chartArea.top + 0.5) {
+          drawY = chartArea.top - 8; // acima da área de plotagem
+        }
+        // Segurança: não permitir sair do canvas totalmente
+        if (drawY < canvasTop + 2) drawY = canvasTop + 2;
         ctx.save();
         ctx.font = '600 10px "Segoe UI", sans-serif';
         ctx.fillStyle = '#002E59';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'bottom';
-        const { x, y } = element.tooltipPosition();
-        let valStr: string;
-        if (typeof value === 'number') {
-          if (value >= 1000) {
-            valStr = value.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
-          } else {
-            valStr = value.toFixed(0);
-          }
-        } else {
-          valStr = String(value);
-        }
-        ctx.fillText(valStr, x, y - 4);
+        ctx.fillText(valStr, x, drawY);
         ctx.restore();
       });
     });
@@ -111,19 +127,39 @@ export class GraficosVendasComponent implements OnInit {
       scales: {
         x: { grid: { color: 'rgba(0,46,89,0.05)' }, ticks: { color: '#002E59', maxRotation: 45, minRotation: 0 } },
         y: { grid: { color: 'rgba(0,46,89,0.08)' }, ticks: { color: '#002E59', callback: currencyTick } }
-      }
+      },
+      layout: { padding: { top: 58, right: 10, left: 10, bottom: 8 } } // mais espaço superior p/ labels acima das barras
     };
-    this.chartOptionsBar = common;
+    this.chartOptionsBar = { ...common };
     this.chartOptionsLine = {
       ...common,
       elements: { line: { borderWidth: 2 }, point: { radius: 3, hoverRadius: 5, backgroundColor: '#DBC27D', borderColor: '#002E59', borderWidth: 1 } }
     };
     this.chartOptionsPie = {
       responsive: true,
+      interaction: { mode: 'nearest', intersect: true },
+      layout: { padding: { top: 4, bottom: 4 } },
       plugins: {
-        legend: { position: 'bottom', labels: { color: '#002E59', font: { weight: '600' } } },
+        legend: {
+          position: 'bottom',
+          labels: {
+            color: 'rgba(0,46,89,0.75)',
+            font: { weight: '500', size: 11 },
+            usePointStyle: true,
+            boxWidth: 10,
+            padding: 12
+          }
+        },
         tooltip: { callbacks: { label: (ctx: any) => `${ctx.label}: R$ ${Number(ctx.parsed).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` } }
-      }
+      },
+      onHover: (evt: any, activeEls: any[]) => {
+        const canvas: HTMLCanvasElement | null = evt?.native?.target || document.querySelector('#chartMetodo');
+        if (canvas) {
+          canvas.style.cursor = activeEls?.length ? 'pointer' : 'default';
+        }
+      },
+      elements: { arc: { hoverOffset: 8 } },
+      animation: { duration: 140 }
     };
   }
 
@@ -286,7 +322,17 @@ export class GraficosVendasComponent implements OnInit {
         {
           label: 'Receita',
           data: [soma['dinheiro'], soma['cartao_credito'], soma['cartao_debito'], soma['pix']],
-          backgroundColor: ['#28A745', '#003366', '#17A2B8', '#DBC27D']
+          backgroundColor: [
+            '#CFE9D6', // Dinheiro (pastel verde)
+            '#C3D4E6', // Crédito (pastel azul)
+            '#C7ECE5', // Débito (pastel aqua)
+            '#F2E4BF'  // PIX (pastel dourado)
+          ],
+          borderColor: 'rgba(0,0,0,0.05)',
+          borderWidth: 1,
+          hoverOffset: 10,
+          hoverBorderColor: '#002E59',
+          hoverBorderWidth: 1.2
         }
       ]
     };
@@ -305,6 +351,12 @@ export class GraficosVendasComponent implements OnInit {
       labels: top.map(t => t.nome),
       datasets: [{ label: 'Receita', data: top.map(t => t.receita), backgroundColor: 'rgba(0,46,89,0.55)', hoverBackgroundColor: 'rgba(0,46,89,0.8)', borderRadius: 6, maxBarThickness: 52 }]
     };
+  }
+
+  private formatDia(labelISO: string): string {
+    // converte YYYY-MM-DD para dd/mm/aa
+    const [ano, mes, dia] = labelISO.split('-');
+    return `${dia}/${mes}/${ano.slice(2)}`;
   }
 
   private gerarSerieTemporal(base: Venda[]) {
@@ -332,8 +384,10 @@ export class GraficosVendasComponent implements OnInit {
       }
       grupos.set(chave, (grupos.get(chave) || 0) + v.preco_total);
     }
-    const labels = [...grupos.keys()].sort((a, b) => a.localeCompare(b));
-    const data = labels.map(l => grupos.get(l) || 0);
+    const keysOrdenadas = [...grupos.keys()].sort((a, b) => a.localeCompare(b));
+    const isDia = this.granularidade === 'dia';
+    const labels = isDia ? keysOrdenadas.map(k => this.formatDia(k)) : keysOrdenadas;
+    const data = keysOrdenadas.map(k => grupos.get(k) || 0);
     this.serieTemporalData = {
       labels,
       datasets: [{ label: 'Receita', data, borderColor: '#002E59', backgroundColor: 'rgba(0,46,89,0.15)', fill: true, tension: 0.3 }]

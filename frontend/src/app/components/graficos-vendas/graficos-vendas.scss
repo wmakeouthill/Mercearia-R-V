@@ -110,17 +110,18 @@
   display: flex; flex-direction: column; gap: 10px;
   position: relative;
   min-height: 340px;
-  overflow: hidden;
+  overflow: visible; /* permitir labels fora do canvas */
 }
 
 .grafico-card.wide { grid-column: span 2; }
 
 .grafico-card::before { content:""; position:absolute; inset:0; background: radial-gradient(circle at top left, rgba(219,194,125,0.15), transparent 60%); pointer-events:none; }
 
+.grafico-card .chart-wrapper { position:relative; flex:1; margin-top:6px; padding-top:4px; }
 .grafico-card canvas { width:100%!important; height:300px!important; }
 
 .card-header { display:flex; align-items:center; justify-content:space-between; gap:12px; }
-.card-header h3 { margin:0; font-size: .95rem; font-weight:700; color: var(--primary-blue); letter-spacing:.3px; display:flex; align-items:center; gap:6px; }
+.card-header h3 { margin:0; font-size: .95rem; font-weight:700; color: var(--primary-gold); letter-spacing:.3px; display:flex; align-items:center; gap:6px; line-height:1.2; }
 .card-header h3::before { content:'📊'; font-size:1rem; }
 
 .acoes { display:flex; gap:6px; }
