@@ -29,7 +29,9 @@
           <button (click)="exportarPNG('chartSerie')">PNG</button>
         </div>
       </div>
-      <canvas id="chartSerie" baseChart [data]="serieTemporalData" [type]="'line'"></canvas>
+      <div class="chart-wrapper">
+        <canvas id="chartSerie" baseChart [data]="serieTemporalData" [options]="chartOptionsLine" [type]="'line'"></canvas>
+      </div>
     </div>
     <div class="grafico-card">
       <div class="card-header">
@@ -39,7 +41,9 @@
           <button (click)="exportarPNG('chartHora')">PNG</button>
         </div>
       </div>
-      <canvas id="chartHora" baseChart [data]="vendasPorHoraData" [type]="'bar'"></canvas>
+      <div class="chart-wrapper">
+        <canvas id="chartHora" baseChart [data]="vendasPorHoraData" [options]="chartOptionsBar" [type]="'bar'"></canvas>
+      </div>
     </div>
     <div class="grafico-card">
       <div class="card-header">
@@ -49,7 +53,9 @@
           <button (click)="exportarPNG('chartDiaSemana')">PNG</button>
         </div>
       </div>
-      <canvas id="chartDiaSemana" baseChart [data]="vendasPorDiaSemanaData" [type]="'bar'"></canvas>
+      <div class="chart-wrapper">
+        <canvas id="chartDiaSemana" baseChart [data]="vendasPorDiaSemanaData" [options]="chartOptionsBar" [type]="'bar'"></canvas>
+      </div>
     </div>
     <div class="grafico-card">
       <div class="card-header">
@@ -59,7 +65,9 @@
           <button (click)="exportarPNG('chartMetodo')">PNG</button>
         </div>
       </div>
-      <canvas id="chartMetodo" baseChart [data]="receitaPorMetodoData" [type]="'pie'"></canvas>
+      <div class="chart-wrapper">
+        <canvas id="chartMetodo" baseChart [data]="receitaPorMetodoData" [options]="chartOptionsPie" [type]="'pie'"></canvas>
+      </div>
     </div>
     <div class="grafico-card">
       <div class="card-header">
@@ -69,7 +77,9 @@
           <button (click)="exportarPNG('chartItens')">PNG</button>
         </div>
       </div>
-      <canvas id="chartItens" baseChart [data]="itensMaisVendidosData" [type]="'bar'"></canvas>
+      <div class="chart-wrapper">
+        <canvas id="chartItens" baseChart [data]="itensMaisVendidosData" [options]="chartOptionsBar" [type]="'bar'"></canvas>
+      </div>
     </div>
   </div>
 </div>
