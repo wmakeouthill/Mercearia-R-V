@@ -156,9 +156,26 @@
           </div>
         }
          <div class="paginacao">
-           <button class="action-btn close-btn" (click)="prevPage()" [disabled]="page<=1">Anterior</button>
-           <div class="page-indicator">{{ page }}</div>
-           <button class="action-btn config-btn" (click)="nextPage()" [disabled]="!hasMore">Próxima</button>
+           <div class="pagination-left">
+             <button class="btn-page btn-ghost" (click)="goToFirstPage()" [disabled]="page<=1" title="Primeira">«</button>
+             <button class="btn-page btn-ghost" (click)="prevPage()" [disabled]="page<=1" title="Anterior">‹</button>
+           </div>
+           <div class="pagination-center">
+             @for (p of paginationItems; track $index) {
+               @if (p === '…') {<span class="ellipsis">…</span>} @else {<button class="btn-page" [class.active]="p === page" (click)="onClickPage(p)">{{ p }}</button>}
+             }
+           </div>
+           <div class="pagination-right">
+             <button class="btn-page btn-ghost" (click)="nextPage()" [disabled]="page>=totalPages" title="Próxima">›</button>
+             <button class="btn-page btn-ghost" (click)="goToLastPage()" [disabled]="page>=totalPages" title="Última">»</button>
+           </div>
+           <div class="pagination-jump">
+             <label>
+               Ir para
+               <input type="number" min="1" [max]="totalPages" [(ngModel)]="jumpPage" (keyup.enter)="onJumpToPage()" />
+             </label>
+             <button class="btn-go" (click)="onJumpToPage()">Ir</button>
+           </div>
          </div>
       </div>
     }

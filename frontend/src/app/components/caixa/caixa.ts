@@ -119,9 +119,83 @@ export class CaixaComponent implements OnInit {
   // paginação
   page = 1;
   pageSize: 20 | 50 | 100 = 20;
-  setPageSize(n: 20 | 50 | 100) { this.pageSize = n; this.page = 1; this.loadResumoEMovimentacoes(); }
-  nextPage() { if (this.hasMore) { this.page++; this.loadResumoEMovimentacoes(); } }
-  prevPage() { if (this.page > 1) { this.page--; this.loadResumoEMovimentacoes(); } }
+  setPageSize(n: 20 | 50 | 100) {
+    this.pageSize = n;
+    this.page = 1;
+    this.loadResumoEMovimentacoes();
+  }
+
+  get totalPages(): number {
+    const totalItems = Number(this.total || 0);
+    const perPage = Number(this.pageSize || 1);
+    const pages = Math.ceil(totalItems / perPage);
+    return Math.max(1, pages || 1);
+  }
+
+  get paginationItems(): Array<number | string> {
+    const totalPages = this.totalPages;
+    const currentPage = this.page;
+    const siblings = 2; // quantidade de páginas vizinhas a exibir
+
+    const range: Array<number | string> = [];
+    if (totalPages <= 1) return [1];
+
+    range.push(1);
+
+    const leftSibling = Math.max(2, currentPage - siblings);
+    const rightSibling = Math.min(totalPages - 1, currentPage + siblings);
+
+    if (leftSibling > 2) {
+      range.push('…');
+    }
+
+    for (let i = leftSibling; i <= rightSibling; i++) {
+      range.push(i);
+    }
+
+    if (rightSibling < totalPages - 1) {
+      range.push('…');
+    }
+
+    if (totalPages > 1) {
+      range.push(totalPages);
+    }
+    return range;
+  }
+
+  goToPage(targetPage: number): void {
+    const page = Math.max(1, Math.min(this.totalPages, Math.floor(Number(targetPage) || 1)));
+    if (page === this.page) return;
+    this.page = page;
+    this.loadResumoEMovimentacoes();
+  }
+
+  nextPage() {
+    if (this.page < this.totalPages) {
+      this.goToPage(this.page + 1);
+    }
+  }
+
+  prevPage() {
+    if (this.page > 1) {
+      this.goToPage(this.page - 1);
+    }
+  }
+
+  goToFirstPage(): void { this.goToPage(1); }
+  goToLastPage(): void { this.goToPage(this.totalPages); }
+
+  jumpPage: number | null = null;
+  onJumpToPage(): void {
+    if (this.jumpPage == null) return;
+    this.goToPage(this.jumpPage);
+  }
+
+  onClickPage(p: number | string): void {
+    if (typeof p === 'number') {
+      this.goToPage(p);
+    }
+  }
 
   aplicarFiltrosMovs(): void {
     this.loadResumoEMovimentacoes();
