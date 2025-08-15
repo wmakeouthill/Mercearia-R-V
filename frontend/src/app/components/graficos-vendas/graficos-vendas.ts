@@ -32,31 +32,61 @@ const valueLabelPlugin = {
       const arc = lbl.arc; const angle = lbl.angle; const outer = arc.outerRadius;
       const startPtX = arc.x + Math.cos(angle) * outer;
       const startPtY = arc.y + Math.sin(angle) * outer;
+      const mid = computeMidPoint(arc, angle, chart, used);
+      const side = Math.cos(angle) >= 0 ? 1 : -1;
+      const metrics = measureLabel(ctx, lbl.lines);
+      const textX = computeTextX(mid.x, metrics.maxW, side, arc, chart, arc.circumference);
+      const endX = textX - side * 2; // gap menor para aproximar texto
+      drawConnector(ctx, startPtX, startPtY, mid.x, mid.y, endX, lbl.color);
+      drawLabelLines(ctx, lbl.lines, textX, mid.y, side, lbl.color);
+    }
+
+    function computeMidPoint(arc: any, angle: number, chart: any, used: Array<{ y: number; h: number; }>) {
       const radialExtra = 6;
-      const midPtX = arc.x + Math.cos(angle) * (outer + radialExtra);
-      let midPtY = arc.y + Math.sin(angle) * (outer + radialExtra);
+      const midPtX = arc.x + Math.cos(angle) * (arc.outerRadius + radialExtra);
+      let midPtY = arc.y + Math.sin(angle) * (arc.outerRadius + radialExtra);
       midPtY = resolveY(used, midPtY, 28, chart.height);
       used.push({ y: midPtY, h: 28 });
-      const side = Math.cos(angle) >= 0 ? 1 : -1;
+      return { x: midPtX, y: midPtY };
+    }
+
+    function measureLabel(ctx: CanvasRenderingContext2D, lines: string[]) {
       ctx.save(); ctx.font = '600 11px "Segoe UI", sans-serif';
-      const w1 = ctx.measureText(lbl.lines[0]).width; const w2 = ctx.measureText(lbl.lines[1]).width; const maxW = Math.max(w1, w2); ctx.restore();
-      const margin = 4; const pieRight = arc.x + outer; const pieLeft = arc.x - outer; const gap = 4;
-      let textX: number;
+      const w = lines.map(l => ctx.measureText(l).width);
+      ctx.restore();
+      return { maxW: Math.max(...w) };
+    }
+
+    function computeTextX(midX: number, maxW: number, side: number, arc: any, chart: any, circumference: number) {
+      const margin = 4; const gapFromPie = 4; const pieRight = arc.x + arc.outerRadius; const pieLeft = arc.x - arc.outerRadius;
+      const frac = Math.max(circumference / (Math.PI * 2), 0);
+      const MIN_HORIZ = 6; const MAX_HORIZ = 17; // encurtado
+      // Menor fatia -> bem curto. Aumenta levemente com o tamanho + largura do texto.
+      const desiredHoriz = MIN_HORIZ + (Math.min(frac, 0.22) / 0.22) * (MAX_HORIZ - MIN_HORIZ);
+      let x = midX + side * desiredHoriz;
       if (side === 1) {
-        const minOutside = pieRight + 6; const maxOutside = chart.width - margin - maxW;
-        textX = Math.min(maxOutside, Math.max(minOutside, midPtX + 2));
+        if (x < pieRight + gapFromPie) x = pieRight + gapFromPie;
+        if (x + maxW > chart.width - margin) x = chart.width - margin - maxW;
       } else {
-        const maxOutside = pieLeft - 6; const minOutside = margin + maxW;
-        textX = Math.max(minOutside, Math.min(maxOutside, midPtX - 2));
+        if (x > pieLeft - gapFromPie) x = pieLeft - gapFromPie;
+        if (x - maxW < margin) x = margin + maxW;
       }
-      const endX = textX - side * gap;
+      return x;
+    }
+
+    function drawConnector(ctx: CanvasRenderingContext2D, sx: number, sy: number, mx: number, my: number, ex: number, color: string) {
       ctx.save();
       ctx.strokeStyle = 'rgba(0,0,0,0.30)'; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(startPtX, startPtY); ctx.lineTo(midPtX, midPtY); ctx.lineTo(endX, midPtY); ctx.stroke();
-      ctx.beginPath(); ctx.arc(startPtX, startPtY, 2.2, 0, Math.PI * 2); ctx.fillStyle = 'rgba(0,0,0,0.38)'; ctx.fill();
-      ctx.font = '600 11px "Segoe UI", sans-serif'; ctx.fillStyle = lbl.color; ctx.textAlign = side === 1 ? 'left' : 'right'; ctx.textBaseline = 'middle';
-      const lineY1 = midPtY - 7; const lineY2 = midPtY + 9;
-      ctx.fillText(lbl.lines[0], textX, lineY1); ctx.fillText(lbl.lines[1], textX, lineY2);
+      ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(mx, my); ctx.lineTo(ex, my); ctx.stroke();
+      ctx.beginPath(); ctx.arc(sx, sy, 2.2, 0, Math.PI * 2); ctx.fillStyle = 'rgba(0,0,0,0.38)'; ctx.fill();
+      ctx.restore();
+    }
+
+    function drawLabelLines(ctx: CanvasRenderingContext2D, lines: string[], x: number, midY: number, side: number, color: string) {
+      ctx.save();
+      ctx.font = '600 11px "Segoe UI", sans-serif'; ctx.fillStyle = color; ctx.textAlign = side === 1 ? 'left' : 'right'; ctx.textBaseline = 'middle';
+      ctx.fillText(lines[0], x, midY - 7);
+      ctx.fillText(lines[1], x, midY + 9);
       ctx.restore();
     }
     function drawExterior(ctx: CanvasRenderingContext2D, chart: any, labels: Array<{ lines: string[]; color: string; angle: number; arc: any; }>) {
@@ -107,7 +137,7 @@ const valueLabelPlugin = {
         const total = (dataset.data as any[]).reduce((s, v) => s + (Number(v) || 0), 0) || 1;
         const bgArray = dataset.backgroundColor as any[];
         const exteriorLabels: Array<{ lines: string[]; color: string; angle: number; arc: any; }> = [];
-        const LARGE_INTERNAL_THRESHOLD = 0.33; // apenas fatias realmente grandes dentro
+        const LARGE_INTERNAL_THRESHOLD = 0.28; // permitir médio-grandes internas
         arcs.forEach((arc: any, index: number) => {
           if (!arc || arc.circumference === 0) return;
           const rawVal = Number(dataset.data[index]);
@@ -122,31 +152,23 @@ const valueLabelPlugin = {
           let drewInternal = false;
           if (pct >= LARGE_INTERNAL_THRESHOLD) {
             const angleSpan = arc.endAngle - arc.startAngle;
-            const midRadius = arc.innerRadius + (arc.outerRadius - arc.innerRadius) * 0.60;
-            const arcLength = angleSpan * midRadius;
-            ctx.save();
-            ctx.font = '600 11px "Segoe UI", sans-serif';
-            const w1 = ctx.measureText(pctStr).width;
-            const w2 = ctx.measureText(valorStr).width;
-            ctx.restore();
-            const maxW = Math.max(w1, w2) + 10;
-            const radialThickness = (arc.outerRadius - arc.innerRadius) * 0.95;
-            if (arcLength >= maxW && radialThickness >= 28) {
-              // desenhar interno
+            const testRadius = Math.max(arc.outerRadius - 4, arc.outerRadius * 0.9);
+            const arcLength = angleSpan * testRadius; // usar raio maior para estimar espaço real
+            ctx.save(); ctx.font = '600 11px "Segoe UI", sans-serif';
+            const w1 = ctx.measureText(pctStr).width; const w2 = ctx.measureText(valorStr).width; ctx.restore();
+            const maxW = Math.max(w1, w2) + 8;
+            if (arcLength >= maxW) {
               const angle = (arc.startAngle + arc.endAngle) / 2;
-              const r = arc.innerRadius + (arc.outerRadius - arc.innerRadius) * 0.58;
+              const r = arc.innerRadius + (arc.outerRadius - arc.innerRadius) * 0.60;
               let x = arc.x + Math.cos(angle) * r;
               const y = arc.y + Math.sin(angle) * r;
               ctx.save();
               ctx.font = '600 11px "Segoe UI", sans-serif';
               ctx.fillStyle = textColor;
-              ctx.textAlign = 'center';
-              ctx.textBaseline = 'middle';
-              // anti-corte horizontal
-              const marginIn = 6;
-              const maxLineW = maxW - 10;
-              if (x - maxLineW / 2 < marginIn) x = marginIn + maxLineW / 2;
-              if (x + maxLineW / 2 > chart.width - marginIn) x = chart.width - marginIn - maxLineW / 2;
+              ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+              const marginIn = 6; const lineMax = maxW - 8;
+              if (x - lineMax / 2 < marginIn) x = marginIn + lineMax / 2;
+              if (x + lineMax / 2 > chart.width - marginIn) x = chart.width - marginIn - lineMax / 2;
               ctx.fillText(pctStr, x, y - 6);
               ctx.fillText(valorStr, x, y + 8);
               ctx.restore();
@@ -154,7 +176,8 @@ const valueLabelPlugin = {
             }
           }
           if (!drewInternal) {
-            exteriorLabels.push({ lines: [pctStr, valorStr], color: textColor, angle: (arc.startAngle + arc.endAngle) / 2, arc });
+            const externalColor = '#14303F'; // força cor escura sempre visível fora
+            exteriorLabels.push({ lines: [pctStr, valorStr], color: externalColor, angle: (arc.startAngle + arc.endAngle) / 2, arc });
           }
         });
         // Resto: desenhar externos
