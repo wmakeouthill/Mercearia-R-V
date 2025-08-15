@@ -66,7 +66,10 @@
         </div>
       </div>
       <div class="chart-wrapper">
-        <canvas id="chartHora" baseChart [data]="vendasPorHoraData" [options]="chartOptionsBar" [type]="'bar'"></canvas>
+        <div class="sub-header-filtros" *ngIf="selectedHora!=null">
+          <button type="button" class="badge-filtro" (click)="limparFiltroHora()">Hora: {{ (selectedHora||0) | number:'2.0' }}h ✕</button>
+        </div>
+        <canvas id="chartHora" baseChart [data]="vendasPorHoraData" [options]="chartOptionsBar" [type]="'bar'" (chartClick)="onHoraClick($event)"></canvas>
       </div>
     </div>
     <div class="grafico-card">
@@ -78,7 +81,10 @@
         </div>
       </div>
       <div class="chart-wrapper">
-        <canvas id="chartDiaSemana" baseChart [data]="vendasPorDiaSemanaData" [options]="chartOptionsBar" [type]="'bar'"></canvas>
+        <div class="sub-header-filtros" *ngIf="selectedDiaSemana!=null">
+          <button type="button" class="badge-filtro" (click)="limparFiltroDiaSemana()">Dia: {{ vendasPorDiaSemanaData?.labels?.[selectedDiaSemana!] }} ✕</button>
+        </div>
+        <canvas id="chartDiaSemana" baseChart [data]="vendasPorDiaSemanaData" [options]="chartOptionsBar" [type]="'bar'" (chartClick)="onDiaSemanaClick($event)"></canvas>
       </div>
     </div>
     <div class="grafico-card">
@@ -88,6 +94,10 @@
           <button class="btn-export csv" (click)="exportarCSV('metodo')">CSV</button>
           <button class="btn-export png" (click)="exportarPNG('chartMetodo')">PNG</button>
         </div>
+      </div>
+      <div class="filtros-ativos" *ngIf="resumoFiltros.length">
+        <span>Filtros: {{ resumoFiltros.join(' + ') }}</span>
+        <button type="button" class="badge-filtro" (click)="limparTodosFiltros()" title="Limpar todos filtros">Limpar ✕</button>
       </div>
       <div class="chart-wrapper">
         <canvas id="chartMetodo" baseChart [data]="receitaPorMetodoData" [options]="chartOptionsPie" [type]="'pie'"></canvas>
@@ -100,6 +110,10 @@
           <button class="btn-export csv" (click)="exportarCSV('itens')">CSV</button>
           <button class="btn-export png" (click)="exportarPNG('chartItens')">PNG</button>
         </div>
+      </div>
+      <div class="filtros-ativos" *ngIf="resumoFiltros.length">
+        <span>Filtros: {{ resumoFiltros.join(' + ') }}</span>
+        <button type="button" class="badge-filtro" (click)="limparTodosFiltros()" title="Limpar todos filtros">Limpar ✕</button>
       </div>
       <div class="chart-wrapper">
         <canvas id="chartItens" baseChart [data]="itensMaisVendidosData" [options]="chartOptionsBar" [type]="'bar'"></canvas>

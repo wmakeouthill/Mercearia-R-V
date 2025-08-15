@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, HostListener } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ChartData, registerables, Chart } from 'chart.js';
 import { NgChartsModule } from 'ng2-charts';
@@ -355,6 +355,17 @@ export class GraficosVendasComponent implements OnInit {
   private serieTemporalRawKeys: string[] = [];
   // Dia selecionado via clique na série temporal (formato YYYY-MM-DD). Se null, nenhum filtro adicional.
   selectedDiaSerie: string | null = null;
+  // Filtros adicionais: hora (0-23) e dia da semana (0=Dom .. 6=Sab)
+  selectedHora: number | null = null;
+  selectedDiaSemana: number | null = null;
+  // Resumo calculado (getter) dos filtros ativos que impactam receita por método / top itens
+  get resumoFiltros(): string[] {
+    const r: string[] = [];
+    if (this.selectedDiaSerie) r.push('Dia ' + this.formatDia(this.selectedDiaSerie));
+    if (this.selectedDiaSemana != null) r.push('Semana ' + this.nomeDiaSemana(this.selectedDiaSemana));
+    if (this.selectedHora != null) r.push(('0' + this.selectedHora).slice(-2) + 'h');
+    return r;
+  }
   chartOptionsBar: any;
   chartOptionsLine: any;
   chartOptionsPie: any;
@@ -365,6 +376,7 @@ export class GraficosVendasComponent implements OnInit {
   constructor(private readonly api: ApiService, private readonly router: Router) { }
 
   ngOnInit(): void {
+    this.restaurarFiltrosPersistidos();
     this.carregar();
     this.initChartOptions();
   }
@@ -527,6 +539,9 @@ export class GraficosVendasComponent implements OnInit {
       if (g !== 'dia' && !this.anoSelecionado && this.anosDisponiveis.length) {
         this.anoSelecionado = this.anosDisponiveis[0];
       }
+      // Ao mudar granularidade, se sair de 'dia' limpar filtro de dia específico (não faz sentido em granularidade maior)
+      if (g !== 'dia') this.selectedDiaSerie = null;
+      this.salvarFiltros();
       this.recalcularTudo();
     }
   }
@@ -537,18 +552,27 @@ export class GraficosVendasComponent implements OnInit {
 
   recalcularTudo() {
     try {
-      const base = this.vendasFiltradas(); // base filtrada por datas / ano / granularidade
-      // Para outros gráficos, se houver seleção de dia na série (apenas quando granularidade='dia'), aplicar filtro adicional
-      const baseParaOutros = (this.granularidade === 'dia' && this.selectedDiaSerie)
-        ? base.filter(v => extractLocalDate(v.data_venda) === this.selectedDiaSerie)
-        : base;
-      // Gráficos dependentes da seleção
-      this.gerarVendasPorHora(baseParaOutros);
-      this.gerarVendasPorDiaSemana(baseParaOutros);
-      this.gerarReceitaPorMetodo(baseParaOutros);
-      this.gerarItensMaisVendidos(baseParaOutros);
-      // A série temporal sempre mostra o conjunto completo (não restringe ao ponto clicado)
-      this.gerarSerieTemporal(base);
+      const baseGlobal = this.vendasFiltradas(); // base geral (datas / ano / granularidade)
+      // Série temporal mostra sempre a base global
+      this.gerarSerieTemporal(baseGlobal);
+
+      // Base para gráficos de hora e diaSemana: afetados somente por seleção de dia da série temporal
+      const baseTempo = (this.granularidade === 'dia' && this.selectedDiaSerie)
+        ? baseGlobal.filter(v => extractLocalDate(v.data_venda) === this.selectedDiaSerie)
+        : baseGlobal;
+      this.gerarVendasPorHora(baseTempo);
+      this.gerarVendasPorDiaSemana(baseTempo);
+
+      // Base para receita por método e top itens: aplicar todos os filtros combinados
+      let baseDetalhe = baseTempo; // já inclui filtro de diaSerie se houver
+      if (this.selectedDiaSemana != null) {
+        baseDetalhe = baseDetalhe.filter(v => parseDate(v.data_venda).getDay() === this.selectedDiaSemana);
+      }
+      if (this.selectedHora != null) {
+        baseDetalhe = baseDetalhe.filter(v => parseDate(v.data_venda).getHours() === this.selectedHora);
+      }
+      this.gerarReceitaPorMetodo(baseDetalhe);
+      this.gerarItensMaisVendidos(baseDetalhe);
     } catch (e) {
       logger.error('GRAFICOS_VENDAS', 'RECALC', 'Erro ao recalcular', { e });
     }
@@ -576,9 +600,20 @@ export class GraficosVendasComponent implements OnInit {
       const d = parseDate(v.data_venda);
       arr[d.getHours()] += v.preco_total;
     }
+    const labels = arr.map((_, h) => h.toString().padStart(2, '0') + 'h');
+    const highlightColor = '#FF9800';
+    const baseColor = 'rgba(0,46,89,0.65)';
+    const backgroundColor = this.selectedHora == null ? baseColor : arr.map((_, i) => i === this.selectedHora ? highlightColor : baseColor);
     this.vendasPorHoraData = {
-      labels: arr.map((_, h) => h.toString().padStart(2, '0') + 'h'),
-      datasets: [{ label: 'Receita', data: arr, backgroundColor: 'rgba(0,46,89,0.65)', hoverBackgroundColor: 'rgba(0,46,89,0.85)', borderRadius: 6, maxBarThickness: 38 }]
+      labels,
+      datasets: [{
+        label: 'Receita',
+        data: arr,
+        backgroundColor,
+        hoverBackgroundColor: 'rgba(0,46,89,0.85)',
+        borderRadius: 6,
+        maxBarThickness: 38
+      }]
     };
   }
 
@@ -589,9 +624,19 @@ export class GraficosVendasComponent implements OnInit {
       const d = parseDate(v.data_venda);
       soma[d.getDay()] += v.preco_total;
     }
+    const highlightColor = '#FF9800';
+    const baseColor = 'rgba(219,194,125,0.75)';
+    const backgroundColor = this.selectedDiaSemana == null ? baseColor : soma.map((_, i) => i === this.selectedDiaSemana ? highlightColor : baseColor);
     this.vendasPorDiaSemanaData = {
       labels: nomes,
-      datasets: [{ label: 'Receita', data: soma, backgroundColor: 'rgba(219,194,125,0.75)', hoverBackgroundColor: 'rgba(219,194,125,0.95)', borderRadius: 6, maxBarThickness: 44 }]
+      datasets: [{
+        label: 'Receita',
+        data: soma,
+        backgroundColor,
+        hoverBackgroundColor: 'rgba(219,194,125,0.95)',
+        borderRadius: 6,
+        maxBarThickness: 44
+      }]
     };
   }
 
@@ -746,7 +791,87 @@ export class GraficosVendasComponent implements OnInit {
     } else {
       this.selectedDiaSerie = chave;
     }
+    this.salvarFiltros();
+    // Ao mudar seleção de data, manter outros filtros; recalc
     this.recalcularTudo();
+  }
+
+  // Clique em barra de hora
+  onHoraClick(evt: any) {
+    const active = evt?.active as any[];
+    if (!active?.length || !this.vendasPorHoraData) return;
+    const idx = active[0].index;
+    if (idx == null) return;
+    this.selectedHora = this.selectedHora === idx ? null : idx;
+    this.salvarFiltros();
+    // Recalcular apenas gráficos dependentes (receita por método e itens) e destacar barras
+    this.recalcularTudo();
+  }
+
+  // Clique em barra de dia da semana
+  onDiaSemanaClick(evt: any) {
+    const active = evt?.active as any[];
+    if (!active?.length || !this.vendasPorDiaSemanaData) return;
+    const idx = active[0].index;
+    if (idx == null) return;
+    this.selectedDiaSemana = this.selectedDiaSemana === idx ? null : idx;
+    this.salvarFiltros();
+    this.recalcularTudo();
+  }
+
+  limparFiltroHora() { this.selectedHora = null; this.salvarFiltros(); this.recalcularTudo(); }
+  limparFiltroDiaSemana() { this.selectedDiaSemana = null; this.salvarFiltros(); this.recalcularTudo(); }
+  limparTodosFiltros() {
+    this.selectedHora = null;
+    this.selectedDiaSemana = null;
+    if (this.granularidade === 'dia') {
+      this.selectedDiaSerie = null;
+    }
+    this.salvarFiltros();
+    this.recalcularTudo();
+  }
+
+  // Nome do dia da semana abreviado para resumo
+  private nomeDiaSemana(idx: number): string { return ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'][idx] || ''; }
+
+  // Persistência simples em localStorage
+  private salvarFiltros() {
+    try {
+      const payload = {
+        granularidade: this.granularidade,
+        selectedDiaSerie: this.selectedDiaSerie,
+        selectedHora: this.selectedHora,
+        selectedDiaSemana: this.selectedDiaSemana,
+        dataInicio: this.dataInicio,
+        dataFim: this.dataFim,
+        ano: this.anoSelecionado
+      };
+      localStorage.setItem('gv_filtros', JSON.stringify(payload));
+    } catch { /* ignore */ }
+  }
+  private restaurarFiltrosPersistidos() {
+    try {
+      const raw = localStorage.getItem('gv_filtros');
+      if (!raw) return;
+      const parsed = JSON.parse(raw || '{}');
+      if (parsed.granularidade) this.granularidade = parsed.granularidade;
+      this.selectedDiaSerie = parsed.selectedDiaSerie || null;
+      this.selectedHora = parsed.selectedHora ?? null;
+      this.selectedDiaSemana = parsed.selectedDiaSemana ?? null;
+      this.dataInicio = parsed.dataInicio || '';
+      this.dataFim = parsed.dataFim || '';
+      this.anoSelecionado = parsed.ano;
+    } catch { /* ignore */ }
+  }
+
+  // Tecla ESC limpa todos filtros
+  @HostListener('document:keydown', ['$event'])
+  handleKeydown(ev: KeyboardEvent) {
+    if (ev.key === 'Escape') {
+      if (this.selectedDiaSerie || this.selectedHora != null || this.selectedDiaSemana != null) {
+        this.limparTodosFiltros();
+      }
+    }
   }
 
   exportarPNG(id: string) {
