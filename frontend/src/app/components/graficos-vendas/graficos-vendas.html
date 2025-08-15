@@ -96,8 +96,12 @@
         </div>
       </div>
       <div class="filtros-ativos" *ngIf="resumoFiltros.length">
-        <span>Filtros: {{ resumoFiltros.join(' + ') }}</span>
-        <button type="button" class="badge-filtro" (click)="limparTodosFiltros()" title="Limpar todos filtros">Limpar ✕</button>
+        <span class="label">Filtros:</span>
+        <ng-container *ngFor="let f of resumoFiltros; let i = index">
+          <span class="chip">{{ f }}</span>
+          <span class="sep" *ngIf="i < resumoFiltros.length - 1">+</span>
+        </ng-container>
+        <button type="button" class="limpar" (click)="limparTodosFiltros()" title="Limpar todos filtros">Limpar ✕</button>
       </div>
       <div class="chart-wrapper">
         <canvas id="chartMetodo" baseChart [data]="receitaPorMetodoData" [options]="chartOptionsPie" [type]="'pie'"></canvas>
@@ -112,8 +116,12 @@
         </div>
       </div>
       <div class="filtros-ativos" *ngIf="resumoFiltros.length">
-        <span>Filtros: {{ resumoFiltros.join(' + ') }}</span>
-        <button type="button" class="badge-filtro" (click)="limparTodosFiltros()" title="Limpar todos filtros">Limpar ✕</button>
+        <span class="label">Filtros:</span>
+        <ng-container *ngFor="let f of resumoFiltros; let i = index">
+          <span class="chip">{{ f }}</span>
+          <span class="sep" *ngIf="i < resumoFiltros.length - 1">+</span>
+        </ng-container>
+        <button type="button" class="limpar" (click)="limparTodosFiltros()" title="Limpar todos filtros">Limpar ✕</button>
       </div>
       <div class="chart-wrapper">
         <canvas id="chartItens" baseChart [data]="itensMaisVendidosData" [options]="chartOptionsBar" [type]="'bar'"></canvas>
