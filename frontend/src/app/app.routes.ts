@@ -41,6 +41,11 @@ export const routes: Routes = [
         canActivate: [AuthGuard]
     },
     {
+        path: 'relatorios/graficos',
+        loadComponent: () => import('./components/graficos-vendas/graficos-vendas').then(m => m.GraficosVendasComponent),
+        canActivate: [AuthGuard]
+    },
+    {
         path: 'logs',
         loadComponent: () => import('./components/logs-viewer/logs-viewer').then(m => m.LogsViewerComponent),
         canActivate: [AuthGuard, AdminGuard]

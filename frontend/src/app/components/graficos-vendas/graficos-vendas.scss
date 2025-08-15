@@ -1,0 +1,26 @@
+.graficos-wrapper {
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.toolbar { display: flex; gap: .75rem; }
+.btn-modo { background:#3f51b5; color:#fff; border:none; padding:.5rem 1rem; border-radius:4px; cursor:pointer; }
+.btn-modo:hover { filter: brightness(1.1); }
+
+.grid-graficos { display:grid; grid-template-columns: repeat(auto-fit,minmax(320px,1fr)); gap:1.25rem; }
+.grafico-card { background:#ffffff0d; backdrop-filter: blur(4px); border:1px solid #ffffff22; padding:1rem; border-radius:8px; position:relative; display:flex; flex-direction:column; }
+.grafico-card.wide { grid-column: span 2; }
+.grafico-card canvas { width:100%!important; height:300px!important; }
+.card-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:.5rem; }
+.card-header h3 { font-size:1rem; margin:0; }
+.acoes { display:flex; gap:.5rem; }
+.acoes button { background:#2196f3; color:#fff; border:none; padding:.35rem .7rem; font-size:.75rem; border-radius:4px; cursor:pointer; }
+.acoes button:hover { filter:brightness(1.15); }
+
+.placeholder { padding:2rem; text-align:center; font-style:italic; }
+
+@media (max-width: 900px) {
+  .grafico-card.wide { grid-column: span 1; }
+}

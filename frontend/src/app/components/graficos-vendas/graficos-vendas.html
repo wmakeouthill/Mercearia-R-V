@@ -1,0 +1,75 @@
+<div class="graficos-page">
+  <div class="header">
+    <h1>Gráficos de Vendas</h1>
+    <div class="acoes-header">
+      <button class="btn-voltar" (click)="voltarRelatorio()">← Voltar</button>
+    </div>
+  </div>
+
+  <div class="filtros">
+    <span class="filtro-label">Granularidade:</span>
+    <div class="grupo-botoes">
+      <button [class.ativo]="granularidade==='dia'" (click)="alterarGranularidade('dia')">Diário</button>
+      <button [class.ativo]="granularidade==='mes'" (click)="alterarGranularidade('mes')">Mensal</button>
+      <button [class.ativo]="granularidade==='trimestre'" (click)="alterarGranularidade('trimestre')">Trimestral</button>
+      <button [class.ativo]="granularidade==='semestre'" (click)="alterarGranularidade('semestre')">Semestral</button>
+      <button [class.ativo]="granularidade==='ano'" (click)="alterarGranularidade('ano')">Anual</button>
+    </div>
+  </div>
+
+  <div *ngIf="carregando" class="loading">Carregando dados...</div>
+  <div *ngIf="erro" class="erro">{{ erro }}</div>
+
+  <div class="grid-graficos" *ngIf="!carregando && !erro">
+    <div class="grafico-card wide">
+      <div class="card-header">
+        <h3>Série Temporal ({{ granularidade | titlecase }})</h3>
+        <div class="acoes">
+          <button (click)="exportarCSV('serie')">CSV</button>
+          <button (click)="exportarPNG('chartSerie')">PNG</button>
+        </div>
+      </div>
+      <canvas id="chartSerie" baseChart [data]="serieTemporalData" [type]="'line'"></canvas>
+    </div>
+    <div class="grafico-card">
+      <div class="card-header">
+        <h3>Receita por Hora</h3>
+        <div class="acoes">
+          <button (click)="exportarCSV('hora')">CSV</button>
+          <button (click)="exportarPNG('chartHora')">PNG</button>
+        </div>
+      </div>
+      <canvas id="chartHora" baseChart [data]="vendasPorHoraData" [type]="'bar'"></canvas>
+    </div>
+    <div class="grafico-card">
+      <div class="card-header">
+        <h3>Receita por Dia da Semana</h3>
+        <div class="acoes">
+          <button (click)="exportarCSV('dia-semana')">CSV</button>
+          <button (click)="exportarPNG('chartDiaSemana')">PNG</button>
+        </div>
+      </div>
+      <canvas id="chartDiaSemana" baseChart [data]="vendasPorDiaSemanaData" [type]="'bar'"></canvas>
+    </div>
+    <div class="grafico-card">
+      <div class="card-header">
+        <h3>Receita por Método</h3>
+        <div class="acoes">
+          <button (click)="exportarCSV('metodo')">CSV</button>
+          <button (click)="exportarPNG('chartMetodo')">PNG</button>
+        </div>
+      </div>
+      <canvas id="chartMetodo" baseChart [data]="receitaPorMetodoData" [type]="'pie'"></canvas>
+    </div>
+    <div class="grafico-card">
+      <div class="card-header">
+        <h3>Top 10 Itens</h3>
+        <div class="acoes">
+          <button (click)="exportarCSV('itens')">CSV</button>
+          <button (click)="exportarPNG('chartItens')">PNG</button>
+        </div>
+      </div>
+      <canvas id="chartItens" baseChart [data]="itensMaisVendidosData" [type]="'bar'"></canvas>
+    </div>
+  </div>
+</div>

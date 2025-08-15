@@ -35,6 +35,7 @@ export class RelatorioVendasComponent implements OnInit {
   error = '';
   isAdmin = false;
 
+
   // Estatísticas
   totalVendas = 0;
   receitaTotal = 0;
@@ -316,6 +317,10 @@ export class RelatorioVendasComponent implements OnInit {
 
   voltarAoDashboard(): void {
     this.router.navigate(['/dashboard']);
+  }
+
+  irParaGraficos(): void {
+    this.router.navigate(['/relatorios/graficos']);
   }
 
   private computeVendasFiltradas(): Venda[] {
