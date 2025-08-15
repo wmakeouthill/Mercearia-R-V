@@ -10,12 +10,59 @@ import { parseDate, extractLocalDate } from '../../utils/date-utils';
 import { logger } from '../../utils/logger';
 
 // Plugin para desenhar valores sobre barras, pontos e fatias de pizza.
-// Para pizza: fatias grandes recebem % interno; fatias pequenas recebem rótulo externo (% + valor).
+// Para pizza: agora TODAS as fatias usam rótulo externo (% + valor) para consistência visual.
 const valueLabelPlugin = {
   id: 'valueLabel',
   afterDatasetsDraw(chart: Chart) {
     const { ctx, chartArea } = chart as any;
     const canvasTop = 0; // topo do canvas
+    function resolveY(existing: Array<{ y: number; h: number; }>, targetY: number, height: number, chartH: number): number {
+      let y = targetY;
+      let attempts = 0;
+      let dir = y < chartH / 2 ? -1 : 1;
+      while (existing.some(u => Math.abs(y - u.y) < (u.h + 2)) && attempts < 24) {
+        y += dir * 8;
+        if (y < 18) { y = 18; dir = 1; }
+        if (y > chartH - 18) { y = chartH - 18; dir = -1; }
+        attempts++;
+      }
+      return Math.min(Math.max(y, 18), chartH - 18);
+    }
+    function drawOneExterior(ctx: CanvasRenderingContext2D, chart: any, lbl: any, used: Array<{ y: number; h: number; }>) {
+      const arc = lbl.arc; const angle = lbl.angle; const outer = arc.outerRadius;
+      const startPtX = arc.x + Math.cos(angle) * outer;
+      const startPtY = arc.y + Math.sin(angle) * outer;
+      const radialExtra = 6;
+      const midPtX = arc.x + Math.cos(angle) * (outer + radialExtra);
+      let midPtY = arc.y + Math.sin(angle) * (outer + radialExtra);
+      midPtY = resolveY(used, midPtY, 28, chart.height);
+      used.push({ y: midPtY, h: 28 });
+      const side = Math.cos(angle) >= 0 ? 1 : -1;
+      ctx.save(); ctx.font = '600 11px "Segoe UI", sans-serif';
+      const w1 = ctx.measureText(lbl.lines[0]).width; const w2 = ctx.measureText(lbl.lines[1]).width; const maxW = Math.max(w1, w2); ctx.restore();
+      const margin = 4; const pieRight = arc.x + outer; const pieLeft = arc.x - outer; const gap = 4;
+      let textX: number;
+      if (side === 1) {
+        const minOutside = pieRight + 6; const maxOutside = chart.width - margin - maxW;
+        textX = Math.min(maxOutside, Math.max(minOutside, midPtX + 2));
+      } else {
+        const maxOutside = pieLeft - 6; const minOutside = margin + maxW;
+        textX = Math.max(minOutside, Math.min(maxOutside, midPtX - 2));
+      }
+      const endX = textX - side * gap;
+      ctx.save();
+      ctx.strokeStyle = 'rgba(0,0,0,0.30)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(startPtX, startPtY); ctx.lineTo(midPtX, midPtY); ctx.lineTo(endX, midPtY); ctx.stroke();
+      ctx.beginPath(); ctx.arc(startPtX, startPtY, 2.2, 0, Math.PI * 2); ctx.fillStyle = 'rgba(0,0,0,0.38)'; ctx.fill();
+      ctx.font = '600 11px "Segoe UI", sans-serif'; ctx.fillStyle = lbl.color; ctx.textAlign = side === 1 ? 'left' : 'right'; ctx.textBaseline = 'middle';
+      const lineY1 = midPtY - 7; const lineY2 = midPtY + 9;
+      ctx.fillText(lbl.lines[0], textX, lineY1); ctx.fillText(lbl.lines[1], textX, lineY2);
+      ctx.restore();
+    }
+    function drawExterior(ctx: CanvasRenderingContext2D, chart: any, labels: Array<{ lines: string[]; color: string; angle: number; arc: any; }>) {
+      const used: Array<{ y: number; h: number; }> = []; labels.sort((a, b) => a.angle - b.angle);
+      labels.forEach(l => { if (l.arc && l.arc.circumference !== 0) drawOneExterior(ctx, chart, l, used); });
+    }
     chart.data.datasets.forEach((dataset: any, datasetIndex: number) => {
       const meta: any = chart.getDatasetMeta(datasetIndex);
       if (meta.hidden) return;
@@ -59,129 +106,59 @@ const valueLabelPlugin = {
         if (!arcs?.length) return;
         const total = (dataset.data as any[]).reduce((s, v) => s + (Number(v) || 0), 0) || 1;
         const bgArray = dataset.backgroundColor as any[];
-        // Critério antigo substituído por lógica dinâmica de encaixe.
-        const MIN_PCT_INTERNAL = 0.18; // aumenta critério: menos internas para liberar espaço
-        const exteriorLabels: Array<{ x: number; y: number; lines: string[]; color: string; angle: number; arc: any; textAlign: CanvasTextAlign; }> = [];
-
-        // Desenhar internos para grandes, acumular pequenos para externos
+        const exteriorLabels: Array<{ lines: string[]; color: string; angle: number; arc: any; }> = [];
+        const LARGE_INTERNAL_THRESHOLD = 0.33; // apenas fatias realmente grandes dentro
         arcs.forEach((arc: any, index: number) => {
-          // Ignorar fatias ocultas (legend toggle) - Chart.js 4: meta data[i].circumference == 0
           if (!arc || arc.circumference === 0) return;
           const rawVal = Number(dataset.data[index]);
           if (!rawVal) return;
           const pct = rawVal / total;
           const pctStr = pct >= 0.10 ? (pct * 100).toFixed(0) + '%' : (pct * 100).toFixed(1) + '%';
           const valorStr = 'R$ ' + rawVal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-          const combined = `${pctStr}\n${valorStr}`;
-          const angle = (arc.startAngle + arc.endAngle) / 2;
-          // Raio reduzido (encolhe pizza para dar espaço externo visual)
-          const inner = arc.innerRadius;
-          const outer = arc.outerRadius * 0.98; // usar quase o raio para manter consistência após radius dataset
-          const r = inner + (outer - inner) * 0.60;
-          const x = arc.x + Math.cos(angle) * r;
-          const y = arc.y + Math.sin(angle) * r;
           const colorHex = bgArray?.[index] || '#666';
           const lum = hexLuminance(colorHex);
           const textColor = lum < 0.55 ? 'rgba(255,255,255,0.92)' : '#14303F';
-          // Verificar se cabe dentro: ângulo suficiente e espessura radial suficiente para duas linhas
-          const angleSpan = arc.endAngle - arc.startAngle; // radianos
-          // raio para medir comprimento de arco onde texto ficará
-          const midRadius = inner + (outer - inner) * 0.60;
-          const availableArcLength = angleSpan * midRadius; // comprimento do arco
-          ctx.save();
-          ctx.font = '600 11px "Segoe UI", sans-serif';
-          const wPct = ctx.measureText(pctStr).width;
-          const wVal = ctx.measureText(valorStr).width;
-          ctx.restore();
-          const maxLineWidth = Math.max(wPct, wVal) + 10; // margem
-          const radialThickness = (outer - inner) * 0.90; // após redução
-          const neededRadial = 26; // ~ duas linhas
-          const fits = pct >= MIN_PCT_INTERNAL && availableArcLength >= maxLineWidth && radialThickness >= neededRadial;
-          if (!fits) {
-            exteriorLabels.push({ x, y, lines: [pctStr, valorStr], color: textColor, angle, arc, textAlign: 'center' });
-            return; // externo (duas linhas)
+          // Testar se cabe internamente para grandes
+          let drewInternal = false;
+          if (pct >= LARGE_INTERNAL_THRESHOLD) {
+            const angleSpan = arc.endAngle - arc.startAngle;
+            const midRadius = arc.innerRadius + (arc.outerRadius - arc.innerRadius) * 0.60;
+            const arcLength = angleSpan * midRadius;
+            ctx.save();
+            ctx.font = '600 11px "Segoe UI", sans-serif';
+            const w1 = ctx.measureText(pctStr).width;
+            const w2 = ctx.measureText(valorStr).width;
+            ctx.restore();
+            const maxW = Math.max(w1, w2) + 10;
+            const radialThickness = (arc.outerRadius - arc.innerRadius) * 0.95;
+            if (arcLength >= maxW && radialThickness >= 28) {
+              // desenhar interno
+              const angle = (arc.startAngle + arc.endAngle) / 2;
+              const r = arc.innerRadius + (arc.outerRadius - arc.innerRadius) * 0.58;
+              let x = arc.x + Math.cos(angle) * r;
+              const y = arc.y + Math.sin(angle) * r;
+              ctx.save();
+              ctx.font = '600 11px "Segoe UI", sans-serif';
+              ctx.fillStyle = textColor;
+              ctx.textAlign = 'center';
+              ctx.textBaseline = 'middle';
+              // anti-corte horizontal
+              const marginIn = 6;
+              const maxLineW = maxW - 10;
+              if (x - maxLineW / 2 < marginIn) x = marginIn + maxLineW / 2;
+              if (x + maxLineW / 2 > chart.width - marginIn) x = chart.width - marginIn - maxLineW / 2;
+              ctx.fillText(pctStr, x, y - 6);
+              ctx.fillText(valorStr, x, y + 8);
+              ctx.restore();
+              drewInternal = true;
+            }
           }
-          ctx.save();
-          ctx.font = '600 11px "Segoe UI", sans-serif';
-          ctx.fillStyle = textColor;
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.shadowColor = lum < 0.55 ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.4)';
-          ctx.shadowBlur = 4;
-          // duas linhas: % e valor
-          const lines = combined.split('\n');
-          // Ajuste anti-corte horizontal
-          const wIn1 = ctx.measureText(lines[0]).width;
-          const wIn2 = ctx.measureText(lines[1]).width;
-          const maxWidthIn = Math.max(wIn1, wIn2);
-          let adjX = x;
-          const marginIn = 6;
-          if (adjX - maxWidthIn / 2 < marginIn) adjX = marginIn + maxWidthIn / 2;
-          if (adjX + maxWidthIn / 2 > chart.width - marginIn) adjX = chart.width - marginIn - maxWidthIn / 2;
-          lines.forEach((ln, li) => ctx.fillText(ln, adjX, y + (li === 0 ? -6 : 8)));
-          ctx.restore();
+          if (!drewInternal) {
+            exteriorLabels.push({ lines: [pctStr, valorStr], color: textColor, angle: (arc.startAngle + arc.endAngle) / 2, arc });
+          }
         });
-
-        // Desenhar rótulos externos (simples: sem resolução elaborada de colisão; desloca verticalmente se necessário)
-        const used: Array<{ y: number; h: number; }> = [];
-        exteriorLabels.sort((a, b) => a.angle - b.angle); // ordena pelo ângulo
-        exteriorLabels.forEach(lbl => {
-          if (!lbl.arc || lbl.arc.circumference === 0) return; // não desenhar rótulo de fatia oculta
-          const arc = lbl.arc;
-          const angle = lbl.angle;
-          const outer = arc.outerRadius * 0.98; // acompanhar ajuste interno
-          const startPtX = arc.x + Math.cos(angle) * (outer * 0.92);
-          const startPtY = arc.y + Math.sin(angle) * (outer * 0.92);
-          const baseExtra = 26; // mais afastado do arco para dar respiro
-          const midPtX = arc.x + Math.cos(angle) * (outer + baseExtra);
-          let midPtY = arc.y + Math.sin(angle) * (outer + baseExtra);
-          // Direção vertical preferencial: se na metade superior sobe, senão desce
-          let verticalDir = Math.sin(angle) < 0 ? -1 : 1;
-          const lineHeight = 28; // duas linhas empilhadas (~14 cada)
-          let attempts = 0;
-          while (used.some(u => Math.abs(midPtY - u.y) < (u.h + 2)) && attempts < 24) {
-            midPtY += verticalDir * 12;
-            // Evitar sair fora do topo
-            if (midPtY < 18) { midPtY = 18; verticalDir = 1; }
-            attempts++;
-          }
-          // Garantir margem superior/inferior
-          midPtY = Math.min(Math.max(midPtY, 18), chart.height - 18);
-          used.push({ y: midPtY, h: lineHeight });
-          const endX = midPtX + (Math.cos(angle) >= 0 ? 54 : -54);
-          ctx.save();
-          ctx.strokeStyle = 'rgba(0,0,0,0.30)';
-          ctx.lineWidth = 1;
-          ctx.beginPath();
-          ctx.moveTo(startPtX, startPtY);
-          ctx.lineTo(midPtX, midPtY);
-          ctx.lineTo(endX, midPtY);
-          ctx.stroke();
-          ctx.font = '600 11px "Segoe UI", sans-serif';
-          ctx.fillStyle = lbl.color;
-          const side = Math.cos(angle) >= 0 ? 1 : -1;
-          ctx.textAlign = side === 1 ? 'left' : 'right';
-          ctx.textBaseline = 'middle';
-          // medir para evitar corte
-          const wExt1 = ctx.measureText(lbl.lines[0]).width;
-          const wExt2 = ctx.measureText(lbl.lines[1]).width;
-          const maxWidth = Math.max(wExt1, wExt2);
-          const lineY1 = midPtY - 7;
-          const lineY2 = midPtY + 9;
-          let textX = endX + (side === 1 ? 4 : -4);
-          const margin = 4;
-          if (side === -1 && (textX - maxWidth) < margin) {
-            const deficit = margin - (textX - maxWidth);
-            textX += deficit; // empurra para dentro
-          }
-          if (side === 1 && (textX + maxWidth) > (chart.width - margin)) {
-            const overflow = (textX + maxWidth) - (chart.width - margin);
-            textX -= overflow;
-          }
-          ctx.fillText(lbl.lines[0], textX, lineY1);
-          ctx.fillText(lbl.lines[1], textX, lineY2);
-          ctx.restore();
-        });
+        // Resto: desenhar externos
+        drawExterior(ctx, chart, exteriorLabels);
       }
     });
   }
@@ -221,13 +198,29 @@ const pieLegendGapPlugin = {
     if (chart.config.type !== 'pie') return;
     const legend = chart.legend;
     if (!legend || !chart.chartArea) return;
-    const desiredGap = 30; // px de espaço livre pretendido
+    const desiredGap = 34; // gap menor para descer pizza+legenda mantendo respiro
     const currentGap = legend.top - chart.chartArea.bottom;
     const need = desiredGap - currentGap;
     if (need > 0) {
       // Reduz a área de desenho (bottom) para criar o gap; limita para não inverter
       chart.chartArea.bottom = Math.max(chart.chartArea.top + 50, chart.chartArea.bottom - need);
     }
+  }
+};
+
+// Plugin para encolher a pizza e abrir espaço consistente para rótulos externos
+const pieShrinkPlugin = {
+  id: 'pieShrink',
+  beforeDatasetsDraw(chart: any) {
+    if (chart.config.type !== 'pie') { return; }
+    const meta = chart.getDatasetMeta(0);
+    if (!meta?.data) { return; }
+    const factor = 0.56; // pizza menor para dar espaço aos rótulos externos
+    meta.data.forEach((arc: any) => {
+      if (!arc) return;
+      arc._origOuterRadius ??= arc.outerRadius;
+      arc.outerRadius = arc._origOuterRadius * factor;
+    });
   }
 };
 
@@ -304,7 +297,7 @@ function updateActive(chart: any, idx: number | null, mx: number, my: number) {
   chart.draw();
 }
 
-Chart.register(...registerables, valueLabelPlugin, betterPieHoverPlugin, pieLegendGapPlugin);
+Chart.register(...registerables, pieShrinkPlugin, valueLabelPlugin, betterPieHoverPlugin, pieLegendGapPlugin);
 
 interface SerieTemporalPoint { label: string; valor: number; }
 type Granularidade = 'dia' | 'mes' | 'trimestre' | 'semestre' | 'ano';
@@ -385,7 +378,7 @@ export class GraficosVendasComponent implements OnInit {
       interaction: { mode: 'nearest', intersect: true },
       // Mais espaço superior para rótulos externos não serem cortados
       // Rebalancear: reduzir top para aproximar pizza do topo e aumentar bottom para descer legenda
-      layout: { padding: { top: 14, bottom: 6, left: 0, right: 0 } },
+      layout: { padding: { top: 18, bottom: 0, left: 0, right: 0 } },
       plugins: {
         legend: {
           position: 'bottom',
