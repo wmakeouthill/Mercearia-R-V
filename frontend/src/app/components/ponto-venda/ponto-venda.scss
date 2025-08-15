@@ -232,10 +232,13 @@
     position: relative;
     overflow: hidden;
     display: grid;
-    grid-template-columns: 56px 1fr 180px; /* imagem | info | preco/estoque */
+     /* Usar sempre 4 colunas (imagem | info | preco/estoque | ação) para evitar quebra de linha
+         quando não estiver selecionado. A última coluna fica vazia até o item ser selecionado. */
+     grid-template-columns: 60px 1fr 200px 44px;
     align-items: center;
     gap: 10px;
-    min-height: 72px; /* um pouco menos compacto p/ imagem aparecer melhor */
+     box-sizing: border-box;
+     min-height: 80px; /* acomoda imagem maior + padding */
     width: 100%;
 
     &::before {
@@ -261,7 +264,7 @@
     }
 
     &.selecionado {
-        grid-template-columns: 56px 1fr 200px 44px; /* espaço maior para preço/estoque e botão compacto à direita */
+        /* Mantém mesma grade para não alterar altura */
         border-color: var(--primary-blue);
         background: linear-gradient(135deg, rgba(0, 46, 89, 0.03) 0%, var(--white) 100%);
         box-shadow: 0 3px 10px rgba(0, 46, 89, 0.15);
@@ -1316,8 +1319,8 @@
 // Estilos para imagens nos cards de produtos
 .produto-imagem-card {
     flex-shrink: 0;
-    width: 56px; /* imagem um pouco maior para melhor visibilidade */
-    height: 56px;
+    width: 60px; /* imagem ligeiramente maior */
+    height: 60px;
     border-radius: 8px;
     overflow: hidden;
     background: #f8f9fa;
