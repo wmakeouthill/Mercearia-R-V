@@ -667,6 +667,48 @@
     }
 }
 
+// Switch on/off styles
+.toggle-field {
+    display: grid;
+    grid-template-columns: 220px auto auto 1fr;
+    align-items: center;
+    gap: 10px;
+}
+.switch {
+    position: relative;
+    width: 56px;
+    height: 30px;
+    border-radius: 999px;
+    border: 2px solid var(--light-gray);
+    background: var(--light-gray);
+    cursor: pointer;
+    transition: all .2s ease;
+}
+.switch .switch-knob {
+    position: absolute;
+    top: 50%;
+    left: 4px;
+    width: 22px;
+    height: 22px;
+    background: var(--white);
+    border-radius: 50%;
+    transform: translateY(-50%);
+    transition: left .2s ease;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+.switch.on {
+    background: var(--primary-blue);
+    border-color: var(--primary-blue);
+}
+.switch.on .switch-knob {
+    left: 30px;
+}
+.switch-text {
+    font-weight: 700;
+    color: var(--primary-blue);
+    min-width: 36px;
+}
+
 // Responsive
 @media (max-width: 768px) {
     .admin-header {

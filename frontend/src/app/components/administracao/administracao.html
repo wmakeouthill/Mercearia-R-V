@@ -125,11 +125,12 @@
                 placeholder="Digite a senha" required>
             </div>
 
-            @if (newUser.role === 'user') {<div class="form-group">
-              <label class="checkbox-label">
-                <input type="checkbox" [(ngModel)]="newUser.pode_controlar_caixa" name="newUserCaixaPermission">
-                <span class="checkbox-text">Pode controlar caixa</span>
-              </label>
+            @if (newUser.role === 'user') {<div class="form-group toggle-field">
+              <label for="newUserCaixaToggle">Pode controlar caixa</label>
+              <button id="newUserCaixaToggle" type="button" class="switch" [class.on]="newUser.pode_controlar_caixa" (click)="newUser.pode_controlar_caixa = !newUser.pode_controlar_caixa" [attr.aria-pressed]="newUser.pode_controlar_caixa">
+                <span class="switch-knob"></span>
+              </button>
+              <span class="switch-text">{{ newUser.pode_controlar_caixa ? 'ON' : 'OFF' }}</span>
               <p class="help-text">Permite ao operador abrir/fechar o caixa</p>
             </div>}
           </div>
@@ -178,14 +179,13 @@
                   @if (user.role === 'admin') {<span class="permission-badge admin-permission">
                     🔐 Acesso Total
                   </span>}
-                  @if (user.role === 'user' && user.pode_controlar_caixa) {<span
-                    class="permission-badge caixa-permission">
-                    🗝️ Controla Caixa
-                  </span>}
-                  @if (user.role === 'user' && !user.pode_controlar_caixa) {<span
-                    class="permission-badge limited-permission">
-                    👤 Acesso Limitado
-                  </span>}
+                  @if (user.role === 'user') {
+                    @if (user.pode_controlar_caixa) {<span class="permission-badge caixa-permission" title="Pode abrir/fechar caixa">
+                      🗝️ Controla Caixa
+                    </span>} @else {<span class="permission-badge limited-permission" title="Sem permissão de caixa">
+                      👤 Acesso Limitado
+                    </span>}
+                  }
                 </div>
               </div>
             </div>
@@ -225,14 +225,16 @@
                   <input id="newPassOpt" type="password" [(ngModel)]="user.password" placeholder="Deixe em branco para manter a atual">
                 </div>
 
-                @if (user.role === 'user') {<div class="edit-group">
-                  <label class="checkbox-label">
-                    <input type="checkbox" [(ngModel)]="user.pode_controlar_caixa">
-                    <span class="checkbox-text">Pode controlar caixa</span>
-                  </label>
+                @if (user.role === 'user') {<div class="edit-group toggle-field">
+                  <label for="editUserCaixaToggle-{{user.id}}">Pode controlar caixa</label>
+                  <button id="editUserCaixaToggle-{{user.id}}" type="button" class="switch" [class.on]="user.pode_controlar_caixa" (click)="user.pode_controlar_caixa = !user.pode_controlar_caixa" [attr.aria-pressed]="user.pode_controlar_caixa">
+                    <span class="switch-knob"></span>
+                  </button>
+                  <span class="switch-text">{{ user.pode_controlar_caixa ? 'ON' : 'OFF' }}</span>
                   <p class="help-text">Permite ao operador abrir/fechar o caixa</p>
                 </div>}
               </div>
+
 
               <div class="edit-actions">
                 <button (click)="cancelEdit(user)" class="cancel-button">

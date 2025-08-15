@@ -158,6 +158,8 @@
          <div class="paginacao">
            <div class="pagination-left">
              <button class="btn-page btn-ghost" (click)="goToFirstPage()" [disabled]="page<=1" title="Primeira">«</button>
+             <button class="btn-page btn-ghost" (click)="goBy(-10)" [disabled]="page<=1" title="-10">«10</button>
+             <button class="btn-page btn-ghost" (click)="goBy(-5)" [disabled]="page<=1" title="-5">«5</button>
              <button class="btn-page btn-ghost" (click)="prevPage()" [disabled]="page<=1" title="Anterior">‹</button>
            </div>
            <div class="pagination-center">
@@ -167,6 +169,8 @@
            </div>
            <div class="pagination-right">
              <button class="btn-page btn-ghost" (click)="nextPage()" [disabled]="page>=totalPages" title="Próxima">›</button>
+             <button class="btn-page btn-ghost" (click)="goBy(5)" [disabled]="page>=totalPages" title="+5">5»</button>
+             <button class="btn-page btn-ghost" (click)="goBy(10)" [disabled]="page>=totalPages" title="+10">10»</button>
              <button class="btn-page btn-ghost" (click)="goToLastPage()" [disabled]="page>=totalPages" title="Última">»</button>
            </div>
            <div class="pagination-jump">

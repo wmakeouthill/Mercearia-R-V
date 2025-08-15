@@ -197,6 +197,11 @@ export class CaixaComponent implements OnInit {
     }
   }
 
+  goBy(delta: number): void {
+    const target = this.page + delta;
+    this.goToPage(target);
+  }
+
   aplicarFiltrosMovs(): void {
     this.loadResumoEMovimentacoes();
   }

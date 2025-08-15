@@ -351,16 +351,34 @@ export class ApiService {
     );
   }
 
-  createUser(userData: { username: string; password: string; role: string }): Observable<any> {
+  createUser(userData: { username: string; password: string; role: string; pode_controlar_caixa?: boolean }): Observable<any> {
+    const payload: any = {
+      username: userData.username,
+      password: userData.password,
+      role: userData.role,
+    };
+    if (typeof userData.pode_controlar_caixa === 'boolean') {
+      payload.podeControlarCaixa = userData.pode_controlar_caixa;
+    }
     return this.makeRequest<any>(
-      () => this.http.post<any>(`${this.baseUrl}/auth/users`, userData),
+      () => this.http.post<any>(`${this.baseUrl}/auth/users`, payload),
       'CREATE_USER'
     );
   }
 
-  updateUser(id: number, userData: { username: string; password?: string; role: string }): Observable<any> {
+  updateUser(id: number, userData: { username: string; password?: string; role: string; pode_controlar_caixa?: boolean }): Observable<any> {
+    const payload: any = {
+      username: userData.username,
+      role: userData.role,
+    };
+    if (typeof userData.pode_controlar_caixa === 'boolean') {
+      payload.podeControlarCaixa = userData.pode_controlar_caixa;
+    }
+    if (userData.password && userData.password.trim().length > 0) {
+      payload.password = userData.password;
+    }
     return this.makeRequest<any>(
-      () => this.http.put<any>(`${this.baseUrl}/auth/users/${id}`, userData),
+      () => this.http.put<any>(`${this.baseUrl}/auth/users/${id}`, payload),
       'UPDATE_USER'
     );
   }

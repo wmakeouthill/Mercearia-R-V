@@ -9,6 +9,7 @@ import { logger } from '../../utils/logger';
 
 interface UserWithEdit extends Usuario {
   isEditing?: boolean;
+  updatingPerm?: boolean;
 }
 
 @Component({
@@ -43,9 +44,9 @@ export class AdministracaoComponent implements OnInit {
   };
 
   constructor(
-    private apiService: ApiService,
-    private authService: AuthService,
-    private router: Router
+    private readonly apiService: ApiService,
+    private readonly authService: AuthService,
+    private readonly router: Router
   ) { }
 
   ngOnInit(): void {
@@ -159,15 +160,15 @@ export class AdministracaoComponent implements OnInit {
     }
 
     this.apiService.updateUser(user.id!, updateData).subscribe({
-      next: async (response) => {
+      next: (response) => {
         this.success = 'Usuário atualizado com sucesso!';
         user.isEditing = false;
-        
+
         // Se o usuário editado é o próprio usuário logado, recarregar suas informações
         if (user.id === this.currentUser?.id) {
-          await this.authService.reloadCurrentUser();
+          this.authService.reloadCurrentUser().finally(() => { });
         }
-        
+
         this.loadUsers();
         this.loading = false;
         logger.info('ADMINISTRACAO', 'UPDATE_USER', 'Usuário atualizado com sucesso', { id: user.id, username: user.username });
@@ -176,6 +177,37 @@ export class AdministracaoComponent implements OnInit {
         this.error = error.error?.error || 'Erro ao atualizar usuário';
         this.loading = false;
         logger.error('ADMINISTRACAO', 'UPDATE_USER', 'Erro ao atualizar usuário', error);
+      }
+    });
+  }
+
+  // Toggle rápido da permissão de controle de caixa diretamente na listagem
+  toggleCaixaPermission(user: UserWithEdit, allow: boolean): void {
+    if (user.role !== 'user') {
+      return;
+    }
+    const previous = !!user.pode_controlar_caixa;
+    user.updatingPerm = true;
+    user.pode_controlar_caixa = allow;
+    const payload = {
+      username: user.username,
+      role: user.role,
+      pode_controlar_caixa: allow
+    } as const;
+    this.apiService.updateUser(user.id!, payload as any).subscribe({
+      next: () => {
+        this.success = allow ? 'Permissão de caixa habilitada' : 'Permissão de caixa desabilitada';
+        user.updatingPerm = false;
+        // Caso o admin altere a própria permissão (raro), recarrega
+        if (user.id === this.currentUser?.id) {
+          this.authService.reloadCurrentUser().finally(() => { });
+        }
+      },
+      error: (error) => {
+        user.pode_controlar_caixa = previous; // reverte
+        user.updatingPerm = false;
+        this.error = error.error?.error || 'Erro ao atualizar permissão de caixa';
+        logger.error('ADMINISTRACAO', 'TOGGLE_PERM', 'Erro ao alternar permissão', error);
       }
     });
   }
@@ -277,4 +309,4 @@ export class AdministracaoComponent implements OnInit {
     this.error = '';
     this.success = '';
   }
-} 
+}
