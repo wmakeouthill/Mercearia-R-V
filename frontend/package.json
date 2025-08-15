@@ -3,9 +3,12 @@
   "version": "0.0.0",
   "scripts": {
     "ng": "ng",
-    "start": "ng serve",
-    "start:network": "ng serve --host 0.0.0.0 --port 4200",
-    "start:ip": "ng serve --host 0.0.0.0 --port 4200 --disable-host-check",
+  "start": "ng serve",
+  "start:network": "ng serve --host 0.0.0.0 --port 4200",
+  "start:ip": "ng serve --host 0.0.0.0 --port 4200 --disable-host-check",
+  "start:lan": "ng serve --host 0.0.0.0 --port 4200 --disable-host-check",
+  "start:https": "ng serve --host merceariarv.app --port 4200 --ssl --ssl-cert certs/merceariarv.app.pem --ssl-key certs/merceariarv.app-key.pem",
+  "start:https:lan": "ng serve --host 0.0.0.0 --port 4200 --ssl --ssl-cert certs/merceariarv.app.pem --ssl-key certs/merceariarv.app-key.pem",
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
     "test": "ng test"

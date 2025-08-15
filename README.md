@@ -44,6 +44,32 @@ sistema-estoque/
 
 ## 🛠️ Instalação e Configuração
 
+### ⚡ Início Rápido de Desenvolvimento
+
+Para reduzir o tempo até a janela Electron abrir você pode usar os scripts de desenvolvimento rápido:
+
+```bash
+npm run dev:fast          # Frontend inicia em paralelo (HTTP)
+npm run dev:fast:https    # Frontend inicia em paralelo (HTTPS se certs existirem)
+```
+
+Ou definir a variável de ambiente manualmente:
+
+```bash
+FAST_FRONTEND_START=true npm run dev
+```
+
+Variáveis relevantes:
+
+| Variável | Padrão | Efeito |
+|----------|--------|--------|
+| FAST_FRONTEND_START | false | Se true, não espera /health; inicia Angular após pequeno delay (configurável) |
+| FAST_FRONTEND_DELAY | 3     | Segundos de espera antes de subir o frontend em modo FAST |
+| AUTO_DEV_HTTPS      | true  | Se certificados existirem ativa HTTPS automaticamente |
+| DEV_HTTPS_HOST      | (vazio)| Host override para ng serve em modo https |
+
+Certificados esperados em `frontend/certs/merceariarv.app.pem` e `merceariarv.app-key.pem` (gerar com `npm run cert:generate`).
+
 ### Pré-requisitos
 
 - Node.js (versão 18 ou superior)
@@ -246,6 +272,8 @@ Execute `npm run build` em cada módulo para verificar erros de compilação.
 
 - `npm run install:all` - Instalar todas as dependências
 - `npm run dev` - Executar em modo desenvolvimento
+- `npm run dev:fast` - Dev mais rápido (inicia frontend sem esperar backend ficar saudável)
+- `npm run dev:fast:https` - Igual ao anterior mas preferindo HTTPS
 - `npm run build` - Build completo
 - `npm run start` - Executar aplicação
 - `npm run package` - Criar executável

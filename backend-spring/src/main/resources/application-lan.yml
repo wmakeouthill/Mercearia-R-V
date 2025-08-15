@@ -3,7 +3,7 @@
 ## Ajuste os domínios conforme seu DNS/roteador.
 
 cors:
-  allowed-origins: "http://merceariarv.lan,http://www.merceariarv.lan,http://mercearia.local,http://localhost:4200,http://127.0.0.1:4200,http://localhost:3000,http://127.0.0.1:3000"
+  allowed-origins: "http://merceariarv.lan,http://merceariarv.lan:4200,http://www.merceariarv.lan,http://mercearia.local,http://localhost:4200,http://127.0.0.1:4200,http://localhost:3000,http://127.0.0.1:3000,http://merceariarv.app,http://merceariarv.app:4200,https://merceariarv.app,https://merceariarv.app:4200,https://www.merceariarv.app,https://www.merceariarv.app:4200"
   allowed-methods: "GET,POST,PUT,DELETE,OPTIONS,PATCH"
   allowed-headers: "Authorization,Content-Type,Accept,Origin,X-Requested-With,Access-Control-Request-Method,Access-Control-Request-Headers"
   exposed-headers: "Content-Length,X-Foo,X-Bar"

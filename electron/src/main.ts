@@ -7,6 +7,11 @@ import * as childProcess from 'child_process';
 import * as net from 'net';
 import * as fs from 'fs';
 
+// Adicionar switches cedo para aceitar certificados self-signed e evitar GPU crash em alguns ambientes Windows
+app.commandLine.appendSwitch('ignore-certificate-errors');
+app.commandLine.appendSwitch('allow-insecure-localhost', 'true');
+app.commandLine.appendSwitch('disable-gpu');
+
 let mainWindow: BrowserWindow | null = null;
 let backendProcess: childProcess.ChildProcess | null = null;
 let backendHealthCheckInterval: NodeJS.Timeout | null = null;
@@ -21,6 +26,74 @@ let backendStdoutStream: fs.WriteStream | null = null;
 let backendStderrStream: fs.WriteStream | null = null;
 // Flag para desativar completamente logs em arquivo (frontend.log, backend-stdout.log, backend-stderr.log)
 const DISABLE_FILE_LOGS = process.env.DISABLE_FILE_LOGS === 'true' || true; // forçar true por padrão
+
+// ==== Funções auxiliares para reduzir complexidade ====
+function attemptNextBackendPort(reason: string): void {
+    console.error(reason);
+    const nextIndex = backendCandidatePorts.indexOf(currentBackendPort) + 1;
+    if (nextIndex < backendCandidatePorts.length) {
+        currentBackendPort = backendCandidatePorts[nextIndex];
+        stopBackend();
+        setTimeout(() => { void startBackend(); }, 1000);
+    }
+}
+
+function writeBackendStream(streamType: 'stdout' | 'stderr', content: string): void {
+    if (DISABLE_FILE_LOGS) return;
+    try {
+        const isStdout = streamType === 'stdout';
+        if (!app.isPackaged) {
+            const dir = getLogsDirectory();
+            if (isStdout) {
+                if (!backendStdoutStream) {
+                    backendStdoutStream = fs.createWriteStream(path.join(dir, 'backend-stdout.log'), { flags: 'a' });
+                }
+                backendStdoutStream.write(content);
+                return;
+            }
+            if (!backendStderrStream) {
+                backendStderrStream = fs.createWriteStream(path.join(dir, 'backend-stderr.log'), { flags: 'a' });
+            }
+            backendStderrStream.write(content);
+            return;
+        }
+        const stream = isStdout ? backendStdoutStream : backendStderrStream;
+        if (stream) stream.write(content);
+    } catch { /* ignorar erros de escrita */ }
+}
+
+function processBackendStdout(output: string): void {
+    console.log('Backend STDOUT:', output);
+    writeBackendStream('stdout', output);
+
+    const springStarted = /Started|Tomcat started|JVM running/.test(output);
+    if (springStarted) {
+        console.log('✅ Backend (Spring) parece iniciado. Confirmando com health check...');
+    }
+    const portInUse = /already in use|Address already in use/i.test(output);
+    if (portInUse) {
+        attemptNextBackendPort(`❌ Porta ${currentBackendPort} reportada como em uso pelo backend.`);
+    }
+}
+
+function processBackendStderr(error: string): void {
+    console.error('Backend STDERR:', error);
+    writeBackendStream('stderr', error);
+
+    if (error.includes('EADDRINUSE')) {
+        attemptNextBackendPort(`❌ Porta ${currentBackendPort} já está em uso!`);
+        return;
+    }
+    if (/already in use|Address already in use/i.test(error)) {
+        attemptNextBackendPort(`❌ Porta ${currentBackendPort} em uso (detectado no STDERR).`);
+        return;
+    }
+    if (error.includes('ENOENT')) {
+        console.error('❌ Arquivo não encontrado!');
+    } else if (error.includes('EACCES')) {
+        console.error('❌ Permissão negada!');
+    }
+}
 
 function isPortFree(port: number): Promise<boolean> {
     return new Promise<boolean>((resolve) => {
@@ -102,81 +175,13 @@ function determineWorkingDir(): string {
 function attachBackendListeners(proc: childProcess.ChildProcess): void {
     if (proc.stdout) {
         proc.stdout.on('data', (data: Buffer) => {
-            const output = data.toString();
-            console.log('Backend STDOUT:', output);
-            // Escrever em arquivo dedicado (produção)
-            if (!DISABLE_FILE_LOGS) {
-                try {
-                    if (!app.isPackaged) {
-                        const dir = getLogsDirectory();
-                        if (!backendStdoutStream) {
-                            backendStdoutStream = fs.createWriteStream(path.join(dir, 'backend-stdout.log'), { flags: 'a' });
-                        }
-                        backendStdoutStream.write(output);
-                    } else if (backendStdoutStream) {
-                        backendStdoutStream.write(output);
-                    }
-                } catch { /* ignorar erro de escrita */ }
-            }
-            const springStarted = output.indexOf('Started') !== -1 ||
-                output.indexOf('Tomcat started') !== -1 ||
-                output.indexOf('JVM running') !== -1;
-            if (springStarted) {
-                console.log('✅ Backend (Spring) parece iniciado. Confirmando com health check...');
-            }
-            // Detectar conflito de porta relatado pelo Spring/Tomcat
-            const portInUse = /already in use/i.test(output) || /Address already in use/i.test(output);
-            if (portInUse) {
-                console.error(`❌ Porta ${currentBackendPort} reportada como em uso pelo backend. Tentando próxima...`);
-                const nextIndex = backendCandidatePorts.indexOf(currentBackendPort) + 1;
-                if (nextIndex < backendCandidatePorts.length) {
-                    currentBackendPort = backendCandidatePorts[nextIndex];
-                    stopBackend();
-                    setTimeout(() => { void startBackend(); }, 1000);
-                }
-            }
+            processBackendStdout(data.toString());
         });
     }
 
     if (proc.stderr) {
         proc.stderr.on('data', (data: Buffer) => {
-            const error = data.toString();
-            console.error('Backend STDERR:', error);
-            // Escrever em arquivo dedicado (produção)
-            if (!DISABLE_FILE_LOGS) {
-                try {
-                    if (!app.isPackaged) {
-                        const dir = getLogsDirectory();
-                        if (!backendStderrStream) {
-                            backendStderrStream = fs.createWriteStream(path.join(dir, 'backend-stderr.log'), { flags: 'a' });
-                        }
-                        backendStderrStream.write(error);
-                    } else if (backendStderrStream) {
-                        backendStderrStream.write(error);
-                    }
-                } catch { /* ignorar */ }
-            }
-            if (error.includes('EADDRINUSE')) {
-                console.error(`❌ Porta ${currentBackendPort} já está em uso! Tentando próxima...`);
-                const nextIndex = backendCandidatePorts.indexOf(currentBackendPort) + 1;
-                if (nextIndex < backendCandidatePorts.length) {
-                    currentBackendPort = backendCandidatePorts[nextIndex];
-                    stopBackend();
-                    setTimeout(() => { void startBackend(); }, 1000);
-                }
-            } else if (/already in use/i.test(error) || /Address already in use/i.test(error)) {
-                console.error(`❌ Porta ${currentBackendPort} em uso (detectado no STDERR). Tentando próxima...`);
-                const nextIndex = backendCandidatePorts.indexOf(currentBackendPort) + 1;
-                if (nextIndex < backendCandidatePorts.length) {
-                    currentBackendPort = backendCandidatePorts[nextIndex];
-                    stopBackend();
-                    setTimeout(() => { void startBackend(); }, 1000);
-                }
-            } else if (error.includes('ENOENT')) {
-                console.error('❌ Arquivo não encontrado!');
-            } else if (error.includes('EACCES')) {
-                console.error('❌ Permissão negada!');
-            }
+            processBackendStderr(data.toString());
         });
     }
 
@@ -446,9 +451,24 @@ function createWindow(): void {
 }
 
 function waitForAngularDev(): void {
-    const angularUrl = 'http://localhost:4200';
+    const baseHosts: string[] = ['localhost', '127.0.0.1', 'merceariarv.lan', 'merceariarv.app'];
+    // Adicionar IPs da máquina se disponível via env (poderíamos injetar depois)
+    const networkEnv = process.env.ANGULAR_DEV_HOSTS;
+    if (networkEnv) {
+        networkEnv.split(',').map(h => h.trim()).filter(Boolean).forEach(h => baseHosts.push(h));
+    }
+    let hostIndex = 0;
+    let currentHost = baseHosts[0];
     let attempts = 0;
     const maxAttempts = 60; // 60 segundos máximo
+    // Priorizar HTTPS primeiro (dev server geralmente está em HTTPS quando certificados existem)
+    const protocols: ('http' | 'https')[] = ['https', 'http'];
+    let protoIndex = 0;
+
+    const nextHost = () => {
+        hostIndex = (hostIndex + 1) % baseHosts.length;
+        currentHost = baseHosts[hostIndex];
+    };
 
     const showDevWindowFallback = (): void => {
         setTimeout(() => {
@@ -461,40 +481,85 @@ function waitForAngularDev(): void {
 
     const checkAngular = (): void => {
         attempts++;
-        console.log(`🔍 Verificando Angular (tentativa ${attempts}/${maxAttempts})...`);
+        const protocol = protocols[protoIndex];
+        const angularUrl = `${protocol}://${currentHost}:4200`;
+        console.log(`🔍 Verificando Angular (tentativa ${attempts}/${maxAttempts}) em ${angularUrl}...`);
 
-        const http: typeof import('http') = require('http');
-        const req = http.get(angularUrl, (res: { statusCode?: number }) => {
-            if (res.statusCode !== 200) {
+        if (protocol === 'https') {
+            const https = require('https');
+            const req = https.get({
+                hostname: currentHost,
+                port: 4200,
+                path: '/',
+                rejectUnauthorized: false, // aceitar self-signed
+                timeout: 2000
+            }, (res: { statusCode?: number }) => {
+                if (!res.statusCode || res.statusCode >= 400) {
+                    retryAngularCheck();
+                    return;
+                }
+                console.log(`✅ Angular pronto em ${angularUrl}! Carregando aplicação...`);
+                mainWindow?.loadURL(angularUrl)
+                    .then(() => {
+                        console.log('🎯 URL carregada com sucesso em desenvolvimento');
+                    })
+                    .catch((err: Error) => {
+                        console.error('❌ Erro ao carregar URL de desenvolvimento (https). Tentando fallback http:', err);
+                        // Fallback: tentar imediatamente mesma host via http
+                        const fallbackUrl = `http://${currentHost}:4200`;
+                        mainWindow?.loadURL(fallbackUrl).catch((e: Error) => {
+                            console.error('❌ Fallback http também falhou:', e);
+                            showDevWindowFallback();
+                        });
+                    });
+            });
+            req.on('error', (_err: unknown) => {
+                // Erros esperados com certificado antes do servidor subir
                 retryAngularCheck();
-                return;
-            }
-
-            console.log('✅ Angular pronto! Carregando aplicação...');
-            // Carregar URL e aguardar que esteja completamente pronta
-            mainWindow?.loadURL(angularUrl)
-                .then(() => {
-                    console.log('🎯 URL carregada com sucesso em desenvolvimento');
-                })
-                .catch((err: Error) => {
-                    console.error('❌ Erro ao carregar URL de desenvolvimento:', err);
-                    // Mostrar janela mesmo com erro para não travar
-                    showDevWindowFallback();
-                });
-        });
-
-        req.on('error', (_err: unknown) => {
-            retryAngularCheck();
-        });
-
-        req.setTimeout(2000, () => {
-            req.destroy();
-            retryAngularCheck();
-        });
+            });
+            req.on('timeout', () => {
+                req.destroy();
+                retryAngularCheck();
+            });
+        } else {
+            const http = require('http');
+            const req = http.get({
+                hostname: currentHost,
+                port: 4200,
+                path: '/',
+                timeout: 1500
+            }, (res: { statusCode?: number }) => {
+                if (!res.statusCode || res.statusCode >= 400) {
+                    retryAngularCheck();
+                    return;
+                }
+                console.log(`✅ Angular pronto em ${angularUrl}! Carregando aplicação...`);
+                mainWindow?.loadURL(angularUrl)
+                    .then(() => {
+                        console.log('🎯 URL carregada com sucesso em desenvolvimento');
+                    })
+                    .catch((err: Error) => {
+                        console.error('❌ Erro ao carregar URL de desenvolvimento (http):', err);
+                        showDevWindowFallback();
+                    });
+            });
+            req.on('error', () => {
+                retryAngularCheck();
+            });
+            req.on('timeout', () => {
+                req.destroy();
+                retryAngularCheck();
+            });
+        }
     };
 
     const retryAngularCheck = () => {
         if (attempts < maxAttempts) {
+            // Alternar protocolo primeiro, depois host
+            protoIndex = (protoIndex + 1) % protocols.length;
+            if (protoIndex === 0) {
+                nextHost();
+            }
             setTimeout(checkAngular, 1000); // Tentar novamente em 1 segundo
         } else {
             console.error('❌ Angular não inicializou após 60 segundos');

@@ -1,13 +1,20 @@
 const http = require('http');
+const https = require('https');
+const fs = require('fs');
+const path = require('path');
 const { spawn } = require('child_process');
 const { showNetworkInfo } = require('./show-network-info');
 
 console.log('⏳ Aguardando serviços ficarem prontos...');
 
 // Função para testar se um serviço está disponível
-function testService(host, port, name, path = '/') {
+function testService(host, port, name, pathUrl = '/', protocol = 'http') {
     return new Promise((resolve) => {
-        const req = http.get(`http://${host}:${port}${path}`, (res) => {
+    const client = protocol === 'https' ? https : http;
+        const options = protocol === 'https'
+            ? { hostname: host, port, path: pathUrl, rejectUnauthorized: false }
+            : { hostname: host, port, path: pathUrl };
+        const req = client.get(options, (res) => {
             console.log(`✅ ${name} está pronto!`);
             resolve(true);
         });
@@ -23,6 +30,23 @@ function testService(host, port, name, path = '/') {
     });
 }
 
+async function isFrontendReady() {
+    // Testar localhost e 127 primeiro
+    const hostsPrimary = ['localhost', '127.0.0.1'];
+    const hostsLan = ['merceariarv.lan', 'merceariarv.app'];
+    const protocols = ['http', 'https'];
+
+    for (const proto of protocols) {
+        for (const h of hostsPrimary) {
+            if (await testService(h, 4200, 'Frontend Angular', '/', proto)) return true;
+        }
+        for (const h of hostsLan) {
+            if (await testService(h, 4200, 'Frontend Angular', '/', proto)) return true;
+        }
+    }
+    return false;
+}
+
 // Função para aguardar até todos os serviços estarem prontos
 async function waitForServices() {
     let attempts = 0;
@@ -33,10 +57,8 @@ async function waitForServices() {
         attempts++;
         console.log(`🔍 Verificação ${attempts}/${maxAttempts}...`);
 
-        const backendReady = await testService('127.0.0.1', 3000, 'Backend', '/health');
-        const frontendReadyLocalhost = await testService('localhost', 4200, 'Frontend Angular', '/');
-        const frontendReady127 = frontendReadyLocalhost ? true : await testService('127.0.0.1', 4200, 'Frontend Angular', '/');
-        const frontendReady = frontendReadyLocalhost || frontendReady127;
+    const backendReady = await testService('127.0.0.1', 3000, 'Backend', '/health');
+    const frontendReady = await isFrontendReady();
 
         if (backendReady && frontendReady) {
             console.log('🎉 Todos os serviços prontos! Iniciando Electron...');
