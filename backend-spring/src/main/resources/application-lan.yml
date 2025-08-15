@@ -1,0 +1,15 @@
+## Perfil "lan" para rede local com hostname amigável.
+## Ativar: java -jar app.jar --spring.profiles.active=lan
+## Ajuste os domínios conforme seu DNS/roteador.
+
+cors:
+  allowed-origins: "http://merceariarv.lan,http://www.merceariarv.lan,http://mercearia.local,http://localhost:4200,http://127.0.0.1:4200,http://localhost:3000,http://127.0.0.1:3000"
+  allowed-methods: "GET,POST,PUT,DELETE,OPTIONS,PATCH"
+  allowed-headers: "Authorization,Content-Type,Accept,Origin,X-Requested-With,Access-Control-Request-Method,Access-Control-Request-Headers"
+  exposed-headers: "Content-Length,X-Foo,X-Bar"
+  allow-credentials: true
+  max-age: 86400
+
+## Notas:
+## - Electron (file://) envia origin null; se precisar liberar, use perfil default (*) ou adicione lógica custom.
+## - Para HTTPS interno: gerar certificado e trocar as URLs para https://.

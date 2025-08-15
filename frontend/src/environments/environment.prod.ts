@@ -1,9 +1,21 @@
+// Produção: detectar dinamicamente se abriu via hostname/IP da LAN para usar mesma origem.
+function resolveApiBase(): string {
+    const isBrowser = typeof window !== 'undefined' && !!window.location;
+    if (isBrowser) {
+        const host = window.location.hostname;
+        const isLocal = /^(localhost|127\.|0\.0\.0\.0)/.test(host);
+        if (!isLocal) {
+            return window.location.origin + '/api';
+        }
+    }
+    return 'http://127.0.0.1:3000/api';
+}
+
 export const environment = {
     production: true,
-    // URL primária fixa em 3000 (fallbacks só em caso de conflito)
-    apiUrl: 'http://127.0.0.1:3000/api',
-    // URLs de fallback que o backend detector testará
+    apiUrl: resolveApiBase(),
     fallbackUrls: [
+        resolveApiBase(),
         'http://127.0.0.1:3000/api',
         'http://localhost:3000/api',
         'http://0.0.0.0:3000/api',
