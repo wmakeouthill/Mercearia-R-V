@@ -43,14 +43,18 @@
   <div class="grid-graficos" *ngIf="!carregando && !erro">
     <div class="grafico-card wide">
       <div class="card-header">
-        <h3>Série Temporal ({{ granularidade | titlecase }})</h3>
+        <h3>Série Temporal ({{ granularidade | titlecase }})
+          <span *ngIf="selectedDiaSerie && granularidade==='dia'" class="badge-filtro" role="button" tabindex="0" (click)="selectedDiaSerie=null; recalcularTudo()" (keydown.enter)="selectedDiaSerie=null; recalcularTudo()" (keydown.space)="selectedDiaSerie=null; recalcularTudo()" title="Filtro de dia ativo. Clique para limpar.">
+            Dia: {{ formatDia(selectedDiaSerie) }} ✕
+          </span>
+        </h3>
         <div class="acoes">
           <button class="btn-export csv" (click)="exportarCSV('serie')">CSV</button>
           <button class="btn-export png" (click)="exportarPNG('chartSerie')">PNG</button>
         </div>
       </div>
       <div class="chart-wrapper">
-        <canvas id="chartSerie" baseChart [data]="serieTemporalData" [options]="chartOptionsLine" [type]="'line'"></canvas>
+        <canvas id="chartSerie" baseChart [data]="serieTemporalData" [options]="chartOptionsLine" [type]="'line'" (chartClick)="onSerieClick($event)" ></canvas>
       </div>
     </div>
     <div class="grafico-card">

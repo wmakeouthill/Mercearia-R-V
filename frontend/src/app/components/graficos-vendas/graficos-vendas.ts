@@ -351,6 +351,10 @@ export class GraficosVendasComponent implements OnInit {
   receitaPorMetodoData?: ChartData<'pie'>;
   itensMaisVendidosData?: ChartData<'bar'>;
   serieTemporalData?: ChartData<'line'>;
+  // Mapeia as chaves (YYYY-MM-DD quando granularidade = 'dia') usadas internamente na série
+  private serieTemporalRawKeys: string[] = [];
+  // Dia selecionado via clique na série temporal (formato YYYY-MM-DD). Se null, nenhum filtro adicional.
+  selectedDiaSerie: string | null = null;
   chartOptionsBar: any;
   chartOptionsLine: any;
   chartOptionsPie: any;
@@ -531,13 +535,19 @@ export class GraficosVendasComponent implements OnInit {
     this.router.navigate(['/relatorios']);
   }
 
-  private recalcularTudo() {
+  recalcularTudo() {
     try {
-      const base = this.vendasFiltradas();
-      this.gerarVendasPorHora(base);
-      this.gerarVendasPorDiaSemana(base);
-      this.gerarReceitaPorMetodo(base);
-      this.gerarItensMaisVendidos(base);
+      const base = this.vendasFiltradas(); // base filtrada por datas / ano / granularidade
+      // Para outros gráficos, se houver seleção de dia na série (apenas quando granularidade='dia'), aplicar filtro adicional
+      const baseParaOutros = (this.granularidade === 'dia' && this.selectedDiaSerie)
+        ? base.filter(v => extractLocalDate(v.data_venda) === this.selectedDiaSerie)
+        : base;
+      // Gráficos dependentes da seleção
+      this.gerarVendasPorHora(baseParaOutros);
+      this.gerarVendasPorDiaSemana(baseParaOutros);
+      this.gerarReceitaPorMetodo(baseParaOutros);
+      this.gerarItensMaisVendidos(baseParaOutros);
+      // A série temporal sempre mostra o conjunto completo (não restringe ao ponto clicado)
       this.gerarSerieTemporal(base);
     } catch (e) {
       logger.error('GRAFICOS_VENDAS', 'RECALC', 'Erro ao recalcular', { e });
@@ -662,7 +672,7 @@ export class GraficosVendasComponent implements OnInit {
     };
   }
 
-  private formatDia(labelISO: string): string {
+  formatDia(labelISO: string): string {
     // converte YYYY-MM-DD para dd/mm/aa
     const [ano, mes, dia] = labelISO.split('-');
     return `${dia}/${mes}/${ano.slice(2)}`;
@@ -697,10 +707,46 @@ export class GraficosVendasComponent implements OnInit {
     const isDia = this.granularidade === 'dia';
     const labels = isDia ? keysOrdenadas.map(k => this.formatDia(k)) : keysOrdenadas;
     const data = keysOrdenadas.map(k => grupos.get(k) || 0);
+    this.serieTemporalRawKeys = keysOrdenadas; // guardar para mapear clique -> chave
+    // Destacar ponto selecionado (quando granularidade dia)
+    let pointBackgroundColor: string | string[] | undefined;
+    let pointRadius: number | number[] | undefined;
+    if (isDia && this.selectedDiaSerie) {
+      pointBackgroundColor = keysOrdenadas.map(k => k === this.selectedDiaSerie ? '#FF9800' : '#DBC27D');
+      pointRadius = keysOrdenadas.map(k => k === this.selectedDiaSerie ? 6 : 3);
+    }
     this.serieTemporalData = {
       labels,
-      datasets: [{ label: 'Receita', data, borderColor: '#002E59', backgroundColor: 'rgba(0,46,89,0.15)', fill: true, tension: 0.3 }]
+      datasets: [{
+        label: 'Receita',
+        data,
+        borderColor: '#002E59',
+        backgroundColor: 'rgba(0,46,89,0.15)',
+        fill: true,
+        tension: 0.3,
+        pointBackgroundColor,
+        pointRadius
+      }]
     };
+  }
+
+  // Handler de clique na série temporal
+  onSerieClick(evt: any) {
+    if (!this.serieTemporalData || this.granularidade !== 'dia') return;
+    const active = evt?.active as any[];
+    if (!active || !active.length) {
+      return;
+    }
+    const idx = active[0].index;
+    const chave = this.serieTemporalRawKeys[idx]; // YYYY-MM-DD
+    if (!chave) return;
+    // Toggle seleção
+    if (this.selectedDiaSerie === chave) {
+      this.selectedDiaSerie = null;
+    } else {
+      this.selectedDiaSerie = chave;
+    }
+    this.recalcularTudo();
   }
 
   exportarPNG(id: string) {
