@@ -44,9 +44,9 @@
     <div class="grafico-card wide">
       <div class="card-header">
         <h3>Série Temporal ({{ granularidade | titlecase }})
-          <span *ngIf="selectedDiaSerie && granularidade==='dia'" class="badge-filtro" role="button" tabindex="0" (click)="selectedDiaSerie=null; recalcularTudo()" (keydown.enter)="selectedDiaSerie=null; recalcularTudo()" (keydown.space)="selectedDiaSerie=null; recalcularTudo()" title="Filtro de dia ativo. Clique para limpar.">
+          <button *ngIf="selectedDiaSerie && granularidade==='dia'" type="button" class="badge-filtro" (click)="selectedDiaSerie=null; recalcularTudo()" title="Filtro de dia ativo. Clique para limpar.">
             Dia: {{ formatDia(selectedDiaSerie) }} ✕
-          </span>
+          </button>
         </h3>
         <div class="acoes">
           <button class="btn-export csv" (click)="exportarCSV('serie')">CSV</button>

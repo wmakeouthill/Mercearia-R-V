@@ -734,7 +734,7 @@ export class GraficosVendasComponent implements OnInit {
   onSerieClick(evt: any) {
     if (!this.serieTemporalData || this.granularidade !== 'dia') return;
     const active = evt?.active as any[];
-    if (!active || !active.length) {
+    if (!active?.length) {
       return;
     }
     const idx = active[0].index;
@@ -750,14 +750,25 @@ export class GraficosVendasComponent implements OnInit {
   }
 
   exportarPNG(id: string) {
-    const el = document.getElementById(id);
-    if (!(el instanceof HTMLCanvasElement)) return;
-    el.toBlob(b => { if (b) this.saveBlob(b, `${id}.png`); });
+    const src = document.getElementById(id);
+    if (!(src instanceof HTMLCanvasElement)) return;
+    // Criar canvas temporário para aplicar fundo branco (canvas original pode ter fundo transparente)
+    const w = src.width, h = src.height;
+    const tmp = document.createElement('canvas');
+    tmp.width = w; tmp.height = h;
+    const ctx = tmp.getContext('2d');
+    if (!ctx) return;
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, w, h);
+    ctx.drawImage(src, 0, 0);
+    tmp.toBlob(b => { if (b) this.saveBlob(b, `${id}.png`); }, 'image/png');
   }
 
   exportarCSV(tipo: string) {
-    let csv = 'label,valor\n';
-    const add = (pairs: SerieTemporalPoint[]) => pairs.forEach(p => csv += `${p.label},${p.valor}\n`);
+    // Usar BOM para manter acentos em Excel / Windows e aspas para proteger vírgulas
+    const linhas: string[] = ['label,valor'];
+    const quote = (s: string) => '"' + s.replace(/"/g, '""') + '"';
+    const add = (pairs: SerieTemporalPoint[]) => pairs.forEach(p => linhas.push(`${quote(p.label)},${p.valor}`));
     let nome = tipo;
     const extrair = (dataArr: any, labels: any[]): SerieTemporalPoint[] => labels.map((l, i) => ({ label: String(l), valor: Number(dataArr[i]) }));
     switch (tipo) {
@@ -777,7 +788,8 @@ export class GraficosVendasComponent implements OnInit {
         if (this.serieTemporalData) { nome = `serie-${this.granularidade}`; add(extrair(this.serieTemporalData.datasets[0].data, this.serieTemporalData.labels as any[])); }
         break;
     }
-    this.saveBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), `${nome}.csv`);
+    const conteudo = '\uFEFF' + linhas.join('\r\n') + '\r\n'; // BOM + CRLF final
+    this.saveBlob(new Blob([conteudo], { type: 'text/csv;charset=utf-8;' }), `${nome}.csv`);
   }
 
   private saveBlob(blob: Blob, filename: string) {
