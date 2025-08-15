@@ -99,7 +99,8 @@ export class CaixaComponent implements OnInit {
         this.resumo = resumoMovs as any;
         const payload = movimentacoes as any;
         const lista = payload?.items || [];
-        this.movimentacoes = lista;
+        // Consolidar vendas multi (que vêm uma linha por método do backend) em uma única linha por venda
+        this.movimentacoes = this.consolidarVendasMulti(lista);
         this.hasMore = !!payload?.hasNext;
         this.total = Number(payload?.total || 0);
         this.sumEntradas = Number(payload?.sum_entradas || 0);
@@ -357,6 +358,36 @@ export class CaixaComponent implements OnInit {
     const mes = dt.toLocaleString('pt-BR', { month: 'short' }).replace('.', '');
     const yy = String(year).slice(-2);
     return `${mes.charAt(0).toUpperCase()}${mes.slice(1)}/${yy}`;
+  }
+
+  /**
+   * Agrupa vendas multi (descricao inicia com 'Venda (multi)') que chegam duplicadas (uma por método de pagamento)
+   * em uma única linha por id, ajustando o campo valor para o total da venda.
+   */
+  private consolidarVendasMulti(lista: any[]): any[] {
+    const resultado: any[] = [];
+    const vistos = new Set<number | string>();
+    for (const item of lista) {
+      const isMulti = item && item.tipo === 'venda' && typeof item.descricao === 'string' && item.descricao.startsWith('Venda (multi)');
+      if (isMulti) {
+        if (vistos.has(item.id)) {
+          continue; // já consolidado
+        }
+        vistos.add(item.id);
+        let valorTotal = 0;
+        if (typeof item.total_venda === 'number') {
+          valorTotal = item.total_venda;
+        } else if (typeof item.valor === 'number') {
+          valorTotal = item.valor;
+        }
+        // Criar uma cópia para não mutar o objeto original
+        const copia = { ...item, valor: valorTotal, metodo_pagamento: 'multi' };
+        resultado.push(copia);
+      } else {
+        resultado.push(item);
+      }
+    }
+    return resultado;
   }
 }
 
