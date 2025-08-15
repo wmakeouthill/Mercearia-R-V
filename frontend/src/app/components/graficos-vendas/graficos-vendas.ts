@@ -59,11 +59,14 @@ const valueLabelPlugin = {
         if (!arcs?.length) return;
         const total = (dataset.data as any[]).reduce((s, v) => s + (Number(v) || 0), 0) || 1;
         const bgArray = dataset.backgroundColor as any[];
-        const SMALL_THRESHOLD = 0.05; // <5% vira rótulo externo
-        const exteriorLabels: Array<{ x: number; y: number; text: string; color: string; angle: number; arc: any; }> = [];
+        // Critério antigo substituído por lógica dinâmica de encaixe.
+        const MIN_PCT_INTERNAL = 0.18; // aumenta critério: menos internas para liberar espaço
+        const exteriorLabels: Array<{ x: number; y: number; lines: string[]; color: string; angle: number; arc: any; textAlign: CanvasTextAlign; }> = [];
 
         // Desenhar internos para grandes, acumular pequenos para externos
         arcs.forEach((arc: any, index: number) => {
+          // Ignorar fatias ocultas (legend toggle) - Chart.js 4: meta data[i].circumference == 0
+          if (!arc || arc.circumference === 0) return;
           const rawVal = Number(dataset.data[index]);
           if (!rawVal) return;
           const pct = rawVal / total;
@@ -73,16 +76,30 @@ const valueLabelPlugin = {
           const angle = (arc.startAngle + arc.endAngle) / 2;
           // Raio reduzido (encolhe pizza para dar espaço externo visual)
           const inner = arc.innerRadius;
-          const outer = arc.outerRadius * 0.90; // reduz 10%
+          const outer = arc.outerRadius * 0.98; // usar quase o raio para manter consistência após radius dataset
           const r = inner + (outer - inner) * 0.60;
           const x = arc.x + Math.cos(angle) * r;
           const y = arc.y + Math.sin(angle) * r;
           const colorHex = bgArray?.[index] || '#666';
           const lum = hexLuminance(colorHex);
           const textColor = lum < 0.55 ? 'rgba(255,255,255,0.92)' : '#14303F';
-          if (pct < SMALL_THRESHOLD) {
-            exteriorLabels.push({ x, y, text: `${pctStr}  |  ${valorStr}`, color: textColor, angle, arc });
-            return; // não desenha interno
+          // Verificar se cabe dentro: ângulo suficiente e espessura radial suficiente para duas linhas
+          const angleSpan = arc.endAngle - arc.startAngle; // radianos
+          // raio para medir comprimento de arco onde texto ficará
+          const midRadius = inner + (outer - inner) * 0.60;
+          const availableArcLength = angleSpan * midRadius; // comprimento do arco
+          ctx.save();
+          ctx.font = '600 11px "Segoe UI", sans-serif';
+          const wPct = ctx.measureText(pctStr).width;
+          const wVal = ctx.measureText(valorStr).width;
+          ctx.restore();
+          const maxLineWidth = Math.max(wPct, wVal) + 10; // margem
+          const radialThickness = (outer - inner) * 0.90; // após redução
+          const neededRadial = 26; // ~ duas linhas
+          const fits = pct >= MIN_PCT_INTERNAL && availableArcLength >= maxLineWidth && radialThickness >= neededRadial;
+          if (!fits) {
+            exteriorLabels.push({ x, y, lines: [pctStr, valorStr], color: textColor, angle, arc, textAlign: 'center' });
+            return; // externo (duas linhas)
           }
           ctx.save();
           ctx.font = '600 11px "Segoe UI", sans-serif';
@@ -93,7 +110,15 @@ const valueLabelPlugin = {
           ctx.shadowBlur = 4;
           // duas linhas: % e valor
           const lines = combined.split('\n');
-          lines.forEach((ln, li) => ctx.fillText(ln, x, y + (li === 0 ? -6 : 8)));
+          // Ajuste anti-corte horizontal
+          const wIn1 = ctx.measureText(lines[0]).width;
+          const wIn2 = ctx.measureText(lines[1]).width;
+          const maxWidthIn = Math.max(wIn1, wIn2);
+          let adjX = x;
+          const marginIn = 6;
+          if (adjX - maxWidthIn / 2 < marginIn) adjX = marginIn + maxWidthIn / 2;
+          if (adjX + maxWidthIn / 2 > chart.width - marginIn) adjX = chart.width - marginIn - maxWidthIn / 2;
+          lines.forEach((ln, li) => ctx.fillText(ln, adjX, y + (li === 0 ? -6 : 8)));
           ctx.restore();
         });
 
@@ -101,16 +126,18 @@ const valueLabelPlugin = {
         const used: Array<{ y: number; h: number; }> = [];
         exteriorLabels.sort((a, b) => a.angle - b.angle); // ordena pelo ângulo
         exteriorLabels.forEach(lbl => {
+          if (!lbl.arc || lbl.arc.circumference === 0) return; // não desenhar rótulo de fatia oculta
           const arc = lbl.arc;
           const angle = lbl.angle;
-          const outer = arc.outerRadius * 0.90; // coerente com redução interna
+          const outer = arc.outerRadius * 0.98; // acompanhar ajuste interno
           const startPtX = arc.x + Math.cos(angle) * (outer * 0.92);
           const startPtY = arc.y + Math.sin(angle) * (outer * 0.92);
-          const midPtX = arc.x + Math.cos(angle) * (outer + 16);
-          let midPtY = arc.y + Math.sin(angle) * (outer + 16);
+          const baseExtra = 26; // mais afastado do arco para dar respiro
+          const midPtX = arc.x + Math.cos(angle) * (outer + baseExtra);
+          let midPtY = arc.y + Math.sin(angle) * (outer + baseExtra);
           // Direção vertical preferencial: se na metade superior sobe, senão desce
           let verticalDir = Math.sin(angle) < 0 ? -1 : 1;
-          const lineHeight = 14;
+          const lineHeight = 28; // duas linhas empilhadas (~14 cada)
           let attempts = 0;
           while (used.some(u => Math.abs(midPtY - u.y) < (u.h + 2)) && attempts < 24) {
             midPtY += verticalDir * 12;
@@ -121,7 +148,7 @@ const valueLabelPlugin = {
           // Garantir margem superior/inferior
           midPtY = Math.min(Math.max(midPtY, 18), chart.height - 18);
           used.push({ y: midPtY, h: lineHeight });
-          const endX = midPtX + (Math.cos(angle) >= 0 ? 40 : -40);
+          const endX = midPtX + (Math.cos(angle) >= 0 ? 54 : -54);
           ctx.save();
           ctx.strokeStyle = 'rgba(0,0,0,0.30)';
           ctx.lineWidth = 1;
@@ -131,10 +158,28 @@ const valueLabelPlugin = {
           ctx.lineTo(endX, midPtY);
           ctx.stroke();
           ctx.font = '600 11px "Segoe UI", sans-serif';
-          ctx.fillStyle = '#14303F';
-          ctx.textAlign = Math.cos(angle) >= 0 ? 'left' : 'right';
+          ctx.fillStyle = lbl.color;
+          const side = Math.cos(angle) >= 0 ? 1 : -1;
+          ctx.textAlign = side === 1 ? 'left' : 'right';
           ctx.textBaseline = 'middle';
-          ctx.fillText(lbl.text, endX + (Math.cos(angle) >= 0 ? 4 : -4), midPtY);
+          // medir para evitar corte
+          const wExt1 = ctx.measureText(lbl.lines[0]).width;
+          const wExt2 = ctx.measureText(lbl.lines[1]).width;
+          const maxWidth = Math.max(wExt1, wExt2);
+          const lineY1 = midPtY - 7;
+          const lineY2 = midPtY + 9;
+          let textX = endX + (side === 1 ? 4 : -4);
+          const margin = 4;
+          if (side === -1 && (textX - maxWidth) < margin) {
+            const deficit = margin - (textX - maxWidth);
+            textX += deficit; // empurra para dentro
+          }
+          if (side === 1 && (textX + maxWidth) > (chart.width - margin)) {
+            const overflow = (textX + maxWidth) - (chart.width - margin);
+            textX -= overflow;
+          }
+          ctx.fillText(lbl.lines[0], textX, lineY1);
+          ctx.fillText(lbl.lines[1], textX, lineY2);
           ctx.restore();
         });
       }
@@ -153,22 +198,36 @@ function hexLuminance(hex: string): number {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 
-// Plugin para melhorar precisão do hover em fatias pequenas de pizza
+// Plugin de hover simplificado (usa apenas detecção nativa para evitar offsets)
 const betterPieHoverPlugin = {
   id: 'betterPieHover',
   afterEvent(chart: any, args: any) {
     if (chart.config.type !== 'pie') return;
     const e = args.event; if (!e) return;
-    const meta = chart.getDatasetMeta(0); const arcs = meta?.data; if (!arcs?.length) return;
-    const cssX = e.native?.offsetX ?? e.x; const cssY = e.native?.offsetY ?? e.y;
-    // Aceitar mais tipos de evento para atualização responsiva
     if (!['mousemove', 'pointermove', 'mouseenter'].includes(e.type)) return;
-
-    let hitIndex = detectNative(chart, e);
-    hitIndex ??= detectInRange(arcs, cssX, cssY);
-    hitIndex ??= detectWithTolerance(arcs, cssX, cssY, 1.1); // tolerância angular moderada
+    const els = chart.getElementsAtEventForMode(e, 'nearest', { intersect: true }, true);
+    const hitIndex = els?.length ? els[0].index : null;
     if (hitIndex === chart._lastActiveBetterPieIndex) return;
-    updateActive(chart, hitIndex, cssX, cssY);
+    const native: any = e.native || e;
+    updateActive(chart, hitIndex, native.x ?? native.clientX ?? 0, native.y ?? native.clientY ?? 0);
+  }
+};
+
+// Plugin para reservar um espaçamento visual entre a pizza e a legenda, empurrando a pizza um pouco para cima
+// sem afastar a legenda do bottom do canvas.
+const pieLegendGapPlugin = {
+  id: 'pieLegendGap',
+  afterLayout(chart: any) {
+    if (chart.config.type !== 'pie') return;
+    const legend = chart.legend;
+    if (!legend || !chart.chartArea) return;
+    const desiredGap = 30; // px de espaço livre pretendido
+    const currentGap = legend.top - chart.chartArea.bottom;
+    const need = desiredGap - currentGap;
+    if (need > 0) {
+      // Reduz a área de desenho (bottom) para criar o gap; limita para não inverter
+      chart.chartArea.bottom = Math.max(chart.chartArea.top + 50, chart.chartArea.bottom - need);
+    }
   }
 };
 
@@ -241,10 +300,11 @@ function updateActive(chart: any, idx: number | null, mx: number, my: number) {
     chart.tooltip.setActiveElements([{ datasetIndex: 0, index: idx }], { x: mx, y: my });
   }
   chart._lastActiveBetterPieIndex = idx;
-  chart.update();
+  // Redesenhar leve sem recalcular layout completo melhora responsividade
+  chart.draw();
 }
 
-Chart.register(...registerables, valueLabelPlugin, betterPieHoverPlugin);
+Chart.register(...registerables, valueLabelPlugin, betterPieHoverPlugin, pieLegendGapPlugin);
 
 interface SerieTemporalPoint { label: string; valor: number; }
 type Granularidade = 'dia' | 'mes' | 'trimestre' | 'semestre' | 'ano';
@@ -324,16 +384,20 @@ export class GraficosVendasComponent implements OnInit {
       responsive: true,
       interaction: { mode: 'nearest', intersect: true },
       // Mais espaço superior para rótulos externos não serem cortados
-      layout: { padding: { top: 56, bottom: 8, left: 8, right: 8 } },
+      // Rebalancear: reduzir top para aproximar pizza do topo e aumentar bottom para descer legenda
+      layout: { padding: { top: 14, bottom: 6, left: 0, right: 0 } },
       plugins: {
         legend: {
           position: 'bottom',
+          fullSize: true,
           labels: {
             color: 'rgba(0,46,89,0.75)',
             font: { weight: '500', size: 11 },
             usePointStyle: true,
-            boxWidth: 10,
-            padding: 12
+            boxWidth: 12,
+            align: 'center',
+            padding: 6,
+            boxHeight: 12
           }
         },
         tooltip: { callbacks: { label: (ctx: any) => `${ctx.label}: R$ ${Number(ctx.parsed).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` } }
@@ -395,6 +459,7 @@ export class GraficosVendasComponent implements OnInit {
         metodoSum[m] = (metodoSum[m] || 0) + Number(p.valor || 0);
       }
       const pagamentosResumo = Object.keys(metodoSum).map(m => `${m}: R$ ${metodoSum[m].toFixed(2)}`).join(' + ');
+      let idx = 0;
       for (const it of itens) {
         const linha: Venda = {
           id: ordem.id,
@@ -407,7 +472,12 @@ export class GraficosVendasComponent implements OnInit {
           produto_imagem: it.produto_imagem,
           pagamentos_resumo: pagamentosResumo
         } as any;
+        if (idx === 0) {
+          (linha as any).metodos_sum = metodoSum; // anexa apenas na primeira linha do pedido
+          (linha as any).pedido_linha_principal = true;
+        }
         linhas.push(linha);
+        idx++;
       }
     }
     return linhas.sort((a, b) => parseDate(a.data_venda).getTime() - parseDate(b.data_venda).getTime());
@@ -501,28 +571,58 @@ export class GraficosVendasComponent implements OnInit {
 
   private gerarReceitaPorMetodo(base: Venda[]) {
     const soma: Record<string, number> = { dinheiro: 0, cartao_credito: 0, cartao_debito: 0, pix: 0 };
-    for (const v of base) soma[v.metodo_pagamento] += v.preco_total;
+    const normalizar = (m: any): string => {
+      if (!m) return 'dinheiro';
+      const s = String(m).toLowerCase().normalize('NFD').replace(/[^a-z0-9_]/g, '');
+      if (s.includes('pix')) return 'pix';
+      if (s.includes('debito')) return 'cartao_debito';
+      if (s.includes('credito')) return 'cartao_credito';
+      if (s.includes('din') || s.includes('cash') || s.includes('money')) return 'dinheiro';
+      return s as any;
+    };
+    const pedidosProcessados = new Set<any>();
+    for (const v of base) {
+      const raw: any = v as any;
+      if (raw.metodos_sum && !pedidosProcessados.has(v.id)) {
+        // pedido com múltiplos métodos - usar soma detalhada
+        Object.entries(raw.metodos_sum as Record<string, number>).forEach(([met, valor]) => {
+          const key = normalizar(met);
+          if (!(key in soma)) soma[key] = 0;
+          soma[key] += valor;
+        });
+        pedidosProcessados.add(v.id);
+      } else if (!raw.metodos_sum) {
+        // legado ou venda simples
+        const key = normalizar(raw.metodo_pagamento);
+        if (!(key in soma)) soma[key] = 0;
+        soma[key] += v.preco_total;
+      }
+    }
+    // Garantir números válidos
+    Object.keys(soma).forEach(k => { if (!isFinite(soma[k])) soma[k] = 0; });
+    // Debug (pode remover depois) – só loga uma vez por recalculo
+    try { (window as any)._ultimaSomaMetodos = soma; console.debug('[GRAFICOS] soma metodos', soma); } catch { }
+
+    const labels: string[] = []; const dataVals: number[] = []; const bg: string[] = []; const bgHover: string[] = [];
+    const push = (label: string, val: number, color: string, hover: string) => { labels.push(label); dataVals.push(val); bg.push(color); bgHover.push(hover); };
+    push('Dinheiro', soma['dinheiro'] || 0, '#4CAF50', '#43A047');
+    push('Cartão Crédito', soma['cartao_credito'] || 0, '#3F51B5', '#3949AB');
+    push('Cartão Débito', soma['cartao_debito'] || 0, '#E53935', '#D32F2F');
+    push('PIX', soma['pix'] || 0, '#FFB74D', '#FFA726');
+    // Adiciona outros métodos detectados dinamicamente (exceto os já tratados)
+    Object.keys(soma).filter(k => !['dinheiro', 'cartao_credito', 'cartao_debito', 'pix'].includes(k)).forEach(k => {
+      const val = soma[k]; if (val > 0) push(k.replace(/_/g, ' ').toUpperCase(), val, '#8D6E63', '#795548');
+    });
     this.receitaPorMetodoData = {
-      labels: ['Dinheiro', 'Cartão Crédito', 'Cartão Débito', 'PIX'],
+      labels,
       datasets: [
         {
           label: 'Receita',
-          data: [soma['dinheiro'], soma['cartao_credito'], soma['cartao_debito'], soma['pix']],
-          // Paleta menos pastel; débito em vermelho destacado
-          backgroundColor: [
-            '#4CAF50', // Dinheiro - verde médio
-            '#3F51B5', // Crédito - azul/indigo
-            '#E53935', // Débito - vermelho solicitado
-            '#FFB74D'  // PIX - âmbar médio
-          ],
-          hoverBackgroundColor: [
-            '#43A047',
-            '#3949AB',
-            '#D32F2F',
-            '#FFA726'
-          ],
+          data: dataVals,
+          backgroundColor: bg,
+          hoverBackgroundColor: bgHover,
           borderColor: '#ffffff',
-          borderWidth: 1, // linha divisória mais fina
+          borderWidth: 1,
           hoverOffset: 12,
           hoverBorderColor: '#002E59',
           hoverBorderWidth: 1.6
