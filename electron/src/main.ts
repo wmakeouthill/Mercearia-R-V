@@ -19,6 +19,8 @@ let currentBackendPort = 3000;
 const backendCandidatePorts = [3000, 3001, 3002];
 let backendStdoutStream: fs.WriteStream | null = null;
 let backendStderrStream: fs.WriteStream | null = null;
+// Flag para desativar completamente logs em arquivo (frontend.log, backend-stdout.log, backend-stderr.log)
+const DISABLE_FILE_LOGS = process.env.DISABLE_FILE_LOGS === 'true' || true; // forçar true por padrão
 
 function isPortFree(port: number): Promise<boolean> {
     return new Promise<boolean>((resolve) => {
@@ -103,18 +105,19 @@ function attachBackendListeners(proc: childProcess.ChildProcess): void {
             const output = data.toString();
             console.log('Backend STDOUT:', output);
             // Escrever em arquivo dedicado (produção)
-            try {
-                if (!app.isPackaged) {
-                    // Em desenvolvimento, também gravar para facilitar suporte remoto
-                    const dir = getLogsDirectory();
-                    if (!backendStdoutStream) {
-                        backendStdoutStream = fs.createWriteStream(path.join(dir, 'backend-stdout.log'), { flags: 'a' });
+            if (!DISABLE_FILE_LOGS) {
+                try {
+                    if (!app.isPackaged) {
+                        const dir = getLogsDirectory();
+                        if (!backendStdoutStream) {
+                            backendStdoutStream = fs.createWriteStream(path.join(dir, 'backend-stdout.log'), { flags: 'a' });
+                        }
+                        backendStdoutStream.write(output);
+                    } else if (backendStdoutStream) {
+                        backendStdoutStream.write(output);
                     }
-                    backendStdoutStream.write(output);
-                } else if (backendStdoutStream) {
-                    backendStdoutStream.write(output);
-                }
-            } catch { }
+                } catch { /* ignorar erro de escrita */ }
+            }
             const springStarted = output.indexOf('Started') !== -1 ||
                 output.indexOf('Tomcat started') !== -1 ||
                 output.indexOf('JVM running') !== -1;
@@ -140,17 +143,19 @@ function attachBackendListeners(proc: childProcess.ChildProcess): void {
             const error = data.toString();
             console.error('Backend STDERR:', error);
             // Escrever em arquivo dedicado (produção)
-            try {
-                if (!app.isPackaged) {
-                    const dir = getLogsDirectory();
-                    if (!backendStderrStream) {
-                        backendStderrStream = fs.createWriteStream(path.join(dir, 'backend-stderr.log'), { flags: 'a' });
+            if (!DISABLE_FILE_LOGS) {
+                try {
+                    if (!app.isPackaged) {
+                        const dir = getLogsDirectory();
+                        if (!backendStderrStream) {
+                            backendStderrStream = fs.createWriteStream(path.join(dir, 'backend-stderr.log'), { flags: 'a' });
+                        }
+                        backendStderrStream.write(error);
+                    } else if (backendStderrStream) {
+                        backendStderrStream.write(error);
                     }
-                    backendStderrStream.write(error);
-                } else if (backendStderrStream) {
-                    backendStderrStream.write(error);
-                }
-            } catch { }
+                } catch { /* ignorar */ }
+            }
             if (error.includes('EADDRINUSE')) {
                 console.error(`❌ Porta ${currentBackendPort} já está em uso! Tentando próxima...`);
                 const nextIndex = backendCandidatePorts.indexOf(currentBackendPort) + 1;
@@ -203,6 +208,10 @@ function attachBackendListeners(proc: childProcess.ChildProcess): void {
 
 // ==== LOG EM ARQUIVO (FRONTEND VIA IPC) ====
 function getLogsDirectory(): string {
+    if (DISABLE_FILE_LOGS) {
+        // Retornar diretório dummy; não será usado pois não iremos escrever
+        return app.getPath('temp');
+    }
     // Em desenvolvimento, gravar na raiz do workspace (do projeto mono-repo)
     if (!app.isPackaged) {
         // __dirname aponta para electron/dist em dev; subir 2 níveis até electron/, depois voltar 1 para raiz
@@ -225,12 +234,9 @@ function getFrontendLogFilePath(): string {
 }
 
 function appendLogLine(line: string): void {
+    if (DISABLE_FILE_LOGS) return; // não escrever em arquivo
     const filePath = getFrontendLogFilePath();
-    try {
-        fs.appendFileSync(filePath, line + '\n');
-    } catch (err) {
-        console.error('Erro ao escrever log de frontend:', err);
-    }
+    try { fs.appendFileSync(filePath, line + '\n'); } catch { /* ignorar */ }
 }
 
 // CONFIGURAÇÃO: Aguardar tudo estar pronto antes de mostrar? (APENAS EM PRODUÇÃO)
@@ -860,26 +866,19 @@ async function startBackend(): Promise<void> {
         const args = buildBackendArgs(jarPath, currentBackendPort);
 
         // Abrir streams de log (produção e desenvolvimento) antes do spawn
-        try {
-            const logsDir = getLogsDirectory();
-            backendStdoutStream = fs.createWriteStream(path.join(logsDir, 'backend-stdout.log'), { flags: 'a' });
-            backendStderrStream = fs.createWriteStream(path.join(logsDir, 'backend-stderr.log'), { flags: 'a' });
-            const banner = `\n===== Backend start @ ${new Date().toISOString()} =====\n`;
-            backendStdoutStream.write(banner);
-            backendStderrStream.write(banner);
-            // Registrar contexto útil
-            const context = {
-                javaExecutable,
-                jarPath,
-                workingDir,
-                currentBackendPort,
-                userDataDir,
-                envKeys: Object.keys(env)
-            } as Record<string, unknown>;
-            const contextLine = `[electron] startBackend context: ${JSON.stringify(context)}\n`;
-            backendStdoutStream.write(contextLine);
-        } catch (e) {
-            console.error('⚠️ Falha ao preparar arquivos de log do backend:', (e as Error)?.message || e);
+        if (!DISABLE_FILE_LOGS) {
+            try {
+                const logsDir = getLogsDirectory();
+                backendStdoutStream = fs.createWriteStream(path.join(logsDir, 'backend-stdout.log'), { flags: 'a' });
+                backendStderrStream = fs.createWriteStream(path.join(logsDir, 'backend-stderr.log'), { flags: 'a' });
+                const banner = `\n===== Backend start @ ${new Date().toISOString()} =====\n`;
+                backendStdoutStream.write(banner);
+                backendStderrStream.write(banner);
+                const context = { javaExecutable, jarPath, workingDir, currentBackendPort, userDataDir, envKeys: Object.keys(env) } as Record<string, unknown>;
+                backendStdoutStream.write(`[electron] startBackend context: ${JSON.stringify(context)}\n`);
+            } catch (e) {
+                console.error('⚠️ Falha ao preparar arquivos de log do backend:', (e as Error)?.message || e);
+            }
         }
 
         backendProcess = childProcess.spawn(javaExecutable, args, {

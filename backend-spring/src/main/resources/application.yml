@@ -39,14 +39,13 @@ cors:
   max-age: 86400
 
 logging:
-  # Nome do arquivo de log. Em dev, o backend costuma rodar dentro de `backend-spring/`,
-  # então usamos ../ para gravar na raiz do projeto. Pode ser sobrescrito via LOG_FILE
-  file:
-    name: ${LOG_FILE:../backend.log}
+  # Desativado: antes gravava em arquivo (backend.log) na raiz. Removido para não gerar arquivos em produção.
+  # file:
+  #   name: ${LOG_FILE:../backend.log}
   level:
     root: INFO
     "[org.springframework.web]": INFO
     "[com.example.backendspring]": DEBUG
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n"
-    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n"
+    # pattern.file removido pois não usamos mais saída em arquivo
