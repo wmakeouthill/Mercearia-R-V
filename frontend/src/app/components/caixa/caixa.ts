@@ -322,7 +322,16 @@ export class CaixaComponent implements OnInit {
   }
 
   getMetodosTexto(m: { metodo_pagamento?: string; pagamento_valor?: number; descricao?: string; total_venda?: number }): string {
+    const anyM: any = m as any;
+    if (Array.isArray(anyM.pagamentos_badges) && anyM.pagamentos_badges.length) {
+      return anyM.pagamentos_badges.map((b: string) => this.formatBadgeFromRaw(b)).join(' | ');
+    }
     if (m?.total_venda != null && typeof m?.descricao === 'string') {
+      const re = /\(([^)]+)\)/;
+      const parenMatch = re.exec(m.descricao); // conteúdo entre parênteses
+      if (parenMatch?.[1]) {
+        return this.formatBadgeFromRaw(parenMatch[1]);
+      }
       const parts = m.descricao.split(' - ');
       const last = parts[parts.length - 1];
       return last?.trim() || '';
@@ -335,10 +344,19 @@ export class CaixaComponent implements OnInit {
   }
 
   getMetodoBadges(m: { metodo_pagamento?: string; pagamento_valor?: number; descricao?: string; total_venda?: number }): string[] {
+    const anyM: any = m as any;
+    if (Array.isArray(anyM.pagamentos_badges) && anyM.pagamentos_badges.length) {
+      return anyM.pagamentos_badges.map((b: string) => this.formatBadgeFromRaw(b));
+    }
     if (m?.total_venda != null && typeof m?.descricao === 'string') {
+      const re = /\(([^)]+)\)/;
+      const parenMatch = re.exec(m.descricao);
+      if (parenMatch?.[1]) {
+        return [this.formatBadgeFromRaw(parenMatch[1])];
+      }
       const parts = m.descricao.split(' - ');
       const last = (parts[parts.length - 1] || '').trim();
-      return last.split('|').map(s => s.trim()).filter(Boolean);
+      return last.split('|').map(s => this.formatBadgeFromRaw(s)).filter(Boolean);
     }
     const label = this.getMetodoLabel(m.metodo_pagamento || '');
     if (!label) return [];
@@ -380,14 +398,31 @@ export class CaixaComponent implements OnInit {
         } else if (typeof item.valor === 'number') {
           valorTotal = item.valor;
         }
-        // Criar uma cópia para não mutar o objeto original
-        const copia = { ...item, valor: valorTotal, metodo_pagamento: 'multi' };
+        // Extrair breakdown (depois do último ' - ')
+        let breakdownStr = '';
+        const lastSep = item.descricao.lastIndexOf(' - ');
+        if (lastSep >= 0) {
+          breakdownStr = item.descricao.substring(lastSep + 3).trim();
+        }
+        const badgesRaw = breakdownStr.split('|').map((s: string) => s.trim()).filter(Boolean);
+        const copia = { ...item, valor: valorTotal, metodo_pagamento: 'multi', pagamentos_badges: badgesRaw };
         resultado.push(copia);
       } else {
         resultado.push(item);
       }
     }
     return resultado;
+  }
+
+  private formatBadgeFromRaw(entry: string): string {
+    const cleaned = entry.replace(/total/i, '').trim();
+    const idx = cleaned.indexOf('R$');
+    if (idx > 0) {
+      const metodo = cleaned.substring(0, idx).trim();
+      const valor = cleaned.substring(idx).trim();
+      return `${metodo} · ${valor}`;
+    }
+    return cleaned;
   }
 }
 

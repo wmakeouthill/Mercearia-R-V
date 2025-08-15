@@ -263,10 +263,17 @@ public class CaixaController {
             row.put("total_venda", vo.getTotalFinal());
             var nf = java.text.NumberFormat.getCurrencyInstance(java.util.Locale.forLanguageTag("pt-BR"));
             String totalFmt = nf.format(vo.getTotalFinal());
-            String breakdown = vo.getPagamentos().stream()
-                    .map(p -> labelMetodoPagamento(p.getMetodo()) + " " + nf.format(p.getValor()))
-                    .collect(java.util.stream.Collectors.joining(" | "));
-            row.put(KEY_DESCRICAO, "Venda (multi) - total " + totalFmt + " - " + breakdown);
+            boolean multi = vo.getPagamentos().size() > 1;
+            if (multi) {
+                String breakdown = vo.getPagamentos().stream()
+                        .map(p -> labelMetodoPagamento(p.getMetodo()) + " " + nf.format(p.getValor()))
+                        .collect(java.util.stream.Collectors.joining(" | "));
+                row.put(KEY_DESCRICAO, "Venda (multi) - total " + totalFmt + " - " + breakdown);
+            } else {
+                // descrição simplificada para venda de único método
+                row.put(KEY_DESCRICAO, "Venda - total " + totalFmt + " (" + labelMetodoPagamento(pg.getMetodo()) + " "
+                        + nf.format(pg.getValor()) + ")");
+            }
             row.put("produto_nome",
                     vo.getItens().isEmpty() ? null : vo.getItens().get(0).getProduto().getNome());
             row.put(KEY_METODO_PAGAMENTO, pg.getMetodo());
