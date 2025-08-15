@@ -53,23 +53,37 @@
                                  [alt]="produto.nome"
                                  class="produto-card-imagem"
                                  (error)="onImageError($event)">
+                            <div class="produto-sem-imagem">🖼️</div>
                         </div>
                         <div class="produto-info">
                             <h4>{{ produto.nome }}</h4>
                             <p><strong>Código:</strong> {{ produto.codigo_barras || 'N/A' }}</p>
-                            <div class="produto-preco-estoque">
-                                <span class="preco">R$ {{ produto.preco_venda.toFixed(2) }}</span>
-                                <span class="estoque">Est: {{ produto.quantidade_estoque }}</span>
-                            </div>
                         </div>
-                        @if (produtoSelecionado?.id === produto.id) {<div class="produto-actions">
-                            <div class="quantidade-inline">
-                                <input type="number" [(ngModel)]="quantidade" min="1" [max]="produto.quantidade_estoque"
-                                    class="input-qtd-inline" (click)="$event.stopPropagation()" (mousedown)="$event.stopPropagation()">
+                        <div class="produto-preco-estoque">
+                            <span class="preco">R$ {{ produto.preco_venda.toFixed(2) }}</span>
+                            <span class="estoque">Est: {{ produto.quantidade_estoque }}</span>
+                            @if (produtoSelecionado?.id === produto.id) {<div class="qtd-arrows" (click)="$event.stopPropagation()" (keydown)="$event.stopPropagation()">
+                                <span class="qtd-num">{{ quantidade }}</span>
+                                <button type="button" class="qtd-btn" (click)="increaseQuantidadeSelecionada(produto.quantidade_estoque)" title="Aumentar">+</button>
+                            </div>}
+                        </div>
+                        <div class="produto-acao-col">
+                            @if (produtoSelecionado?.id === produto.id) {<div class="quantidade-inline">
+                                <input type="number"
+                                       [(ngModel)]="quantidade"
+                                       min="1"
+                                       [max]="produto.quantidade_estoque"
+                                       class="input-qtd-inline"
+                                       (click)="$event.stopPropagation()"
+                                       (mousedown)="$event.stopPropagation()">
                                 <button (click)="adicionarAoCarrinho(false); $event.stopPropagation()"
-                                    class="btn-add-inline">+ Carrinho</button>
-                            </div>
-                        </div>}
+                                        class="btn-add-inline"
+                                        title="Adicionar ao carrinho">
+                                    <span class="icon">🛒</span>
+                                </button>
+                            </div>}
+                        </div>
+
                     </button>}
                 </div>
             </div>

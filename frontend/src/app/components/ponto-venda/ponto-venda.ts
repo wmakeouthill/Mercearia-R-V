@@ -267,6 +267,16 @@ export class PontoVendaComponent implements OnInit, OnDestroy {
     this.error = '';
   }
 
+  increaseQuantidadeSelecionada(maximo: number): void {
+    const atual = Number(this.quantidade || 1);
+    this.quantidade = Math.min(maximo, atual + 1);
+  }
+
+  decreaseQuantidadeSelecionada(): void {
+    const atual = Number(this.quantidade || 1);
+    this.quantidade = Math.max(1, atual - 1);
+  }
+
   adicionarAoCarrinho(manterSelecao: boolean = false): void {
     // Verificar se o caixa está aberto (proteção adicional)
     if (!this.isAdmin && this.statusCaixa && !this.statusCaixa.aberto) {
