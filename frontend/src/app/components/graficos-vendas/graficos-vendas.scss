@@ -59,6 +59,19 @@
   flex-wrap: wrap;
 }
 
+.grupo-col { display:flex; flex-direction:column; gap:6px; }
+.datas-range { display:flex; align-items:center; gap:6px; }
+.datas-range input { padding:6px 10px; border:2px solid var(--medium-gray); border-radius:8px; font-size:.75rem; min-width:140px; }
+.datas-range input:focus { outline:none; border-color: var(--primary-gold); box-shadow:0 0 0 3px rgba(219,194,125,0.25); }
+.datas-range .ate { font-size:.7rem; font-weight:600; color: var(--primary-blue); }
+.select-ano { padding:8px 10px; border:2px solid var(--medium-gray); background:var(--white); border-radius:8px; font-size:.75rem; min-width:110px; }
+.select-ano:focus { outline:none; border-color: var(--primary-gold); box-shadow:0 0 0 3px rgba(219,194,125,0.25); }
+.acoes-filtro { display:flex; flex-direction:row; gap:8px; align-self:flex-end; }
+.btn-aplicar, .btn-limpar { background:linear-gradient(135deg,var(--primary-blue),var(--secondary-blue)); color:#fff; border:none; padding:8px 14px; border-radius:8px; font-size:.7rem; font-weight:600; letter-spacing:.4px; cursor:pointer; box-shadow:0 2px 8px rgba(0,46,89,.25); text-transform:uppercase; }
+.btn-limpar { background:linear-gradient(135deg,var(--dark-gray),#5a6268); }
+.btn-aplicar:hover { transform:translateY(-2px); }
+.btn-limpar:hover { transform:translateY(-2px); }
+
 .filtro-label { font-weight: 600; font-size: .8rem; color: var(--primary-blue); text-transform: uppercase; letter-spacing: .5px; }
 
 .grupo-botoes { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -111,8 +124,10 @@
 .card-header h3::before { content:'📊'; font-size:1rem; }
 
 .acoes { display:flex; gap:6px; }
-.acoes button { background: linear-gradient(135deg,var(--primary-blue),var(--secondary-blue)); color:#fff; border:none; padding:6px 10px; font-size:.65rem; font-weight:600; border-radius:6px; cursor:pointer; letter-spacing:.4px; box-shadow:0 2px 6px rgba(0,46,89,.25); }
-.acoes button:hover { background: linear-gradient(135deg,var(--secondary-blue),var(--dark-blue)); }
+.acoes .btn-export { background: linear-gradient(135deg,var(--primary-blue),var(--secondary-blue)); color:#fff; border:none; padding:6px 10px; font-size:.6rem; font-weight:600; border-radius:20px; cursor:pointer; letter-spacing:.4px; box-shadow:0 2px 6px rgba(0,46,89,.35); position:relative; overflow:hidden; }
+.acoes .btn-export.csv { background: linear-gradient(135deg,#28A745,#1E7E34); }
+.acoes .btn-export.png { background: linear-gradient(135deg,#003366,#001D3D); }
+.acoes .btn-export:hover { filter:brightness(1.08); transform:translateY(-1px); }
 
 @media (max-width: 1000px){ .grafico-card.wide { grid-column: span 1; } }
 @media (max-width: 600px){ .header { flex-direction: column; align-items: flex-start; gap:14px; } }

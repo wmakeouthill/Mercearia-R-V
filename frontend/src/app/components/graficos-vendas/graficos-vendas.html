@@ -7,13 +7,33 @@
   </div>
 
   <div class="filtros">
-    <span class="filtro-label">Granularidade:</span>
-    <div class="grupo-botoes">
-      <button [class.ativo]="granularidade==='dia'" (click)="alterarGranularidade('dia')">Diário</button>
-      <button [class.ativo]="granularidade==='mes'" (click)="alterarGranularidade('mes')">Mensal</button>
-      <button [class.ativo]="granularidade==='trimestre'" (click)="alterarGranularidade('trimestre')">Trimestral</button>
-      <button [class.ativo]="granularidade==='semestre'" (click)="alterarGranularidade('semestre')">Semestral</button>
-      <button [class.ativo]="granularidade==='ano'" (click)="alterarGranularidade('ano')">Anual</button>
+    <div class="grupo-col">
+      <span class="filtro-label">Granularidade</span>
+      <div class="grupo-botoes">
+        <button [class.ativo]="granularidade==='dia'" (click)="alterarGranularidade('dia')">Diário</button>
+        <button [class.ativo]="granularidade==='mes'" (click)="alterarGranularidade('mes')">Mensal</button>
+        <button [class.ativo]="granularidade==='trimestre'" (click)="alterarGranularidade('trimestre')">Trimestral</button>
+        <button [class.ativo]="granularidade==='semestre'" (click)="alterarGranularidade('semestre')">Semestral</button>
+        <button [class.ativo]="granularidade==='ano'" (click)="alterarGranularidade('ano')">Anual</button>
+      </div>
+    </div>
+    <div class="grupo-col" *ngIf="granularidade!=='dia'">
+      <span class="filtro-label">Ano</span>
+      <select [(ngModel)]="anoSelecionado" (change)="aplicarFiltros()" class="select-ano">
+        <option *ngFor="let a of anosDisponiveis" [ngValue]="a">{{ a }}</option>
+      </select>
+    </div>
+    <div class="grupo-col">
+      <span class="filtro-label">Período (datas)</span>
+      <div class="datas-range">
+        <input type="date" [(ngModel)]="dataInicio" (change)="aplicarFiltros()"/>
+        <span class="ate">até</span>
+        <input type="date" [(ngModel)]="dataFim" (change)="aplicarFiltros()"/>
+      </div>
+    </div>
+    <div class="grupo-col acoes-filtro">
+      <button class="btn-aplicar" (click)="aplicarFiltros()">Aplicar</button>
+      <button class="btn-limpar" (click)="dataInicio=''; dataFim=''; aplicarFiltros()">Limpar</button>
     </div>
   </div>
 
@@ -25,8 +45,8 @@
       <div class="card-header">
         <h3>Série Temporal ({{ granularidade | titlecase }})</h3>
         <div class="acoes">
-          <button (click)="exportarCSV('serie')">CSV</button>
-          <button (click)="exportarPNG('chartSerie')">PNG</button>
+          <button class="btn-export csv" (click)="exportarCSV('serie')">CSV</button>
+          <button class="btn-export png" (click)="exportarPNG('chartSerie')">PNG</button>
         </div>
       </div>
       <div class="chart-wrapper">
@@ -37,8 +57,8 @@
       <div class="card-header">
         <h3>Receita por Hora</h3>
         <div class="acoes">
-          <button (click)="exportarCSV('hora')">CSV</button>
-          <button (click)="exportarPNG('chartHora')">PNG</button>
+          <button class="btn-export csv" (click)="exportarCSV('hora')">CSV</button>
+          <button class="btn-export png" (click)="exportarPNG('chartHora')">PNG</button>
         </div>
       </div>
       <div class="chart-wrapper">
@@ -49,8 +69,8 @@
       <div class="card-header">
         <h3>Receita por Dia da Semana</h3>
         <div class="acoes">
-          <button (click)="exportarCSV('dia-semana')">CSV</button>
-          <button (click)="exportarPNG('chartDiaSemana')">PNG</button>
+          <button class="btn-export csv" (click)="exportarCSV('dia-semana')">CSV</button>
+          <button class="btn-export png" (click)="exportarPNG('chartDiaSemana')">PNG</button>
         </div>
       </div>
       <div class="chart-wrapper">
@@ -61,8 +81,8 @@
       <div class="card-header">
         <h3>Receita por Método</h3>
         <div class="acoes">
-          <button (click)="exportarCSV('metodo')">CSV</button>
-          <button (click)="exportarPNG('chartMetodo')">PNG</button>
+          <button class="btn-export csv" (click)="exportarCSV('metodo')">CSV</button>
+          <button class="btn-export png" (click)="exportarPNG('chartMetodo')">PNG</button>
         </div>
       </div>
       <div class="chart-wrapper">
@@ -73,8 +93,8 @@
       <div class="card-header">
         <h3>Top 10 Itens</h3>
         <div class="acoes">
-          <button (click)="exportarCSV('itens')">CSV</button>
-          <button (click)="exportarPNG('chartItens')">PNG</button>
+          <button class="btn-export csv" (click)="exportarCSV('itens')">CSV</button>
+          <button class="btn-export png" (click)="exportarPNG('chartItens')">PNG</button>
         </div>
       </div>
       <div class="chart-wrapper">

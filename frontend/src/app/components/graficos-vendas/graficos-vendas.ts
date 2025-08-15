@@ -57,7 +57,16 @@ type Granularidade = 'dia' | 'mes' | 'trimestre' | 'semestre' | 'ano';
 })
 export class GraficosVendasComponent implements OnInit {
   granularidade: Granularidade = 'dia';
-  vendas: Venda[] = [];
+  // Dados
+  vendas: Venda[] = [];            // legado + checkout explodido
+  vendasLegado: Venda[] = [];      // raw getVendas()
+  vendasCheckout: Venda[] = [];    // itens explodidos de getVendasCompletas()
+
+  // Filtros
+  dataInicio: string = '';
+  dataFim: string = '';
+  anosDisponiveis: number[] = [];
+  anoSelecionado?: number; // usado para mes/trimestre/semestre/ano
 
   // Chart datasets
   vendasPorHoraData?: ChartData<'bar'>;
@@ -120,11 +129,28 @@ export class GraficosVendasComponent implements OnInit {
 
   private carregar() {
     this.carregando = true;
+    // Carregar legado e checkout em paralelo
     this.api.getVendas().subscribe({
-      next: vs => {
-        this.vendas = Array.isArray(vs) ? vs : [];
-        this.recalcularTudo();
-        this.carregando = false;
+      next: legado => {
+        this.vendasLegado = Array.isArray(legado) ? legado : [];
+        // Depois de legado, buscar checkout
+        this.api.getVendasCompletas().subscribe({
+          next: completas => {
+            this.vendasCheckout = this.mapCheckoutParaLinhas(completas);
+            this.unificarVendas();
+            this.definirAnos();
+            this.recalcularTudo();
+            this.carregando = false;
+          },
+          error: errC => {
+            logger.error('GRAFICOS_VENDAS', 'LOAD_CHECKOUT_FAIL', 'Erro ao carregar checkout', { errC });
+            this.vendasCheckout = [];
+            this.unificarVendas();
+            this.definirAnos();
+            this.recalcularTudo();
+            this.carregando = false;
+          }
+        });
       },
       error: err => {
         this.erro = 'Falha ao carregar vendas';
@@ -134,10 +160,62 @@ export class GraficosVendasComponent implements OnInit {
     });
   }
 
+  private mapCheckoutParaLinhas(raw: any[]): Venda[] {
+    if (!Array.isArray(raw)) return [];
+    const linhas: Venda[] = [];
+    for (const ordem of raw) {
+      const data = ordem?.data_venda;
+      const pagamentos = Array.isArray(ordem?.pagamentos) ? ordem.pagamentos : [];
+      const itens = Array.isArray(ordem?.itens) ? ordem.itens : [];
+      const metodoSum: Record<string, number> = {};
+      for (const p of pagamentos) {
+        const m = p.metodo;
+        metodoSum[m] = (metodoSum[m] || 0) + Number(p.valor || 0);
+      }
+      const pagamentosResumo = Object.keys(metodoSum).map(m => `${m}: R$ ${metodoSum[m].toFixed(2)}`).join(' + ');
+      for (const it of itens) {
+        const linha: Venda = {
+          id: ordem.id,
+          produto_id: it.produto_id,
+          quantidade_vendida: it.quantidade,
+          preco_total: it.preco_total,
+          data_venda: data,
+          metodo_pagamento: pagamentos[0]?.metodo || 'dinheiro',
+          produto_nome: it.produto_nome,
+          produto_imagem: it.produto_imagem,
+          pagamentos_resumo: pagamentosResumo
+        } as any;
+        linhas.push(linha);
+      }
+    }
+    return linhas.sort((a, b) => parseDate(a.data_venda).getTime() - parseDate(b.data_venda).getTime());
+  }
+
+  private unificarVendas() {
+    this.vendas = [...this.vendasLegado, ...this.vendasCheckout];
+    // ordenar por data crescente para série temporal
+    this.vendas.sort((a, b) => parseDate(a.data_venda).getTime() - parseDate(b.data_venda).getTime());
+  }
+
+  private definirAnos() {
+    const anos = new Set<number>();
+    for (const v of this.vendas) anos.add(parseDate(v.data_venda).getFullYear());
+    this.anosDisponiveis = [...anos].sort((a, b) => b - a); // descendente para ano mais recente primeiro
+    if (!this.anoSelecionado && this.anosDisponiveis.length) this.anoSelecionado = this.anosDisponiveis[0];
+  }
+
+  aplicarFiltros() {
+    this.recalcularTudo();
+  }
+
   alterarGranularidade(g: Granularidade) {
     if (this.granularidade !== g) {
       this.granularidade = g;
-      this.gerarSerieTemporal();
+      // Se mudou para modo agregado, garantir ano definido
+      if (g !== 'dia' && !this.anoSelecionado && this.anosDisponiveis.length) {
+        this.anoSelecionado = this.anosDisponiveis[0];
+      }
+      this.recalcularTudo();
     }
   }
 
@@ -147,19 +225,36 @@ export class GraficosVendasComponent implements OnInit {
 
   private recalcularTudo() {
     try {
-      this.gerarVendasPorHora();
-      this.gerarVendasPorDiaSemana();
-      this.gerarReceitaPorMetodo();
-      this.gerarItensMaisVendidos();
-      this.gerarSerieTemporal();
+      const base = this.vendasFiltradas();
+      this.gerarVendasPorHora(base);
+      this.gerarVendasPorDiaSemana(base);
+      this.gerarReceitaPorMetodo(base);
+      this.gerarItensMaisVendidos(base);
+      this.gerarSerieTemporal(base);
     } catch (e) {
       logger.error('GRAFICOS_VENDAS', 'RECALC', 'Erro ao recalcular', { e });
     }
   }
 
-  private gerarVendasPorHora() {
+  private vendasFiltradas(): Venda[] {
+    let list = this.vendas;
+    if (this.dataInicio) {
+      const ini = parseDate(this.dataInicio + 'T00:00:00');
+      list = list.filter(v => parseDate(v.data_venda) >= ini);
+    }
+    if (this.dataFim) {
+      const fim = parseDate(this.dataFim + 'T23:59:59');
+      list = list.filter(v => parseDate(v.data_venda) <= fim);
+    }
+    if (this.granularidade !== 'dia' && this.anoSelecionado) {
+      list = list.filter(v => parseDate(v.data_venda).getFullYear() === this.anoSelecionado);
+    }
+    return list;
+  }
+
+  private gerarVendasPorHora(base: Venda[]) {
     const arr = new Array(24).fill(0);
-    for (const v of this.vendas) {
+    for (const v of base) {
       const d = parseDate(v.data_venda);
       arr[d.getHours()] += v.preco_total;
     }
@@ -169,10 +264,10 @@ export class GraficosVendasComponent implements OnInit {
     };
   }
 
-  private gerarVendasPorDiaSemana() {
+  private gerarVendasPorDiaSemana(base: Venda[]) {
     const nomes = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
     const soma = new Array(7).fill(0);
-    for (const v of this.vendas) {
+    for (const v of base) {
       const d = parseDate(v.data_venda);
       soma[d.getDay()] += v.preco_total;
     }
@@ -182,9 +277,9 @@ export class GraficosVendasComponent implements OnInit {
     };
   }
 
-  private gerarReceitaPorMetodo() {
+  private gerarReceitaPorMetodo(base: Venda[]) {
     const soma: Record<string, number> = { dinheiro: 0, cartao_credito: 0, cartao_debito: 0, pix: 0 };
-    for (const v of this.vendas) soma[v.metodo_pagamento] += v.preco_total;
+    for (const v of base) soma[v.metodo_pagamento] += v.preco_total;
     this.receitaPorMetodoData = {
       labels: ['Dinheiro', 'Cartão Crédito', 'Cartão Débito', 'PIX'],
       datasets: [
@@ -197,9 +292,9 @@ export class GraficosVendasComponent implements OnInit {
     };
   }
 
-  private gerarItensMaisVendidos() {
+  private gerarItensMaisVendidos(base: Venda[]) {
     const map = new Map<string, { receita: number }>();
-    for (const v of this.vendas) {
+    for (const v of base) {
       const nome = v.produto_nome || `#${v.produto_id}`;
       if (!map.has(nome)) map.set(nome, { receita: 0 });
       map.get(nome)!.receita += v.preco_total;
@@ -212,9 +307,9 @@ export class GraficosVendasComponent implements OnInit {
     };
   }
 
-  private gerarSerieTemporal() {
+  private gerarSerieTemporal(base: Venda[]) {
     const grupos = new Map<string, number>();
-    for (const v of this.vendas) {
+    for (const v of base) {
       const d = parseDate(v.data_venda);
       const ano = d.getFullYear();
       const mes = d.getMonth(); // 0-11
