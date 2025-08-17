@@ -41,6 +41,18 @@ public class DataInitializer {
             return;
         }
 
+        // By default, do NOT apply any bundled SQL dump or perform automatic
+        // seeding. This protects manual copies of the embedded Postgres data
+        // directory from being overwritten at startup. To enable automatic
+        // dump application (legacy behaviour), set environment variable
+        // APPLY_DB_DUMP=true.
+        String applyDumpEnv = System.getenv("APPLY_DB_DUMP");
+        if (applyDumpEnv == null || !applyDumpEnv.equalsIgnoreCase("true")) {
+            log.info("APPLY_DB_DUMP not set to true -> skipping automatic DB dump/seed.\n" +
+                    "If you want the application to apply db/dump_data.sql at startup, set APPLY_DB_DUMP=true environment variable.");
+            return;
+        }
+
         // Se existe uma URL externa configurada, assumimos que o DB local é a fonte de
         // verdade
         // e não devemos inserir dados automaticamente

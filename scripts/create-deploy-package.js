@@ -60,11 +60,15 @@ function main() {
     console.log('Copied deploy scripts');
   }
 
-  // Copy DB dump (optional)
-  const dbDir = path.join(repoRoot, 'backend-spring', 'db');
-  if (fs.existsSync(dbDir)) {
-    copyDir(dbDir, path.join(outDir, 'backend-spring', 'db'));
-    console.log('Copied backend DB dump');
+  // Copy raw embedded Postgres data directory (if present) so deploy package
+  // contains a pre-populated cluster. This replaces the previous behavior
+  // which copied a SQL dump directory.
+  const dataDir = path.join(repoRoot, 'backend-spring', 'data');
+  if (fs.existsSync(dataDir)) {
+    copyDir(dataDir, path.join(outDir, 'backend-spring', 'data'));
+    console.log('Copied backend raw data directory');
+  } else {
+    console.log('No backend raw data directory found; skipping data copy');
   }
 
   // Copiar secrets (se existir) para o pacote de deploy

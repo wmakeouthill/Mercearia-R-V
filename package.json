@@ -34,7 +34,9 @@
         "dev:frontend": "cd frontend && npm start",
         "dev:electron:delayed": "node -e \"setTimeout(() => require('child_process').exec('cd electron && npm run dev'), 8000)\"",
     "start": "cd electron && npm start",
-    "cert:generate": "node scripts/generate-dev-cert.js"
+    "cert:generate": "node scripts/generate-dev-cert.js",
+    "sync-db": "powershell -ExecutionPolicy Bypass -File ./scripts/sync-db.ps1",
+    "validate-dist": "node ./scripts/validate-dist.js"
     },
     "keywords": [
         "electron",

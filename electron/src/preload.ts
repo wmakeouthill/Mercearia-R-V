@@ -21,6 +21,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Utilitários
     platform: process.platform,
     isDev: process.env.NODE_ENV === 'development',
+    // Backend URL exposto para o frontend (preenchido pelo processo principal)
+    getBackendUrl: () => ipcRenderer.invoke('get-backend-url'),
 
     // Log: enviar linha de log para o processo principal gravar em arquivo
     writeLog: (line: string) => ipcRenderer.invoke('write-log', line)

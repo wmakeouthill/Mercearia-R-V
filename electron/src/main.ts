@@ -903,39 +903,37 @@ function loadProductionFrontend(): void {
     console.log('🔧 Debug: app.isPackaged =', app.isPackaged);
     // Preferir carregar o frontend servido pelo backend (same-origin)
     const backendUrl = `http://127.0.0.1:${currentBackendPort}`;
-    try {
-        console.log('🌐 Tentando carregar frontend via backend em', backendUrl);
-        // Verificar via HTTP se o backend realmente serve /app/ antes de carregar
+    // Instead of falling back to file://, wait for the backend to become
+    // available and then load via HTTP (same-origin). This avoids file:/// URLs
+    // which break relative API calls.
+    (async () => {
         const appUrl = `${backendUrl}/app/`;
         const httpMod: any = require('http');
-        const req = httpMod.get(appUrl, { timeout: 3000 }, (res: any) => {
-            const ok = typeof res?.statusCode === 'number' && res.statusCode < 400;
-            try { req.destroy(); } catch { }
-            if (ok) {
-                console.log('✅ Backend responde em /app/ -> carregando via HTTP');
-                mainWindow?.loadURL(appUrl).catch(() => {
-                    console.warn('⚠️ Falha ao carregar frontend via backend (loadURL), usando fallback para arquivo');
-                    loadFallbackFile();
+        const maxAttempts = 120; // wait up to 120s
+        let attempts = 0;
+        while (attempts < maxAttempts) {
+            attempts++;
+            try {
+                await new Promise<void>((resolve, reject) => {
+                    const req = httpMod.get(appUrl, { timeout: 3000 }, (res: any) => {
+                        const ok = typeof res?.statusCode === 'number' && res.statusCode < 400;
+                        try { req.destroy(); } catch { }
+                        if (ok) resolve(); else reject(new Error('status ' + res.statusCode));
+                    });
+                    req.on('error', (err: any) => { try { req.destroy(); } catch { }; reject(err instanceof Error ? err : new Error(String(err))); });
+                    req.on('timeout', () => { try { req.destroy(); } catch { }; reject(new Error('timeout')); });
                 });
-            } else {
-                console.warn('⚠️ Backend respondeu, mas /app/ retornou status', res.statusCode, '; usando fallback');
-                loadFallbackFile();
+                console.log('✅ Backend responde em /app/ -> carregando via HTTP');
+                await mainWindow?.loadURL(appUrl);
+                return;
+            } catch (err) {
+                if (attempts % 10 === 0) console.warn(`⚠️ Esperando backend (${attempts}/${maxAttempts}):`, (err as Error)?.message ?? String(err));
+                await new Promise(r => setTimeout(r, 1000));
             }
-        });
-        req.on('error', (err: any) => {
-            console.warn('⚠️ Falha ao acessar backend /app/:', err && err.message ? err.message : err);
-            try { req.destroy(); } catch { }
-            loadFallbackFile();
-        });
-        req.on('timeout', () => {
-            console.warn('⚠️ Timeout ao verificar backend /app/');
-            try { req.destroy(); } catch { }
-            loadFallbackFile();
-        });
-    } catch (e) {
-        console.warn('⚠️ Erro ao carregar frontend via backend:', (e as Error)?.message || e);
-        loadFallbackFile();
-    }
+        }
+        console.error('❌ Backend não respondeu dentro do tempo limite. Não será carregado o fallback file:// para evitar chamadas inválidas.');
+        loadErrorPage(`Backend not available after ${maxAttempts} seconds`, '');
+    })();
 }
 
 // Removido: fluxo antigo que carregava o frontend via HTTP do backend
@@ -1111,58 +1109,18 @@ function createMenu(): void {
 
 async function preparePgData(): Promise<{ userDataDir: string; userPgDir: string; embeddedPgDir?: string }> {
     const userDataDir = app.getPath('userData');
-    const userPgDir = path.join(userDataDir, 'data', 'pg');
     const resourceBase = process.resourcesPath ? process.resourcesPath : path.join(__dirname, '../resources');
     const embeddedPgDir = path.join(resourceBase, 'backend-spring', 'data', 'pg');
-    const embeddedDbDumpDir = path.join(resourceBase, 'backend-spring', 'db');
-    const embeddedDumpFile = path.join(embeddedDbDumpDir, 'dump_data.sql');
 
-    // Helper: use embedded SQL dump if present
-    const tryUseEmbeddedDump = (): { userDataDir: string; userPgDir: string } | null => {
-        if (!fs.existsSync(embeddedDumpFile)) return null;
-        console.log('📦 Found embedded DB dump at', embeddedDumpFile, '; will let backend apply it on first startup');
-        if (!fs.existsSync(userPgDir)) fs.mkdirSync(userPgDir, { recursive: true });
-        return { userDataDir, userPgDir };
-    };
+    // If embedded packaged data exists (installed in INSTALLDIR), use it directly
+    if (fs.existsSync(embeddedPgDir)) {
+        console.log('📦 Using embedded Postgres data directory directly as runtime PG_DATA_DIR:', embeddedPgDir);
+        return { userDataDir, userPgDir: embeddedPgDir, embeddedPgDir };
+    }
 
-    // Helper: use embedded raw PG directory if present (legacy)
-    const tryUseEmbeddedPgDir = (): { userDataDir: string; userPgDir: string; embeddedPgDir?: string } | null => {
-        if (!fs.existsSync(embeddedPgDir)) return null;
-        if (!isDirNonEmpty(userPgDir)) {
-            console.log('📦 Copiando dados do Postgres empacotados para userData (primeira execução)...');
-            fs.mkdirSync(userPgDir, { recursive: true });
-            copyDirRecursiveSync(embeddedPgDir, userPgDir);
-            console.log('✅ Cópia concluída para', userPgDir);
-        } else {
-            console.log('ℹ️ Diretório de dados do Postgres em userData já existe, usando-o:', userPgDir);
-        }
-
-        const pgVersionFile = path.join(userPgDir, 'PG_VERSION');
-        if (!fs.existsSync(pgVersionFile)) {
-            console.warn(`⚠️ Arquivo PG_VERSION não encontrado no diretório de dados do Postgres: ${userPgDir} (continuando, tentar initdb na próxima execução)`);
-            return { userDataDir, userPgDir };
-        }
-        try {
-            const actualVersion = fs.readFileSync(pgVersionFile, 'utf8').trim();
-            const expected = process.env.EMBEDDED_PG_EXPECTED_VERSION;
-            if (expected && actualVersion !== expected) {
-                console.warn('⚠️ Versão do Postgres diferente do esperado:', actualVersion, '!=', expected);
-            } else {
-                console.log('✅ PG_VERSION detectado:', actualVersion);
-            }
-        } catch (e) {
-            console.warn('⚠️ Falha ao checar PG_VERSION:', (e as Error)?.message || e);
-        }
-        return { userDataDir, userPgDir, embeddedPgDir };
-    };
-
-    // Try dump first, then raw embedded dir, then fallback to creating userPgDir
-    const dumpResult = tryUseEmbeddedDump();
-    if (dumpResult) return dumpResult;
-    const pgDirResult = tryUseEmbeddedPgDir();
-    if (pgDirResult) return pgDirResult;
-
-    console.log('⚠️ Nenhum dump DB ou raw data empacotado encontrado; o Embedded Postgres inicializará um novo cluster em', userPgDir);
+    // Fallback: use a writable directory under userData and let embedded Postgres init a new cluster there
+    const userPgDir = path.join(userDataDir, 'data', 'pg');
+    console.log('⚠️ Embedded Postgres data not packaged; will initialize a new cluster in userData at', userPgDir);
     if (!fs.existsSync(userPgDir)) fs.mkdirSync(userPgDir, { recursive: true });
     return { userDataDir, userPgDir };
 }
@@ -1696,6 +1654,11 @@ ipcMain.handle('test-backend-connection', async () => {
         console.error('Erro geral ao testar backend:', error);
         throw error;
     }
+});
+
+// Expose backend URL for frontend via preload
+ipcMain.handle('get-backend-url', () => {
+    return `http://127.0.0.1:${currentBackendPort}`;
 });
 
 ipcMain.handle('restart-backend', async () => {

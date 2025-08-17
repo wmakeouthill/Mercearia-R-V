@@ -17,7 +17,8 @@ public class CorsConfig {
         CorsConfiguration config = new CorsConfiguration();
         config.setAllowCredentials(props.isAllowCredentials());
         if ("*".equals(props.getAllowedOrigins())) {
-            config.setAllowedOriginPatterns(Arrays.asList("*"));
+            // Allow any origin including 'null' (file://) and local/network origins
+            config.setAllowedOriginPatterns(Arrays.asList("*", "null"));
         } else {
             config.setAllowedOrigins(Arrays.asList(props.getAllowedOrigins().split(",")));
         }

@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable, of, throwError, timer } from 'rxjs';
+import { Observable, of, throwError, timer, from } from 'rxjs';
 import { catchError, timeout, retry, map, switchMap, take } from 'rxjs/operators';
 
 @Injectable({
@@ -17,13 +17,18 @@ export class BackendDetectorService {
   private buildPossibleUrls(): string[] {
     // Em ambiente empacotado (Electron), forçar apenas a porta 3000 local
     try {
-      if (typeof navigator !== 'undefined' && navigator.userAgent && navigator.userAgent.includes('Electron')) {
+      if (typeof navigator !== 'undefined' && navigator.userAgent?.includes('Electron')) {
         return ['http://127.0.0.1:3000'];
       }
-    } catch (e) { /* ignore */ }
+    } catch (e) {
+      // Log the error so we don't silently swallow exceptions (fixes SonarQube S2486)
+      // This is a non-fatal check; continue building other possible URLs.
+      // Using console.debug to avoid noisy logs in production.
+      console.debug('backend-detector: navigator check failed', e);
+    }
 
     const ports = [3000, 3001, 3002];
-    const maybeHost = (typeof window !== 'undefined' && window?.location?.hostname) ? window.location.hostname : '';
+    const maybeHost = typeof window !== 'undefined' ? (window.location?.hostname ?? '') : '';
     const hosts = [
       '127.0.0.1',
       'localhost',
@@ -45,6 +50,20 @@ export class BackendDetectorService {
    * Detecta automaticamente qual URL do backend está funcionando
    */
   detectBackendUrl(): Observable<string> {
+    // If preload provided a backend URL (Electron), prefer it immediately
+    try {
+      const win: any = (window as any);
+      if (win && typeof win.electronAPI?.getBackendUrl === 'function') {
+        // getBackendUrl is untyped on the preload side; cast to Promise<string> so RxJS operators have correct types
+        return from(win.electronAPI.getBackendUrl() as Promise<string>).pipe(
+          map((url: string) => url)
+        );
+      }
+    } catch (e) {
+      // Log the error so we don't silently swallow exceptions (fixes SonarQube S2486)
+      console.debug('backend-detector: electronAPI getBackendUrl check failed', e);
+    }
+
     if (this.currentWorkingUrl) {
       console.log(`🔄 Usando URL já detectada: ${this.currentWorkingUrl}`);
       return of(this.currentWorkingUrl);

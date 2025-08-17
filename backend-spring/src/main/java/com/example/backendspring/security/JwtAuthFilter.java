@@ -6,6 +6,12 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import jakarta.servlet.ServletRequest;
+import jakarta.servlet.ServletRequestWrapper;
+import java.util.HashSet;
+import java.util.Set;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -21,6 +27,34 @@ import java.util.List;
 public class JwtAuthFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
+    private static final Logger log = LoggerFactory.getLogger(JwtAuthFilter.class);
+
+    private void logRequestWrapperChain(HttpServletRequest request) {
+        try {
+            ServletRequest cur = request;
+            Set<ServletRequest> seen = new HashSet<>();
+            int depth = 0;
+            while (cur instanceof ServletRequestWrapper wrapper) {
+                if (!seen.add(cur)) {
+                    log.warn("Detected request wrapper cycle at depth {}: class={}", depth, cur.getClass().getName());
+                    return;
+                }
+                log.debug("wrapper[{}]={}", depth, cur.getClass().getName());
+                ServletRequest inner = wrapper.getRequest();
+                cur = inner;
+                depth++;
+                if (depth > 50) {
+                    log.warn("Wrapper chain too deep (>{}) - stopping log", 50);
+                    return;
+                }
+            }
+            log.debug("final request class={}", cur.getClass().getName());
+        } catch (Exception t) {
+            // Log and handle: warn-level to surface unexpected errors during request
+            // wrapper inspection
+            log.warn("error while logging wrapper chain", t);
+        }
+    }
 
     @Override
     protected void doFilterInternal(@org.springframework.lang.NonNull HttpServletRequest request,
@@ -28,6 +62,8 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             @org.springframework.lang.NonNull FilterChain filterChain)
             throws ServletException, IOException {
         String header = request.getHeader(HttpHeaders.AUTHORIZATION);
+        log.debug("enter JwtAuthFilter for {}", request.getRequestURI());
+        logRequestWrapperChain(request);
         if (header != null && header.startsWith("Bearer ")) {
             try {
                 String token = header.substring(7);
@@ -41,10 +77,18 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                         List.of(new SimpleGrantedAuthority("ROLE_" + role.toUpperCase())));
                 auth.setDetails(id);
                 SecurityContextHolder.getContext().setAuthentication(auth);
-            } catch (Exception ignored) {
-                // Token inválido -> segue sem autenticação
+            } catch (Exception e) {
+                // Token inválido -> segue sem autenticação. Clear any partial context and log
+                // for debug.
+                SecurityContextHolder.clearContext();
+                log.debug("Invalid JWT token while parsing", e);
             }
         }
-        filterChain.doFilter(request, response);
+        try {
+            filterChain.doFilter(request, response);
+        } catch (StackOverflowError soe) {
+            log.error("StackOverflowError in JwtAuthFilter while processing {}", request.getRequestURI(), soe);
+            throw new ServletException("StackOverflowError while processing " + request.getRequestURI(), soe);
+        }
     }
 }

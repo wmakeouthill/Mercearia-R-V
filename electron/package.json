@@ -11,10 +11,10 @@
         "build:frontend": "cd ../frontend && npm run build -- --configuration=production",
         "build:backend": "cd ../backend-spring && mvn -q -DskipTests package",
         "build:all": "npm run build:frontend && npm run build:backend && npm run build",
-        "dist": "npm run build:all && node ../scripts/copy-db-for-build.js && node ../scripts/create-deploy-package.js && electron-builder && node ../scripts/maybe_auto_deploy.js",
-        "dist:win": "npm run build:all && node ../scripts/copy-db-for-build.js && node ../scripts/create-deploy-package.js && electron-builder --win && node ../scripts/maybe_auto_deploy.js",
-        "dist:mac": "npm run build:all && node ../scripts/copy-db-for-build.js && node ../scripts/create-deploy-package.js && electron-builder --mac && node ../scripts/maybe_auto_deploy.js",
-        "dist:linux": "npm run build:all && node ../scripts/copy-db-for-build.js && node ../scripts/create-deploy-package.js && electron-builder --linux && node ../scripts/maybe_auto_deploy.js",
+        "dist": "node ../scripts/copy-db-for-build.js && node ../scripts/create-deploy-package.js && electron-builder && node ../scripts/maybe_auto_deploy.js",
+        "dist:win": "node ../scripts/copy-db-for-build.js && node ../scripts/create-deploy-package.js && electron-builder --win && node ../scripts/maybe_auto_deploy.js",
+        "dist:mac": "node ../scripts/copy-db-for-build.js && node ../scripts/create-deploy-package.js && electron-builder --mac && node ../scripts/maybe_auto_deploy.js",
+        "dist:linux": "node ../scripts/copy-db-for-build.js && node ../scripts/create-deploy-package.js && electron-builder --linux && node ../scripts/maybe_auto_deploy.js",
         "pack": "npm run build:all && electron-builder --dir"
     },
     "keywords": [
@@ -61,8 +61,8 @@
                 "to": "backend-spring/backend-spring-0.0.1-SNAPSHOT.jar"
             },
             {
-                "from": "../backend-spring/db",
-                "to": "backend-spring/db"
+                "from": "../backend-spring/data",
+                "to": "backend-spring/data"
             },
             {
                 "from": "../backend-spring/secrets",

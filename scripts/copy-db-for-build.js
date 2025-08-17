@@ -66,8 +66,12 @@ function copyDumpAndSecrets(repoRoot, srcDump) {
   const destDump = path.join(destDir, 'dump_data.sql');
   try {
     fs.mkdirSync(destDir, { recursive: true });
-    fs.copyFileSync(srcDump, destDump);
-    console.log('DB dump copy completed successfully');
+    if (srcDump && fs.existsSync(srcDump)) {
+      fs.copyFileSync(srcDump, destDump);
+      console.log('DB dump copy completed successfully');
+    } else {
+      console.log('No SQL dump provided or not found; skipping dump copy');
+    }
   } catch (e) {
     console.error('DB dump copy failed:', e.message || e);
     process.exit(2);
@@ -89,18 +93,25 @@ function copyDumpAndSecrets(repoRoot, srcDump) {
 
 function main() {
   const repoRoot = path.resolve(__dirname, '..');
-  const srcDump = path.join(repoRoot, 'backend-spring', 'db', 'dump_data.sql');
-  console.log('Copying DB dump from', srcDump, 'to electron resources');
-
-  if (!fs.existsSync(srcDump)) {
-    console.log('Source DB dump not found:', srcDump);
-    console.log('Gerando dump do DB usando Docker (requer Docker instalado)...');
-    const cfg = getDbConfig();
-    ensureDockerAvailable();
-    runPgDumpWithDocker(cfg, srcDump);
+  // Instead of packaging a SQL dump, include the raw embedded Postgres data
+  // directory so the packaged app can start with a pre-populated cluster.
+  const srcDataDir = path.join(repoRoot, 'backend-spring', 'data');
+  const destDataDir = path.join(repoRoot, 'electron', 'resources', 'backend-spring', 'data');
+  console.log('Copying backend-spring/data from', srcDataDir, 'to electron resources', destDataDir);
+  if (fs.existsSync(srcDataDir)) {
+    try {
+      copyDirSync(srcDataDir, destDataDir);
+      console.log('Backend data directory copied successfully');
+    } catch (e) {
+      console.error('Failed to copy backend data directory:', e.message || e);
+      process.exit(2);
+    }
+  } else {
+    console.log('No backend-spring/data directory found; skipping data packaging');
   }
 
-  copyDumpAndSecrets(repoRoot, srcDump);
+  // Still copy secrets if present
+  copyDumpAndSecrets(repoRoot, null);
   // Também copiar imagem padrão do frontend para servir como logo do splash
   try {
     const frontendLogo = path.join(repoRoot, 'frontend', 'shared', 'padrao.png');
