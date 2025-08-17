@@ -15,6 +15,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  */
 @Configuration
 public class FrontendMvcConfig implements WebMvcConfigurer {
+    private static final String FORWARD_INDEX = "forward:/app/index.html";
 
     @Override
     public void addResourceHandlers(@NonNull ResourceHandlerRegistry registry) {
@@ -32,7 +33,13 @@ public class FrontendMvcConfig implements WebMvcConfigurer {
     @Override
     public void addViewControllers(@NonNull ViewControllerRegistry registry) {
         // Encaminhar raiz / e /app/ para o index do frontend empacotado
-        registry.addViewController("/").setViewName("forward:/app/index.html");
-        registry.addViewController("/app/").setViewName("forward:/app/index.html");
+        registry.addViewController("/").setViewName(FORWARD_INDEX);
+        registry.addViewController("/app/").setViewName(FORWARD_INDEX);
+        // Encaminhar rotas do SPA (ex: /app/login, /app/dashboard) para index.html
+        // Excetua arquivos com extensão (png, js, css, etc.) usando regex
+        registry.addViewController("/app/{path:[^\\.]*}").setViewName(FORWARD_INDEX);
+        // The fallback for deeper SPA routes under /app/** is handled by
+        // FrontendFallbackController to avoid invalid path patterns with the
+        // PathPattern parser (see FrontendFallbackController.forwardAppPaths).
     }
 }

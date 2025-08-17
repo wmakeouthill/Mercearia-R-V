@@ -13,6 +13,8 @@ import org.springframework.web.bind.annotation.*;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -31,12 +33,15 @@ public class AuthController {
     private static final String ROLE_ADMIN = "admin";
     private static final String ROLE_USER = "user";
 
+    private static final Logger log = LoggerFactory.getLogger(AuthController.class);
+
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
 
     @PostMapping("/login")
     public ResponseEntity<Map<String, Object>> login(@RequestBody LoginRequest req) {
+        log.info("Login attempt for username={}", req.getUsername());
         if (req.getUsername() == null || req.getPassword() == null) {
             return ResponseEntity.badRequest()
                     .body(Map.<String, Object>of(KEY_ERROR, "Username e password são obrigatórios"));
@@ -44,6 +49,7 @@ public class AuthController {
         return userRepository.findByUsername(req.getUsername())
                 .map(u -> {
                     if (!passwordEncoder.matches(req.getPassword(), u.getPassword())) {
+                        log.warn("Failed login for username={} - invalid password", req.getUsername());
                         return ResponseEntity.status(401)
                                 .body(Map.<String, Object>of(KEY_ERROR, "Credenciais inválidas"));
                     }

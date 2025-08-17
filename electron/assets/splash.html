@@ -9,7 +9,7 @@
   </head>
   <body>
     <div class="splash">
-      <img src="assets/logo.png" alt="Logo" class="logo" />
+      <img id="splash-logo" src="" alt="Logo" class="logo" />
       <h1>Sistema de Gestão de Estoque</h1>
       <p id="status">Conectando ao backend...</p>
       <div class="progress">
@@ -19,6 +19,54 @@
     </div>
 
     <script>
+      // Tentar carregar logo a partir de vários caminhos possíveis em builds empacotados
+      (function resolveSplashLogo() {
+        const img = document.getElementById('splash-logo');
+        if (!img) return;
+        const base = (document.baseURI || window.location.href).replace(/#.*$/, '');
+        const candidates = [
+          new URL('logo.png', base).href,
+          new URL('assets/logo.png', base).href,
+          new URL('./logo.png', base).href,
+          new URL('./assets/logo.png', base).href,
+          new URL('../assets/logo.png', base).href,
+          new URL('../resources/assets/logo.png', base).href,
+          new URL('../resources/frontend/assets/logo.png', base).href,
+        ];
+
+        // Também tentar versões normalizadas caso haja duplicação de segmentos
+        try {
+          const normalized = base.replace(/\/assets\/assets\//, '/assets/');
+          if (normalized !== base) candidates.push(new URL('assets/logo.png', normalized).href);
+        } catch (e) { /* ignore */ }
+
+        // Tentar construir caminho relativo à raiz 'resources' quando empacotado
+        try {
+          const idx = base.indexOf('/resources/');
+          if (idx !== -1) {
+            const resourcesRoot = base.substring(0, idx + '/resources/'.length);
+            candidates.push(resourcesRoot + 'frontend/assets/logo.png');
+            candidates.push(resourcesRoot + 'backend-spring/uploads/produtos/padrao.png');
+            candidates.push(resourcesRoot + 'assets/logo.png');
+          }
+        } catch (e) { /* ignore */ }
+
+        let i = 0;
+        const tryNext = () => {
+          if (i >= candidates.length) {
+            // fallback: usar um pequeno SVG inline como placeholder
+            img.src = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96"><rect width="100%" height="100%" fill="#ffffff"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="#3f51b5" font-family="Arial,sans-serif" font-size="14">Sistema</text></svg>');
+            return;
+          }
+          const candidate = candidates[i++];
+          console.log('splash: trying logo candidate', candidate);
+          const tester = new Image();
+          tester.onload = () => { img.src = candidate; console.log('splash: logo loaded from', candidate); };
+          tester.onerror = () => { console.warn('splash: failed to load', candidate); tryNext(); };
+          tester.src = candidate;
+        };
+        tryNext();
+      })();
       // Atualiza status/progresso a partir do processo principal (Electron)
       const setStatus = (msg) => {
         const el = document.getElementById('status');

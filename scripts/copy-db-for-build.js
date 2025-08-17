@@ -101,6 +101,20 @@ function main() {
   }
 
   copyDumpAndSecrets(repoRoot, srcDump);
+  // Também copiar imagem padrão do frontend para servir como logo do splash
+  try {
+    const frontendLogo = path.join(repoRoot, 'frontend', 'shared', 'padrao.png');
+    const destAssetsDir = path.join(repoRoot, 'electron', 'resources', 'assets');
+    if (fs.existsSync(frontendLogo)) {
+      fs.mkdirSync(destAssetsDir, { recursive: true });
+      fs.copyFileSync(frontendLogo, path.join(destAssetsDir, 'logo.png'));
+      console.log('Copied frontend logo to electron resources as assets/logo.png');
+    } else {
+      console.log('No frontend logo found at', frontendLogo);
+    }
+  } catch (e) {
+    console.warn('Failed to copy frontend logo to electron resources:', e.message || e);
+  }
 }
 
 if (require.main === module) {

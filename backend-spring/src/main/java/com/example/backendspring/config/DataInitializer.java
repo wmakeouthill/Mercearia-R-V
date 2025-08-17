@@ -49,18 +49,10 @@ public class DataInitializer {
             return;
         }
 
-        // Se existir um dump SQL empacotado, aplicá-lo (dados somente) em vez de criar
-        // seed simples
+        // Se existir um dump SQL empacotado, tentamos aplicá-lo (dados somente)
         try {
-            java.nio.file.Path dumpPath = java.nio.file.Paths.get("db", "dump_data.sql").toAbsolutePath();
-            if (java.nio.file.Files.exists(dumpPath)) {
-                log.info("Dump SQL encontrado em {}. Aplicando dados via ResourceDatabasePopulator...", dumpPath);
-                ResourceDatabasePopulator pop = new ResourceDatabasePopulator();
-                pop.addScript(new FileSystemResource(dumpPath.toFile()));
-                pop.setContinueOnError(false);
-                pop.execute(dataSource);
-                log.info("Dump SQL aplicado com sucesso.");
-                return;
+            if (applyDumpIfPresent()) {
+                return; // dump aplicado com sucesso
             }
         } catch (Exception e) {
             log.warn("Falha ao aplicar dump SQL: {}. Continuando com seed mínimo.", e.getMessage());
@@ -87,4 +79,53 @@ public class DataInitializer {
             log.info("Usuário padrão criado (username={})", ROLE_USER);
         }
     }
+
+    /**
+     * Se existir `db/dump_data.sql` tenta aplicá-lo. Retorna true se foi aplicado.
+     */
+    private boolean applyDumpIfPresent() {
+        java.nio.file.Path dumpPath = java.nio.file.Paths.get("db", "dump_data.sql").toAbsolutePath();
+        if (!java.nio.file.Files.exists(dumpPath)) {
+            return false;
+        }
+        log.info("Dump SQL encontrado em {}. Aplicando dados via ResourceDatabasePopulator...", dumpPath);
+        java.nio.file.Path targetPath = dumpPath;
+        java.nio.file.Path temp = null;
+        try {
+            java.util.List<String> lines = java.nio.file.Files.readAllLines(dumpPath);
+            boolean hasPsqlCommands = lines.stream().anyMatch(l -> l.trim().startsWith("\\"));
+            if (hasPsqlCommands) {
+                log.info("Detectados comandos psql no dump. Gerando versão sanitizada temporária para aplicação...");
+                temp = java.nio.file.Files.createTempFile("dump_sanitized", ".sql");
+                try (java.io.BufferedWriter w = java.nio.file.Files.newBufferedWriter(temp)) {
+                    for (String l : lines) {
+                        if (l.trim().startsWith("\\"))
+                            continue; // pular linhas psql meta-commands
+                        w.write(l);
+                        w.newLine();
+                    }
+                }
+                targetPath = temp;
+            }
+
+            ResourceDatabasePopulator pop = new ResourceDatabasePopulator();
+            pop.addScript(new FileSystemResource(targetPath.toFile()));
+            pop.setContinueOnError(false);
+            pop.execute(dataSource);
+            log.info("Dump SQL aplicado com sucesso.");
+            return true;
+        } catch (Exception ex) {
+            log.warn("Falha ao aplicar dump SQL: {}. Continuando com seed mínimo.", ex.getMessage());
+            return false;
+        } finally {
+            if (temp != null) {
+                try {
+                    java.nio.file.Files.deleteIfExists(temp);
+                } catch (Exception e) {
+                    log.debug("Falha ao remover temp dump: {}", e.getMessage());
+                }
+            }
+        }
+    }
+
 }

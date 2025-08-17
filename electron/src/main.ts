@@ -18,10 +18,12 @@ let backendHealthCheckInterval: NodeJS.Timeout | null = null;
 let backendStartupTimeout: NodeJS.Timeout | null = null;
 let isBackendReady = false;
 let backendRestartAttempts = 0;
-const maxBackendRestartAttempts = Number.POSITIVE_INFINITY; // Reiniciar backend indefinidamente enquanto o app estiver aberto
+const maxBackendRestartAttempts = 3; // Limitar reinícios automáticos para evitar loop infinito
 let backendShouldBeRunning = false; // Flag para saber se backend deveria estar rodando
 let currentBackendPort = 3000;
-const backendCandidatePorts = [3000, 3001, 3002];
+// Forçar uso da porta 3000 em produção - não tentar portas alternativas por padrão
+const backendCandidatePorts = [3000];
+let backendStarting = false; // Evitar starts concorrentes
 let backendStdoutStream: fs.WriteStream | null = null;
 let backendStderrStream: fs.WriteStream | null = null;
 // Flag para desativar completamente logs em arquivo (frontend.log, backend-stdout.log, backend-stderr.log)
@@ -331,6 +333,7 @@ function attachBackendListeners(proc: childProcess.ChildProcess): void {
     proc.on('close', (code: number, signal: string) => {
         console.log(`❌ Backend process exited with code ${code}, signal: ${signal || 'none'}`);
         isBackendReady = false;
+        backendStarting = false;
         if (backendHealthCheckInterval) {
             clearInterval(backendHealthCheckInterval);
             backendHealthCheckInterval = null;
@@ -351,6 +354,7 @@ function attachBackendListeners(proc: childProcess.ChildProcess): void {
     proc.on('error', (error: Error) => {
         console.error('❌ Erro ao iniciar backend:', error);
         isBackendReady = false;
+        backendStarting = false;
     });
 }
 
@@ -487,8 +491,8 @@ function createWindow(): void {
             const splashPath = splashPaths.find(p => p && fs.existsSync(p));
             if (splashPath) {
                 mainWindow?.loadFile(splashPath).catch(() => { /* ignore */ });
-                // ensure window visible
-                try { mainWindow?.show(); mainWindow?.focus(); } catch { }
+                // ensure window visible and opaque for splash
+                try { mainWindow?.setOpacity(1.0); mainWindow?.show(); mainWindow?.focus(); } catch { }
             } else {
                 console.warn('⚠️ splash.html not found, using inline fallback splash');
                 // Fallback inline splash so the window is visible even if the file wasn't packaged
@@ -510,6 +514,8 @@ function createWindow(): void {
                 `;
                 try {
                     mainWindow?.loadURL(`data:text/html,${encodeURIComponent(inline)}`);
+                    // garantir visibilidade do splash (sem esperar pelo carregamento completo)
+                    try { mainWindow?.setOpacity(1.0); } catch { }
                     mainWindow?.show();
                     mainWindow?.focus();
                 } catch (e) {
@@ -899,10 +905,31 @@ function loadProductionFrontend(): void {
     const backendUrl = `http://127.0.0.1:${currentBackendPort}`;
     try {
         console.log('🌐 Tentando carregar frontend via backend em', backendUrl);
-        // carregar a rota /app/ que deverá servir os assets (backend deve servir /app/)
+        // Verificar via HTTP se o backend realmente serve /app/ antes de carregar
         const appUrl = `${backendUrl}/app/`;
-        mainWindow?.loadURL(appUrl).catch(() => {
-            console.warn('⚠️ Falha ao carregar frontend via backend, usando fallback para arquivo');
+        const httpMod: any = require('http');
+        const req = httpMod.get(appUrl, { timeout: 3000 }, (res: any) => {
+            const ok = typeof res?.statusCode === 'number' && res.statusCode < 400;
+            try { req.destroy(); } catch { }
+            if (ok) {
+                console.log('✅ Backend responde em /app/ -> carregando via HTTP');
+                mainWindow?.loadURL(appUrl).catch(() => {
+                    console.warn('⚠️ Falha ao carregar frontend via backend (loadURL), usando fallback para arquivo');
+                    loadFallbackFile();
+                });
+            } else {
+                console.warn('⚠️ Backend respondeu, mas /app/ retornou status', res.statusCode, '; usando fallback');
+                loadFallbackFile();
+            }
+        });
+        req.on('error', (err: any) => {
+            console.warn('⚠️ Falha ao acessar backend /app/:', err && err.message ? err.message : err);
+            try { req.destroy(); } catch { }
+            loadFallbackFile();
+        });
+        req.on('timeout', () => {
+            console.warn('⚠️ Timeout ao verificar backend /app/');
+            try { req.destroy(); } catch { }
             loadFallbackFile();
         });
     } catch (e) {
@@ -1228,14 +1255,15 @@ async function launchBackendProcess(jarPath: string, userDataDir: string, env: N
     attachBackendListeners(backendProcess);
     startBackendHealthCheck();
 
-    // Timeout para startup do backend
+    // Timeout para startup do backend. Em alguns ambientes (init do embedded PG)
+    // pode demorar mais que 30s, então aumentar para 60s para reduzir restarts prematuros
     backendStartupTimeout = setTimeout(() => {
         if (!isBackendReady) {
-            console.error('⚠️ Backend não respondeu após 30 segundos, pode haver um problema');
+            console.error('⚠️ Backend não respondeu após 60 segundos, pode haver um problema');
             // Tentar reiniciar
             restartBackend();
         }
-    }, 30000);
+    }, 60000);
 
     console.log('🔄 Backend startup iniciado, aguardando confirmação...');
 }
@@ -1259,6 +1287,13 @@ async function startBackend(): Promise<void> {
         isBackendReady = true; // Assumir que está pronto via npm
         return;
     }
+
+    // Evitar starts concorrentes em produção
+    if (backendStarting) {
+        console.log('🔁 Backend já está iniciando, ignorando start concorrente');
+        return;
+    }
+    backendStarting = true;
 
     console.log('🚀 Iniciando backend Spring Boot embutido para produção...');
     console.log('📁 Diretório atual:', __dirname);
@@ -1288,6 +1323,7 @@ async function startBackend(): Promise<void> {
     } catch (error) {
         console.error('❌ Erro ao iniciar backend:', error);
         isBackendReady = false;
+        backendStarting = false;
     }
 }
 
@@ -1297,6 +1333,7 @@ function startBackendHealthCheck(): void {
     }
 
     // Verificar saúde do backend a cada 15 segundos (mais frequente)
+    // Iniciar checagens somente após um pequeno atraso para deixar o backend/Pg estabilizarem
     backendHealthCheckInterval = setInterval(() => {
         // Só verificar se deveria estar rodando
         if (backendShouldBeRunning) {
@@ -1314,6 +1351,7 @@ function startBackendHealthCheck(): void {
                 } else if (isHealthy && !isBackendReady) {
                     console.log('✅ Backend detectado como saudável novamente');
                     isBackendReady = true;
+                    backendStarting = false;
                     backendRestartAttempts = 0; // Reset contador em caso de sucesso
                     sendSplashStatus('Backend estável', 70);
                 }
@@ -1572,10 +1610,10 @@ function restartBackend(): void {
     // Parar backend atual
     stopBackend();
 
-    // Aguardar um pouco antes de reiniciar
+    // Aguardar um pouco antes de reiniciar (5s) para dar tempo de limpar processos e evitar loops rápidos
     setTimeout(() => {
         startBackend();
-    }, 3000); // Aumentar delay para dar tempo de limpar processos
+    }, 5000);
 }
 
 app.whenReady().then(() => {

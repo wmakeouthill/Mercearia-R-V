@@ -37,20 +37,21 @@ try {
         }
     });
 
+    // Build do frontend em produção (deve rodar antes do backend porque
+    // o packaging do backend espera os arquivos do frontend já gerados)
+    console.log('🌐 Build do frontend em produção...');
+    execSync('npm run build -- --configuration=production', {
+        stdio: 'inherit',
+        cwd: path.join(__dirname, '../frontend'),
+        env: { ...process.env, NODE_ENV: 'production' },
+        shell: 'powershell.exe'
+    });
+
     // Build do backend SPRING (gera JAR)
     console.log('📦 Build do backend Spring...');
     execSync('mvn -q -DskipTests package', {
         stdio: 'inherit',
         cwd: path.join(__dirname, '../backend-spring'),
-        env: { ...process.env, NODE_ENV: 'production' },
-        shell: 'powershell.exe'
-    });
-
-    // Build do frontend em produção
-    console.log('🌐 Build do frontend em produção...');
-    execSync('npm run build -- --configuration=production', {
-        stdio: 'inherit',
-        cwd: path.join(__dirname, '../frontend'),
         env: { ...process.env, NODE_ENV: 'production' },
         shell: 'powershell.exe'
     });

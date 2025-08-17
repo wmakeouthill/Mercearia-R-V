@@ -15,6 +15,13 @@ export class BackendDetectorService {
   constructor(private readonly http: HttpClient) { }
 
   private buildPossibleUrls(): string[] {
+    // Em ambiente empacotado (Electron), forçar apenas a porta 3000 local
+    try {
+      if (typeof navigator !== 'undefined' && navigator.userAgent && navigator.userAgent.includes('Electron')) {
+        return ['http://127.0.0.1:3000'];
+      }
+    } catch (e) { /* ignore */ }
+
     const ports = [3000, 3001, 3002];
     const maybeHost = (typeof window !== 'undefined' && window?.location?.hostname) ? window.location.hostname : '';
     const hosts = [

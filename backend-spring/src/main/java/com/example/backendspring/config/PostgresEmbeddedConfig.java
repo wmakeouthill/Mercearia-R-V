@@ -90,25 +90,39 @@ public class PostgresEmbeddedConfig {
     }
 
     private boolean handleStaleLockIfPresent(Path persistentDir) {
-        Path lockFile = persistentDir.resolve("postmaster.pid");
-        if (!Files.exists(lockFile)) {
+        // Verificar tanto postmaster.pid quanto epg-lock (usado pelo zonky/embedded-pg)
+        Path pidLock = persistentDir.resolve("postmaster.pid");
+        Path epgLock = persistentDir.resolve("epg-lock");
+        if (!Files.exists(pidLock) && !Files.exists(epgLock)) {
             return true;
         }
-        log.warn("Lock do Postgres encontrado em {}. Tentando identificar/encerrar processo antigo...", lockFile);
+
+        log.warn("Lock do Postgres encontrado em {} ou {}. Tentando identificar/encerrar processo antigo...",
+                pidLock, epgLock);
         try {
-            Optional<Long> pidOpt = readPidFromLockFile(lockFile);
-            if (pidOpt.isPresent()) {
-                long pid = pidOpt.get();
-                log.info("PID detectado no lock: {}", pid);
-                tryTerminateProcess(pid);
-            } else {
-                log.info("PID não encontrado ou inválido no arquivo {}. Removendo lock...", lockFile);
+            // Preferir ler PID do postmaster.pid quando disponível
+            if (Files.exists(pidLock)) {
+                Optional<Long> pidOpt = readPidFromLockFile(pidLock);
+                if (pidOpt.isPresent()) {
+                    long pid = pidOpt.get();
+                    log.info("PID detectado no postmaster.pid: {}", pid);
+                    tryTerminateProcess(pid);
+                } else {
+                    log.info("PID não encontrado ou inválido em {}. Removendo...", pidLock);
+                }
+                Files.deleteIfExists(pidLock);
             }
-            Files.deleteIfExists(lockFile);
-            log.info("Lock removido com sucesso. Prosseguindo com diretório persistente.");
+
+            // Remover epg-lock se existir (arquivo de lock utilizado pela lib)
+            if (Files.exists(epgLock)) {
+                removeEpgLockIfPresent(epgLock);
+            }
+
+            log.info("Locks processados/removidos. Prosseguindo com diretório persistente.");
             return true;
         } catch (IOException e) {
-            log.warn("Falha ao processar lock {} ({}). Será usado diretório temporário nesta execução.", lockFile,
+            log.warn("Falha ao processar locks em {} ({}). Será usado diretório temporário nesta execução.",
+                    persistentDir,
                     e.getMessage());
             return false;
         }
@@ -125,6 +139,27 @@ public class PostgresEmbeddedConfig {
             // fall through
         }
         return Optional.empty();
+    }
+
+    private Optional<String> readEpgLockContent(Path epgLock) {
+        try {
+            return Optional.ofNullable(Files.readString(epgLock));
+        } catch (Exception ignored) {
+            return Optional.empty();
+        }
+    }
+
+    private void removeEpgLockIfPresent(Path epgLock) {
+        try {
+            if (!Files.exists(epgLock))
+                return;
+            Optional<String> contentOpt = readEpgLockContent(epgLock);
+            contentOpt.ifPresent(c -> log.info("epg-lock contents: {}", c.replaceAll("\\r?\\n", " ")));
+            Files.deleteIfExists(epgLock);
+            log.info("epg-lock removido com sucesso: {}", epgLock);
+        } catch (Exception ex) {
+            log.warn("Falha ao remover epg-lock {}: {}", epgLock, ex.getMessage());
+        }
     }
 
     private Optional<Long> parsePid(String line) {
