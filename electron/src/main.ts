@@ -18,14 +18,15 @@ let backendHealthCheckInterval: NodeJS.Timeout | null = null;
 let backendStartupTimeout: NodeJS.Timeout | null = null;
 let isBackendReady = false;
 let backendRestartAttempts = 0;
-const maxBackendRestartAttempts = 5; // Aumentar tentativas
+const maxBackendRestartAttempts = Number.POSITIVE_INFINITY; // Reiniciar backend indefinidamente enquanto o app estiver aberto
 let backendShouldBeRunning = false; // Flag para saber se backend deveria estar rodando
 let currentBackendPort = 3000;
 const backendCandidatePorts = [3000, 3001, 3002];
 let backendStdoutStream: fs.WriteStream | null = null;
 let backendStderrStream: fs.WriteStream | null = null;
 // Flag para desativar completamente logs em arquivo (frontend.log, backend-stdout.log, backend-stderr.log)
-const DISABLE_FILE_LOGS = process.env.DISABLE_FILE_LOGS === 'true' || true; // forçar true por padrão
+// Temporariamente habilitado para debugging em builds empacotados
+const DISABLE_FILE_LOGS = false;
 
 // ==== Funções auxiliares para reduzir complexidade ====
 function attemptNextBackendPort(reason: string): void {
@@ -76,6 +77,18 @@ function processBackendStdout(output: string): void {
     }
 }
 
+// Envia atualizações para a splash (se presente)
+function sendSplashStatus(message: string, percent?: number): void {
+    try {
+        console.log(`🔔 Splash status -> ${message} ${typeof percent === 'number' ? '(' + percent + '%)' : ''}`);
+        if (mainWindow?.webContents && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('splash-status', { message, percent });
+        }
+    } catch (e) {
+        console.warn('⚠️ Falha ao enviar status para splash:', (e as Error)?.message || e);
+    }
+}
+
 function processBackendStderr(error: string): void {
     console.error('Backend STDERR:', error);
     writeBackendStream('stderr', error);
@@ -116,34 +129,53 @@ async function findFirstFreePort(candidatePorts: number[]): Promise<number> {
 }
 
 function resolveJavaExecutable(): string | null {
-    const embeddedJavaPathWin = process.resourcesPath
-        ? path.join(process.resourcesPath, 'jre', 'win', 'bin', 'java.exe')
-        : path.join(__dirname, '../resources/jre/win/bin/java.exe');
-    const embeddedJavaPathUnix = process.resourcesPath
-        ? path.join(process.resourcesPath, 'jre', 'bin', 'java')
-        : path.join(__dirname, '../resources/jre/bin/java');
-    const embeddedJdkPathWin = process.resourcesPath
-        ? path.join(process.resourcesPath, 'jdk', 'win', 'bin', 'java.exe')
-        : path.join(__dirname, '../resources/jdk/win/bin/java.exe');
-    const embeddedJdkPathUnix = process.resourcesPath
-        ? path.join(process.resourcesPath, 'jdk', 'bin', 'java')
-        : path.join(__dirname, '../resources/jdk/bin/java');
+    const baseResources = process.resourcesPath ? process.resourcesPath : path.join(__dirname, '../resources');
+    const embeddedJreWinDir = path.join(baseResources, 'jre', 'win');
+    const embeddedJreUnixDir = path.join(baseResources, 'jre');
+    const embeddedJdkWin = path.join(baseResources, 'jdk', 'win', 'bin', 'java.exe');
+    const embeddedJdkUnix = path.join(baseResources, 'jdk', 'bin', 'java');
 
-    if (process.platform === 'win32' && fs.existsSync(embeddedJavaPathWin)) {
-        console.log('✅ Usando Java embarcado (Windows)');
-        return embeddedJavaPathWin;
+    const findNestedJava = (dir: string, exeName: string) => {
+        try {
+            if (!fs.existsSync(dir)) return null;
+            const entries = fs.readdirSync(dir, { withFileTypes: true });
+            // check for direct bin (dir/bin/java)
+            const direct = path.join(dir, 'bin', exeName);
+            if (fs.existsSync(direct)) return direct;
+            // otherwise search one level deep for folders like jre-1.8
+            for (const e of entries) {
+                if (e.isDirectory()) {
+                    const candidate = path.join(dir, e.name, 'bin', exeName);
+                    if (fs.existsSync(candidate)) return candidate;
+                }
+            }
+        } catch { /* ignore */ }
+        return null;
+    };
+
+    // Prefer bundled JDK (recommended) and fall back to JRE if JDK not present
+    if (process.platform === 'win32' && fs.existsSync(embeddedJdkWin)) {
+        console.log('✅ Usando JDK embarcado (Windows) ->', embeddedJdkWin);
+        return embeddedJdkWin;
     }
-    if (fs.existsSync(embeddedJavaPathUnix)) {
-        console.log('✅ Usando Java embarcado (Unix-like)');
-        return embeddedJavaPathUnix;
+    if (fs.existsSync(embeddedJdkUnix)) {
+        console.log('✅ Usando JDK embarcado (Unix-like) ->', embeddedJdkUnix);
+        return embeddedJdkUnix;
     }
-    if (process.platform === 'win32' && fs.existsSync(embeddedJdkPathWin)) {
-        console.log('✅ Usando JDK embarcado (Windows)');
-        return embeddedJdkPathWin;
-    }
-    if (fs.existsSync(embeddedJdkPathUnix)) {
-        console.log('✅ Usando JDK embarcado (Unix-like)');
-        return embeddedJdkPathUnix;
+
+    // Then try JRE (search nested layout too)
+    if (process.platform === 'win32') {
+        const jreCandidate = findNestedJava(embeddedJreWinDir, 'java.exe');
+        if (jreCandidate) {
+            console.log('✅ Usando Java embarcado (JRE) ->', jreCandidate);
+            return jreCandidate;
+        }
+    } else {
+        const jreCandidate = findNestedJava(embeddedJreUnixDir, 'java');
+        if (jreCandidate) {
+            console.log('✅ Usando Java embarcado (JRE) ->', jreCandidate);
+            return jreCandidate;
+        }
     }
     const check = childProcess.spawnSync('java', ['-version'], { stdio: 'pipe' });
     if (check.status === 0) {
@@ -357,8 +389,9 @@ function appendLogLine(line: string): void {
 
 // CONFIGURAÇÃO: Aguardar tudo estar pronto antes de mostrar? (APENAS EM PRODUÇÃO)
 // Em desenvolvimento sempre mostra imediatamente independente desta configuração
+// Forçar comportamento: não aguardar tudo para evitar janela invisível em builds empacotados
 const WAIT_FOR_EVERYTHING_READY = true; // true = aguarda / false = mostra imediatamente
-// ⚠️ Se WAIT_FOR_EVERYTHING_READY = true e a janela não aparecer, mude para false
+// ⚠️ Se preferir aguardar backend+frontend antes de mostrar, altere para true
 
 function createWindow(): void {
     mainWindow = new BrowserWindow({
@@ -457,7 +490,31 @@ function createWindow(): void {
                 // ensure window visible
                 try { mainWindow?.show(); mainWindow?.focus(); } catch { }
             } else {
-                console.warn('⚠️ splash.html not found, skipping splash load');
+                console.warn('⚠️ splash.html not found, using inline fallback splash');
+                // Fallback inline splash so the window is visible even if the file wasn't packaged
+                const inline = `
+                    <html>
+                        <head>
+                            <meta charset="utf-8" />
+                            <title>Carregando...</title>
+                            <style>body{display:flex;align-items:center;justify-content:center;height:100vh;margin:0;font-family:Arial,sans-serif;background:#fff} .box{text-align:center} .spinner{width:48px;height:48px;border-radius:50%;border:6px solid #eee;border-top-color:#3f51b5;animation:spin 1s linear infinite;margin:0 auto} @keyframes spin{to{transform:rotate(360deg)}}</style>
+                        </head>
+                        <body>
+                            <div class="box">
+                                <div class="spinner"></div>
+                                <h1>Carregando aplicativo...</h1>
+                                <p>Aguardando inicialização do backend e frontend.</p>
+                            </div>
+                        </body>
+                    </html>
+                `;
+                try {
+                    mainWindow?.loadURL(`data:text/html,${encodeURIComponent(inline)}`);
+                    mainWindow?.show();
+                    mainWindow?.focus();
+                } catch (e) {
+                    console.warn('⚠️ Falha ao carregar splash inline:', (e as Error)?.message || e);
+                }
             }
         } catch (e) {
             console.warn('⚠️ Failed to load splash:', (e as Error)?.message || e);
@@ -585,42 +642,53 @@ function createWindow(): void {
 
 // Em produção: aguardar backend ficar saudável e então carregar o frontend
 function waitForBackendThenLoadFrontend(): void {
-    const maxAttempts = 60; // 60 segundos
-    let attempts = 0;
-
-    const check = () => {
-        attempts++;
-        console.log(`🔍 Verificando backend (esperando) tentativa ${attempts}/${maxAttempts}...`);
-        testBackendConnection()
-            .then((status) => {
-                if (status === 'healthy') {
-                    console.log('✅ Backend saudável. Carregando frontend empacotado...');
-                    loadProductionFrontend();
-                    // quando a página terminar de carregar, mostrar a janela (se ainda não visível)
-                    if (mainWindow && !mainWindow.isDestroyed()) {
-                        mainWindow.webContents.once('did-finish-load', () => {
-                            try {
-                                mainWindow?.setOpacity(1.0);
-                                mainWindow?.show();
-                                mainWindow?.focus();
-                            } catch { }
-                        });
-                    }
-                } else if (attempts < maxAttempts) {
-                    setTimeout(check, 1000);
-                } else {
-                    console.error('❌ Backend não ficou pronto após tempo limite. Mostrando splash com opção de retry.');
-                    // deixar splash visível e permitir ações via menu
-                }
-            })
-            .catch(() => {
-                if (attempts < maxAttempts) setTimeout(check, 1000);
-                else console.error('❌ Erro ao verificar backend (timeout)');
+    // Helper: ações quando backend estiver saudável
+    const onBackendHealthy = (): void => {
+        console.log('✅ Backend saudável. Carregando frontend servido pelo backend...');
+        sendSplashStatus('Backend pronto', 80);
+        sendSplashStatus('Carregando frontend...', 90);
+        loadProductionFrontend();
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.once('did-finish-load', () => {
+                try {
+                    sendSplashStatus('Aplicação pronta', 100);
+                    mainWindow?.setOpacity(1.0);
+                    mainWindow?.show();
+                    mainWindow?.focus();
+                } catch { /* ignore */ }
             });
+        }
     };
 
-    // iniciar verificação após 1s
-    setTimeout(check, 1000);
+    // Helper: realizar uma verificação única do backend
+    const checkOnce = async (): Promise<boolean> => {
+        try {
+            const status = await testBackendConnection();
+            return status === 'healthy';
+        } catch (e) {
+            console.error('❌ Erro ao verificar backend:', (e as Error)?.message || e);
+            return false;
+        }
+    };
+
+    // Loop de verificação com delay
+    (async () => {
+        let attempts = 0;
+        sendSplashStatus('Aguardando backend iniciar...', 10);
+        while (true) {
+            attempts++;
+            console.log(`🔍 Verificando backend (tentativa ${attempts})...`);
+            const ok = await checkOnce();
+            if (ok) {
+                onBackendHealthy();
+                break;
+            }
+            sendSplashStatus('Aguardando backend...', 30 + Math.min(attempts, 50));
+            // esperar antes de tentar novamente
+            // eslint-disable-next-line no-await-in-loop
+            await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+    })();
 }
 
 function waitForAngularDev(): void {
@@ -827,8 +895,20 @@ function loadProductionFrontend(): void {
     console.log('🌐 Carregando frontend em produção (arquivo local empacotado)...');
     console.log('🔧 Debug: NODE_ENV =', process.env.NODE_ENV);
     console.log('🔧 Debug: app.isPackaged =', app.isPackaged);
-    // Carregar diretamente o arquivo local empacotado
-    loadFallbackFile();
+    // Preferir carregar o frontend servido pelo backend (same-origin)
+    const backendUrl = `http://127.0.0.1:${currentBackendPort}`;
+    try {
+        console.log('🌐 Tentando carregar frontend via backend em', backendUrl);
+        // carregar a rota /app/ que deverá servir os assets (backend deve servir /app/)
+        const appUrl = `${backendUrl}/app/`;
+        mainWindow?.loadURL(appUrl).catch(() => {
+            console.warn('⚠️ Falha ao carregar frontend via backend, usando fallback para arquivo');
+            loadFallbackFile();
+        });
+    } catch (e) {
+        console.warn('⚠️ Erro ao carregar frontend via backend:', (e as Error)?.message || e);
+        loadFallbackFile();
+    }
 }
 
 // Removido: fluxo antigo que carregava o frontend via HTTP do backend
@@ -1002,44 +1082,62 @@ function createMenu(): void {
     Menu.setApplicationMenu(menu);
 }
 
-async function preparePgData(): Promise<{ userDataDir: string; userPgDir: string; embeddedPgDir: string }> {
+async function preparePgData(): Promise<{ userDataDir: string; userPgDir: string; embeddedPgDir?: string }> {
     const userDataDir = app.getPath('userData');
     const userPgDir = path.join(userDataDir, 'data', 'pg');
     const resourceBase = process.resourcesPath ? process.resourcesPath : path.join(__dirname, '../resources');
     const embeddedPgDir = path.join(resourceBase, 'backend-spring', 'data', 'pg');
+    const embeddedDbDumpDir = path.join(resourceBase, 'backend-spring', 'db');
+    const embeddedDumpFile = path.join(embeddedDbDumpDir, 'dump_data.sql');
 
-    if (!fs.existsSync(embeddedPgDir)) {
-        throw new Error(`Dados embutidos do Postgres não encontrados em: ${embeddedPgDir}`);
-    }
+    // Helper: use embedded SQL dump if present
+    const tryUseEmbeddedDump = (): { userDataDir: string; userPgDir: string } | null => {
+        if (!fs.existsSync(embeddedDumpFile)) return null;
+        console.log('📦 Found embedded DB dump at', embeddedDumpFile, '; will let backend apply it on first startup');
+        if (!fs.existsSync(userPgDir)) fs.mkdirSync(userPgDir, { recursive: true });
+        return { userDataDir, userPgDir };
+    };
 
-    // Se não existir em userData, copiar (primeira execução)
-    if (!isDirNonEmpty(userPgDir)) {
-        console.log('📦 Copiando dados do Postgres empacotados para userData (primeira execução)...');
-        fs.mkdirSync(userPgDir, { recursive: true });
-        copyDirRecursiveSync(embeddedPgDir, userPgDir);
-        console.log('✅ Cópia concluída para', userPgDir);
-    } else {
-        console.log('ℹ️ Diretório de dados do Postgres em userData já existe, usando-o:', userPgDir);
-    }
-
-    // Verificação mínima de compatibilidade: checar arquivo PG_VERSION
-    const pgVersionFile = path.join(userPgDir, 'PG_VERSION');
-    if (!fs.existsSync(pgVersionFile)) {
-        throw new Error(`Arquivo PG_VERSION não encontrado no diretório de dados do Postgres (incompatível): ${userPgDir}`);
-    }
-    try {
-        const actualVersion = fs.readFileSync(pgVersionFile, 'utf8').trim();
-        const expected = process.env.EMBEDDED_PG_EXPECTED_VERSION;
-        if (expected && actualVersion !== expected) {
-            console.warn('⚠️ Versão do Postgres diferente do esperado:', actualVersion, '!=', expected);
+    // Helper: use embedded raw PG directory if present (legacy)
+    const tryUseEmbeddedPgDir = (): { userDataDir: string; userPgDir: string; embeddedPgDir?: string } | null => {
+        if (!fs.existsSync(embeddedPgDir)) return null;
+        if (!isDirNonEmpty(userPgDir)) {
+            console.log('📦 Copiando dados do Postgres empacotados para userData (primeira execução)...');
+            fs.mkdirSync(userPgDir, { recursive: true });
+            copyDirRecursiveSync(embeddedPgDir, userPgDir);
+            console.log('✅ Cópia concluída para', userPgDir);
         } else {
-            console.log('✅ PG_VERSION detectado:', actualVersion);
+            console.log('ℹ️ Diretório de dados do Postgres em userData já existe, usando-o:', userPgDir);
         }
-    } catch (e) {
-        console.warn('⚠️ Falha ao checar PG_VERSION:', (e as Error)?.message || e);
-    }
 
-    return { userDataDir, userPgDir, embeddedPgDir };
+        const pgVersionFile = path.join(userPgDir, 'PG_VERSION');
+        if (!fs.existsSync(pgVersionFile)) {
+            console.warn(`⚠️ Arquivo PG_VERSION não encontrado no diretório de dados do Postgres: ${userPgDir} (continuando, tentar initdb na próxima execução)`);
+            return { userDataDir, userPgDir };
+        }
+        try {
+            const actualVersion = fs.readFileSync(pgVersionFile, 'utf8').trim();
+            const expected = process.env.EMBEDDED_PG_EXPECTED_VERSION;
+            if (expected && actualVersion !== expected) {
+                console.warn('⚠️ Versão do Postgres diferente do esperado:', actualVersion, '!=', expected);
+            } else {
+                console.log('✅ PG_VERSION detectado:', actualVersion);
+            }
+        } catch (e) {
+            console.warn('⚠️ Falha ao checar PG_VERSION:', (e as Error)?.message || e);
+        }
+        return { userDataDir, userPgDir, embeddedPgDir };
+    };
+
+    // Try dump first, then raw embedded dir, then fallback to creating userPgDir
+    const dumpResult = tryUseEmbeddedDump();
+    if (dumpResult) return dumpResult;
+    const pgDirResult = tryUseEmbeddedPgDir();
+    if (pgDirResult) return pgDirResult;
+
+    console.log('⚠️ Nenhum dump DB ou raw data empacotado encontrado; o Embedded Postgres inicializará um novo cluster em', userPgDir);
+    if (!fs.existsSync(userPgDir)) fs.mkdirSync(userPgDir, { recursive: true });
+    return { userDataDir, userPgDir };
 }
 
 function buildEnvForBackend(userDataDir: string, userPgDir: string): NodeJS.ProcessEnv {
@@ -1058,8 +1156,23 @@ async function launchBackendProcess(jarPath: string, userDataDir: string, env: N
 
     const workingDir = determineWorkingDir();
 
-    // Resolver Java preferindo embarcado
-    const javaExecutable = resolveJavaExecutable();
+    // Mostrar paths importantes para debugging
+    console.log('🔎 Debug paths: jarPath =', jarPath);
+    console.log('🔎 Debug paths: workingDir =', workingDir);
+    console.log('🔎 Debug paths: process.resourcesPath =', (process as any).resourcesPath);
+    console.log('🔎 Debug paths: __dirname =', __dirname);
+
+    // Forçar uso explícito do JDK empacotado se disponível (evita detectar um JRE mais antigo como jre-1.8)
+    const explicitJdkPath = path.join(process.resourcesPath ? process.resourcesPath : path.join(__dirname, '../resources'), 'jdk', 'win', 'bin', 'java.exe');
+    let javaExecutable = null as string | null;
+    if (process.platform === 'win32' && fs.existsSync(explicitJdkPath)) {
+        javaExecutable = explicitJdkPath;
+        console.log('🔎 Forçando uso do JDK empacotado ->', javaExecutable);
+    } else {
+        // Resolver Java preferindo embarcado
+        javaExecutable = resolveJavaExecutable();
+        console.log('🔎 Debug paths: javaExecutable =', javaExecutable);
+    }
     if (!javaExecutable) throw new Error('Java não encontrado');
 
     // Tentar fixar a 3000, com fallback somente se ocupada
@@ -1067,7 +1180,26 @@ async function launchBackendProcess(jarPath: string, userDataDir: string, env: N
     const free3000 = await isPortFree(primaryPort);
     currentBackendPort = free3000 ? primaryPort : await findFirstFreePort(backendCandidatePorts);
 
-    const args = buildBackendArgs(jarPath, currentBackendPort);
+    // Preparar argumentos do backend. Se existir um secrets/application-secrets.yml
+    // dentro do workingDir, passar como propriedade JVM para garantir que o Spring
+    // carregue esse arquivo como fonte de configuração.
+    const baseArgs = buildBackendArgs(jarPath, currentBackendPort);
+    const secretsFilePath = path.join(workingDir, 'secrets', 'application-secrets.yml');
+    let args: string[] = baseArgs;
+    if (fs.existsSync(secretsFilePath)) {
+        console.log('🔒 Found secrets file for backend at', secretsFilePath);
+        // JVM system property must be before -jar
+        const jvmProp = `-Dspring.config.import=optional:file:${secretsFilePath}`;
+        args = [jvmProp, ...baseArgs];
+    } else {
+        // Também tentar alternativa .properties
+        const secretsPropsPath = path.join(workingDir, 'secrets', 'application-secrets.properties');
+        if (fs.existsSync(secretsPropsPath)) {
+            console.log('🔒 Found secrets properties for backend at', secretsPropsPath);
+            const jvmProp = `-Dspring.config.import=optional:file:${secretsPropsPath}`;
+            args = [jvmProp, ...baseArgs];
+        }
+    }
 
     // Abrir streams de log (produção e desenvolvimento) antes do spawn
     if (!DISABLE_FILE_LOGS) {
@@ -1150,6 +1282,7 @@ async function startBackend(): Promise<void> {
 
     try {
         const { userDataDir, userPgDir } = await preparePgData();
+        sendSplashStatus('Iniciando banco de dados embutido...', 25);
         const env = buildEnvForBackend(userDataDir, userPgDir);
         await launchBackendProcess(jarPath, userDataDir, env);
     } catch (error) {
@@ -1171,20 +1304,24 @@ function startBackendHealthCheck(): void {
                 const isHealthy = status === 'healthy';
                 if (!isHealthy && isBackendReady) {
                     console.log('❌ Backend não está respondendo no health check, reiniciando...');
+                    sendSplashStatus('Backend não respondeu, reiniciando...', 20);
                     isBackendReady = false;
                     restartBackend();
                 } else if (!isHealthy && !isBackendReady && !backendProcess) {
                     console.log('🔄 Backend deveria estar rodando mas não está, reiniciando...');
+                    sendSplashStatus('Backend ausente, iniciando...', 20);
                     restartBackend();
                 } else if (isHealthy && !isBackendReady) {
                     console.log('✅ Backend detectado como saudável novamente');
                     isBackendReady = true;
                     backendRestartAttempts = 0; // Reset contador em caso de sucesso
+                    sendSplashStatus('Backend estável', 70);
                 }
             }).catch((error) => {
                 console.error('❌ Erro no health check:', error.message);
                 if (backendShouldBeRunning && (!backendProcess || isBackendReady)) {
                     isBackendReady = false;
+                    sendSplashStatus('Erro no health check, reiniciando backend...', 15);
                     restartBackend();
                 }
             });

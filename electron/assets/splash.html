@@ -12,8 +12,39 @@
       <img src="assets/logo.png" alt="Logo" class="logo" />
       <h1>Sistema de Gestão de Estoque</h1>
       <p id="status">Conectando ao backend...</p>
+      <div class="progress">
+        <div id="progress-bar" class="progress-bar" style="width:0%"></div>
+      </div>
       <div class="spinner" aria-hidden="true"></div>
     </div>
+
+    <script>
+      // Atualiza status/progresso a partir do processo principal (Electron)
+      const setStatus = (msg) => {
+        const el = document.getElementById('status');
+        if (el) el.textContent = msg;
+      };
+      const setProgress = (pct) => {
+        const bar = document.getElementById('progress-bar');
+        if (bar && typeof pct === 'number') bar.style.width = Math.max(0, Math.min(100, pct)) + '%';
+      };
+
+      // Se ponto de contato com electronAPI existir, inscreve-se nas atualizações
+      if (window && window.electronAPI && typeof window.electronAPI.onSplashStatus === 'function') {
+        window.electronAPI.onSplashStatus((data) => {
+          if (!data) return;
+          if (data.message) setStatus(data.message);
+          if (typeof data.percent === 'number') setProgress(data.percent);
+        });
+      } else {
+        // Fallback: animação simples de progresso
+        let i = 0;
+        setInterval(() => {
+          i = (i + 5) % 100;
+          setProgress(i);
+        }, 800);
+      }
+    </script>
   </body>
 </html>
 

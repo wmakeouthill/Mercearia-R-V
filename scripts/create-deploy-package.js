@@ -60,11 +60,20 @@ function main() {
     console.log('Copied deploy scripts');
   }
 
-  // Copy embedded DB (optional)
-  const embeddedDb = path.join(repoRoot, 'backend-spring', 'data', 'pg');
-  if (fs.existsSync(embeddedDb)) {
-    copyDir(embeddedDb, path.join(outDir, 'backend-data-pg'));
-    console.log('Copied embedded Postgres data');
+  // Copy DB dump (optional)
+  const dbDir = path.join(repoRoot, 'backend-spring', 'db');
+  if (fs.existsSync(dbDir)) {
+    copyDir(dbDir, path.join(outDir, 'backend-spring', 'db'));
+    console.log('Copied backend DB dump');
+  }
+
+  // Copiar secrets (se existir) para o pacote de deploy
+  const secretsDir = path.join(repoRoot, 'backend-spring', 'secrets');
+  if (fs.existsSync(secretsDir)) {
+    copyDir(secretsDir, path.join(outDir, 'secrets'));
+    console.log('Copied backend secrets into deploy package');
+  } else {
+    console.log('No backend secrets directory found for deploy package');
   }
 
   console.log('Deploy package ready. You can SCP the folder deploy/package to your server.');

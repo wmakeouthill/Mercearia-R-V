@@ -5,7 +5,10 @@
     "scripts": {
         "install:all": "npm install && cd frontend && npm install && cd ../backend && npm install && cd ../electron && npm install",
         "build:frontend": "cd frontend && npm run build -- --configuration=production",
+        "copy-frontend-to-backend": "node scripts/copy-frontend-to-backend.js",
+        "prebuild:backend": "npm run build:frontend && npm run copy-frontend-to-backend",
         "build:backend": "cd backend-spring && mvn -q -DskipTests package",
+        "check-env": "node scripts/check-env.js",
         "build:electron": "cd electron && npm run build",
         "build:all": "npm run build:backend && npm run build:frontend && npm run build:electron",
         "build:prod": "npx ts-node scripts/build-prod.ts",

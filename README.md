@@ -67,6 +67,7 @@ Variáveis relevantes:
 | FAST_FRONTEND_DELAY | 3     | Segundos de espera antes de subir o frontend em modo FAST |
 | AUTO_DEV_HTTPS      | true  | Se certificados existirem ativa HTTPS automaticamente |
 | DEV_HTTPS_HOST      | (vazio)| Host override para ng serve em modo https |
+| FRONTEND_BASE_HREF  | /app/ | Quando copiar frontend para o backend, define o `<base href>` usado pelo index (override via env)|
 
 Certificados esperados em `frontend/certs/merceariarv.app.pem` e `merceariarv.app-key.pem` (gerar com `npm run cert:generate`).
 
@@ -147,13 +148,17 @@ Este comando irá:
 ### Modo Produção
 
 ```bash
-# Build completo
-npm run build
+# Build completo (gera frontend, copia para backend, empacota o JAR e prepara Electron)
+# No root do repositório execute:
+npm run build:backend   # -> executa o build do frontend, copia os assets para backend e empacota o JAR
 
-# Executar aplicação
+# Alternativamente (build completo):
+npm run build:all       # constrói backend, frontend e electron
+
+# Executar aplicação (após build)
 npm start
 
-# Criar executável
+# Criar executável (Electron)
 npm run package
 ```
 
@@ -282,6 +287,14 @@ Execute `npm run build` em cada módulo para verificar erros de compilação.
 
 - `npm run build:backend` - Compilar backend
 - `npm run start:backend` - Iniciar backend
+
+Nota: `npm run build:backend` no root agora executa automaticamente o build do frontend e copia os arquivos gerados para `backend-spring/src/main/resources/frontend` antes de executar `mvn package`. O mesmo passo também é executado quando você roda `mvn package` dentro de `backend-spring` graças a um plugin Maven configurado para chamar o script `../scripts/copy-frontend-to-backend.js` durante a fase `generate-resources`.
+
+Verificações de ambiente antes do build
+
+-------------------------------------
+
+Executar `node scripts/check-env.js` (ou `npm run check-env`) para garantir que as ferramentas necessárias estejam disponíveis no PATH (`node`, `npm`, `mvn`, `java`). O script retorna código de saída não-zero se algo estiver faltando.
 
 ### Scripts do Frontend
 

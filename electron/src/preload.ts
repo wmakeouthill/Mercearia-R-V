@@ -13,6 +13,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onAppReady: (callback: () => void) => {
         ipcRenderer.on('app-ready', callback);
     },
+    // Eventos do splash (status/progresso)
+    onSplashStatus: (callback: (data: { message?: string; percent?: number }) => void) => {
+        ipcRenderer.on('splash-status', (_event, data) => callback(data));
+    },
 
     // Utilitários
     platform: process.platform,

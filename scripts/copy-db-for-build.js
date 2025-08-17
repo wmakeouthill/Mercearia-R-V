@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const childProcess = require('child_process');
 
 function copyDirSync(src, dest) {
   if (!fs.existsSync(src)) {
@@ -22,24 +23,84 @@ function copyDirSync(src, dest) {
   }
 }
 
-function main() {
-  const repoRoot = path.resolve(__dirname, '..');
-  const src = path.join(repoRoot, 'backend-spring', 'data', 'pg');
-  const dest = path.join(repoRoot, 'electron', 'resources', 'backend-spring', 'data', 'pg');
+function getDbConfig() {
+  const host = process.env.DEV_DB_HOST || process.env.DB_HOST || 'localhost';
+  const port = process.env.DEV_DB_PORT || process.env.DB_PORT || '5432';
+  const db = process.env.DEV_DB_NAME || process.env.DB_NAME || process.env.DB_DATABASE || 'postgres';
+  const user = process.env.DEV_DB_USER || process.env.DB_USER || process.env.USER || process.env.USERNAME || 'postgres';
+  const password = process.env.DEV_DB_PASSWORD || process.env.DB_PASSWORD || '';
+  const dockerImage = process.env.PG_DOCKER_IMAGE || 'postgres:16';
+  return { host, port, db, user, password, dockerImage };
+}
 
-  console.log('Copying embedded Postgres data from', src, 'to', dest);
-  if (!fs.existsSync(src)) {
-    console.error('Source DB directory not found:', src);
+function ensureDockerAvailable() {
+  const res = childProcess.spawnSync('docker', ['--version'], { stdio: 'ignore' });
+  if (res.error || res.status !== 0) {
+    console.error('Docker não disponível. Instale Docker Desktop ou forneça um pg_dump funcional no PATH.');
     process.exit(1);
   }
+}
 
+function runPgDumpWithDocker({ host, port, db, user, password, dockerImage }, srcDump) {
+  const outDir = path.resolve(path.dirname(srcDump));
+  fs.mkdirSync(outDir, { recursive: true });
+  const hostForDocker = (host === 'localhost' || host === '127.0.0.1') ? 'host.docker.internal' : host;
+  const dockerArgs = [
+    'run', '--rm',
+    '-e', `PGPASSWORD=${password}`,
+    '-v', `${outDir}:/out`,
+    dockerImage,
+    'pg_dump', '-h', hostForDocker, '-p', port, '-U', user, '-f', `/out/${path.basename(srcDump)}`, db
+  ];
+  console.log('Executando Docker:', 'docker', dockerArgs.join(' '));
+  const dres = childProcess.spawnSync('docker', dockerArgs, { stdio: 'inherit' });
+  if (dres.error || dres.status !== 0) {
+    console.error('pg_dump via Docker falhou:', dres && dres.error ? dres.error.message || dres.error : dres.status);
+    process.exit(1);
+  }
+  console.log('pg_dump via Docker executado com sucesso, arquivo gerado em', srcDump);
+}
+
+function copyDumpAndSecrets(repoRoot, srcDump) {
+  const destDir = path.join(repoRoot, 'electron', 'resources', 'backend-spring', 'db');
+  const destDump = path.join(destDir, 'dump_data.sql');
   try {
-    copyDirSync(src, dest);
-    console.log('Copy completed successfully');
+    fs.mkdirSync(destDir, { recursive: true });
+    fs.copyFileSync(srcDump, destDump);
+    console.log('DB dump copy completed successfully');
   } catch (e) {
-    console.error('Copy failed:', e.message || e);
+    console.error('DB dump copy failed:', e.message || e);
     process.exit(2);
   }
+
+  const secretsSrc = path.join(repoRoot, 'backend-spring', 'secrets');
+  const secretsDest = path.join(repoRoot, 'electron', 'resources', 'backend-spring', 'secrets');
+  if (fs.existsSync(secretsSrc)) {
+    try {
+      copyDirSync(secretsSrc, secretsDest);
+      console.log('Copied backend secrets for build');
+    } catch (e) {
+      console.warn('Failed to copy secrets:', e.message || e);
+    }
+  } else {
+    console.log('No backend secrets directory found; skipping');
+  }
+}
+
+function main() {
+  const repoRoot = path.resolve(__dirname, '..');
+  const srcDump = path.join(repoRoot, 'backend-spring', 'db', 'dump_data.sql');
+  console.log('Copying DB dump from', srcDump, 'to electron resources');
+
+  if (!fs.existsSync(srcDump)) {
+    console.log('Source DB dump not found:', srcDump);
+    console.log('Gerando dump do DB usando Docker (requer Docker instalado)...');
+    const cfg = getDbConfig();
+    ensureDockerAvailable();
+    runPgDumpWithDocker(cfg, srcDump);
+  }
+
+  copyDumpAndSecrets(repoRoot, srcDump);
 }
 
 if (require.main === module) {

@@ -61,8 +61,12 @@
                 "to": "backend-spring/backend-spring-0.0.1-SNAPSHOT.jar"
             },
             {
-                "from": "../backend-spring/data/pg",
-                "to": "backend-spring/data/pg"
+                "from": "../backend-spring/db",
+                "to": "backend-spring/db"
+            },
+            {
+                "from": "../backend-spring/secrets",
+                "to": "backend-spring/secrets"
             },
             {
                 "from": "../backend-spring/uploads/produtos",

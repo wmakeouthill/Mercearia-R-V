@@ -126,3 +126,23 @@ temp/
 # Java (artefatos compilados)
 ############################################################
 **/*.class
+
+############################################################
+# Artefatos locais e binários pesados
+############################################################
+# Diretórios de banco de dados/dumps e dados embarcados
+backend-spring/db/
+
+# Frontend empacotado que pode ter sido copiado para o backend
+backend-spring/src/main/resources/frontend/
+
+# JRE/JDK e recursos empacotados do Electron
+electron/jre/
+electron/resources/
+
+# Ferramentas locais e temporárias
+tools/
+
+# Scripts gerados ou auxiliares que não devem ir ao remoto
+scripts/check-env.js
+scripts/copy-frontend-to-backend.js

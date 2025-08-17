@@ -162,6 +162,30 @@
                     </annotationProcessorPaths>
                 </configuration>
             </plugin>
+            <!-- Run Node script to copy frontend dist into backend resources before packaging -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.1.0</version>
+                <executions>
+                    <execution>
+                        <id>copy-frontend-assets</id>
+                        <phase>generate-resources</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>node</executable>
+                            <arguments>
+                                <!-- script is located in repo root scripts/ relative to
+                                backend-spring/ -->
+                                <argument>../scripts/copy-frontend-to-backend.js</argument>
+                            </arguments>
+                            <skip>false</skip>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
 
