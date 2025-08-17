@@ -57,6 +57,10 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     }
 
     @Override
+    @SuppressWarnings("squid:S2139")
+    // Suppress Sonar S2139: we intentionally catch StackOverflowError to wrap it
+    // with ServletException
+    // providing contextual information for higher layers and logs.
     protected void doFilterInternal(@org.springframework.lang.NonNull HttpServletRequest request,
             @org.springframework.lang.NonNull HttpServletResponse response,
             @org.springframework.lang.NonNull FilterChain filterChain)
@@ -81,7 +85,8 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 // Token inválido -> segue sem autenticação. Clear any partial context and log
                 // for debug.
                 SecurityContextHolder.clearContext();
-                log.debug("Invalid JWT token while parsing", e);
+                // Token parsing failed; warn so it's visible in logs and considered handled
+                log.warn("Invalid JWT token while parsing", e);
             }
         }
         try {

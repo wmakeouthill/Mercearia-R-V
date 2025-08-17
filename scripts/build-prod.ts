@@ -49,7 +49,8 @@ try {
 
     // Build do backend SPRING (gera JAR)
     console.log('📦 Build do backend Spring...');
-    execSync('mvn -q -DskipTests package', {
+    // Run Maven without -q so build output is visible in the terminal
+    execSync('mvn -DskipTests package', {
         stdio: 'inherit',
         cwd: path.join(__dirname, '../backend-spring'),
         env: { ...process.env, NODE_ENV: 'production' },

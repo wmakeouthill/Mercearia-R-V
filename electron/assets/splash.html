@@ -38,7 +38,10 @@
         try {
           const normalized = base.replace(/\/assets\/assets\//, '/assets/');
           if (normalized !== base) candidates.push(new URL('assets/logo.png', normalized).href);
-        } catch (e) { /* ignore */ }
+        } catch (e) {
+          // Log to avoid silently swallowing errors (fixes SonarQube S2486)
+          console.debug('splash: failed to normalize base for logo candidates', e);
+        }
 
         // Tentar construir caminho relativo à raiz 'resources' quando empacotado
         try {
@@ -49,7 +52,10 @@
             candidates.push(resourcesRoot + 'backend-spring/uploads/produtos/padrao.png');
             candidates.push(resourcesRoot + 'assets/logo.png');
           }
-        } catch (e) { /* ignore */ }
+        } catch (e) {
+          // Log to avoid silently swallowing errors (fixes SonarQube S2486)
+          console.debug('splash: failed to build resourcesRoot logo candidates', e);
+        }
 
         let i = 0;
         const tryNext = () => {

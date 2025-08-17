@@ -49,6 +49,10 @@ public class AuthAttributesFilter extends OncePerRequestFilter {
     }
 
     @Override
+    @SuppressWarnings("squid:S2139")
+    // Suppress Sonar S2139: we intentionally catch StackOverflowError to wrap it
+    // with ServletException
+    // providing contextual information for higher layers and logs.
     protected void doFilterInternal(@org.springframework.lang.NonNull HttpServletRequest request,
             @org.springframework.lang.NonNull HttpServletResponse response,
             @org.springframework.lang.NonNull FilterChain filterChain)

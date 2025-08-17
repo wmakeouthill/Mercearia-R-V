@@ -1,6 +1,11 @@
 ; Set default installation directory to root of C: for writable install location
 InstallDir "C:\\${PRODUCT_NAME}"
-SetShellVarContext all
+
+; Ensure SetShellVarContext is executed during init. Define as a macro so electron-builder
+; can insert it into its generated .onInit without introducing duplicate function names.
+!macro customInit
+  SetShellVarContext all
+!macroend
 
 !macro customInstall
   ; Copiar dados do Postgres empacotado para o diretório de instalação (INSTDIR) durante a instalação

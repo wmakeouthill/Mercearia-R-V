@@ -653,16 +653,32 @@ function waitForBackendThenLoadFrontend(): void {
         console.log('✅ Backend saudável. Carregando frontend servido pelo backend...');
         sendSplashStatus('Backend pronto', 80);
         sendSplashStatus('Carregando frontend...', 90);
-        loadProductionFrontend();
-        if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.once('did-finish-load', () => {
-                try {
-                    sendSplashStatus('Aplicação pronta', 100);
-                    mainWindow?.setOpacity(1.0);
-                    mainWindow?.show();
-                    mainWindow?.focus();
-                } catch { /* ignore */ }
-            });
+        // Start loading the frontend served by backend. If the production HTTP load
+        // does not finish within a reasonable timeout, fall back to loading the
+        // packaged file to avoid leaving the user stuck on the splash.
+        let fallbackTimer: NodeJS.Timeout | null = null;
+        try {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                fallbackTimer = setTimeout(() => {
+                    console.warn('🚨 Fallback: frontend HTTP load did not finish in time, trying file fallback');
+                    loadFallbackFile();
+                }, 15000);
+
+                mainWindow.webContents.once('did-finish-load', () => {
+                    try {
+                        if (fallbackTimer) { clearTimeout(fallbackTimer); fallbackTimer = null; }
+                        sendSplashStatus('Aplicação pronta', 100);
+                        mainWindow?.setOpacity(1.0);
+                        mainWindow?.show();
+                        mainWindow?.focus();
+                    } catch { /* ignore */ }
+                });
+            }
+            loadProductionFrontend();
+        } catch (e) {
+            console.error('❌ Erro ao carregar frontend via backend, usando fallback file:', (e as Error)?.message || e);
+            if (fallbackTimer) { clearTimeout(fallbackTimer); }
+            loadFallbackFile();
         }
     };
 

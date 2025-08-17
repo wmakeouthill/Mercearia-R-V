@@ -115,16 +115,21 @@ function main() {
   // Também copiar imagem padrão do frontend para servir como logo do splash
   try {
     const frontendLogo = path.join(repoRoot, 'frontend', 'shared', 'padrao.png');
-    const destAssetsDir = path.join(repoRoot, 'electron', 'resources', 'assets');
+    const destResourcesAssetsDir = path.join(repoRoot, 'electron', 'resources', 'assets');
+    const destAssetsDir = path.join(repoRoot, 'electron', 'assets');
     if (fs.existsSync(frontendLogo)) {
+      // Copy into electron/resources/assets (used by extraResources or runtime access)
+      fs.mkdirSync(destResourcesAssetsDir, { recursive: true });
+      fs.copyFileSync(frontendLogo, path.join(destResourcesAssetsDir, 'logo.png'));
+      // Also copy into electron/assets so it is included inside the asar at assets/logo.png
       fs.mkdirSync(destAssetsDir, { recursive: true });
       fs.copyFileSync(frontendLogo, path.join(destAssetsDir, 'logo.png'));
-      console.log('Copied frontend logo to electron resources as assets/logo.png');
+      console.log('Copied frontend logo to electron resources as assets/logo.png and to electron/assets/logo.png');
     } else {
       console.log('No frontend logo found at', frontendLogo);
     }
   } catch (e) {
-    console.warn('Failed to copy frontend logo to electron resources:', e.message || e);
+    console.warn('Failed to copy frontend logo to electron resources/assets and electron/assets:', e.message || e);
   }
 }
 
