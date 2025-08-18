@@ -195,10 +195,11 @@
                         <th class="col-qtd">Qtd</th>
                         <th class="col-metodo">Pagamentos</th>
                         <th class="col-total">Total</th>
+                        <th class="col-acoes">Ações</th>
                     </tr>
                 </thead>
                 <tbody>
-                    @for (venda of vendasFiltradas; track venda.id; let i = $index) {<tr class="venda-row">
+                    @for (venda of vendasFiltradas; track venda.row_id; let i = $index) {<tr class="venda-row">
                         <td class="venda-numero">{{ vendasFiltradas.length - i }}</td>
                         <td class="venda-data">
                             <span class="data-hora-inline">
@@ -219,11 +220,11 @@
                         </td>
                         <td class="valor-total">R$ {{ venda.preco_total.toFixed(2) }}</td>
                         <td class="acoes">
-                            <button *ngIf="(venda.itens && venda.itens.length > 1) || (venda.quantidade_vendida && venda.quantidade_vendida > 1)" type="button" (click)="toggleExpand(venda.id)" class="btn-expand" [class.rotated]="expandedRows.has(venda.id)" [attr.aria-expanded]="expandedRows.has(venda.id)" title="Expandir venda">🔽</button>
+                            <button *ngIf="venda.itens && venda.itens.length > 1" type="button" (click)="toggleExpand(venda.row_id)" class="btn-expand" [class.rotated]="expandedRows.has(venda.row_id)" [attr.aria-expanded]="expandedRows.has(venda.row_id)" title="Expandir venda">🔽</button>
                         </td>
-                    </tr>}
+                    </tr>
 
-                    @for (venda of vendasFiltradas; track venda.id; let j = $index) {<tr *ngIf="venda.itens && expandedRows.has(venda.id)" class="venda-itens-row"><td colspan="7">
+                    <tr *ngIf="venda.itens && expandedRows.has(venda.row_id)" class="venda-itens-row"><td colspan="7">
                         <div class="itens-lista">
                             <table class="itens-tabela">
                                 <thead><tr><th>Produto</th><th>Qtd</th><th>Preço unit.</th><th>Preço total</th></tr></thead>

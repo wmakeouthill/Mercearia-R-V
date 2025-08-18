@@ -23,7 +23,7 @@ export class RelatorioVendasComponent implements OnInit {
   private vendasLegado: Venda[] = [];
   private vendasCheckout: Venda[] = [];
   vendasFiltradas: any[] = [];
-  expandedRows = new Set<number>();
+  expandedRows = new Set<string>();
   relatorioDiario: RelatorioVendas[] = [];
   relatorioMensal: RelatorioVendas[] = [];
   resumoDia?: RelatorioResumo;
@@ -54,7 +54,8 @@ export class RelatorioVendasComponent implements OnInit {
   ngOnInit(): void {
     logger.info('RELATORIO_VENDAS', 'INIT', 'Componente iniciado');
     this.isAdmin = this.authService.isAdmin();
-    this.filtroData = this.getDataAtual();
+    // por padrão não filtrar por data para mostrar todas as vendas
+    this.filtroData = '';
     this.loadVendas();
     this.loadResumos();
   }
@@ -88,6 +89,11 @@ export class RelatorioVendasComponent implements OnInit {
     }).subscribe(({ legado, checkout }) => {
       // Legado
       const legacyArr = Array.isArray(legado) ? legado : [];
+      // ensure unique row id for legacy entries
+      legacyArr.forEach((row: any, idx: number) => {
+        row._isCheckout = false;
+        row.row_id = `legacy-${row.id ?? idx}`;
+      });
       this.vendasLegado = [...legacyArr].sort((a, b) => {
         const timeDiff = (parseDate(b.data_venda).getTime() - parseDate(a.data_venda).getTime());
         if (timeDiff !== 0) return timeDiff;
@@ -100,6 +106,7 @@ export class RelatorioVendasComponent implements OnInit {
       logger.info('RELATORIO_VENDAS', 'LOAD_CHECKOUT_RAW', 'Payload de checkout recebido', {
         numOrdens: vendasCompletas.length
       });
+      let rowCounter = 0;
       for (const v of vendasCompletas) {
         const data = v.data_venda;
         const pagamentos: Array<{ metodo: MetodoPagamento; valor: number }> = (v.pagamentos || []);
@@ -133,6 +140,8 @@ export class RelatorioVendasComponent implements OnInit {
         } as any;
         (linha as any).itens = itens;
         (linha as any).metodos_multi = Array.from(metodosSet);
+        (linha as any).row_id = `checkout-${v.id}-${rowCounter++}`;
+        (linha as any)._isCheckout = true;
         linhas.push(linha);
 
         logger.info('RELATORIO_VENDAS', 'MAP_CHECKOUT_ORDEM', 'Ordem mapeada', {
@@ -173,21 +182,21 @@ export class RelatorioVendasComponent implements OnInit {
     this.vendasFiltradas = this.computeVendasFiltradas();
     // Debug: log sample vendasFiltradas to verify itens presence for expand button
     try {
-      logger.debug('RELATORIO_VENDAS', 'POST_MERGE_SAMPLE', 'Sample vendasFiltradas itens lengths', this.vendasFiltradas.slice(0, 20).map(v => ({ id: v.id, itensLen: Array.isArray((v as any).itens) ? (v as any).itens.length : 0 })));
+      logger.debug('RELATORIO_VENDAS', 'POST_MERGE_SAMPLE', 'Sample vendasFiltradas', this.vendasFiltradas.slice(0, 50).map(v => ({ id: v.id, row_id: (v as any).row_id, itensLen: Array.isArray((v as any).itens) ? (v as any).itens.length : 0, metodos_multi: Array.isArray((v as any).metodos_multi) ? (v as any).metodos_multi.length : 0 })));
     } catch (e) { console.debug('RELATORIO_VENDAS: failed to log sample', e); }
     this.calcularEstatisticas(this.vendasFiltradas);
     this.gerarRelatorios(this.vendasFiltradas);
   }
 
-  toggleExpand(id: number): void {
-    logger.debug('RELATORIO_VENDAS', 'TOGGLE_EXPAND', 'toggleExpand called', { id, before: Array.from(this.expandedRows) });
-    if (!id) return;
-    if (this.expandedRows.has(id)) {
-      this.expandedRows.delete(id);
+  toggleExpand(rowId: string): void {
+    logger.debug('RELATORIO_VENDAS', 'TOGGLE_EXPAND', 'toggleExpand called', { rowId, before: Array.from(this.expandedRows) });
+    if (!rowId) return;
+    if (this.expandedRows.has(rowId)) {
+      this.expandedRows.delete(rowId);
     } else {
-      this.expandedRows.add(id);
+      this.expandedRows.add(rowId);
     }
-    logger.debug('RELATORIO_VENDAS', 'TOGGLE_EXPAND', 'toggleExpand updated', { id, after: Array.from(this.expandedRows) });
+    logger.debug('RELATORIO_VENDAS', 'TOGGLE_EXPAND', 'toggleExpand updated', { rowId, after: Array.from(this.expandedRows) });
   }
 
   calcularEstatisticas(vendasFiltradas?: Venda[]): void {

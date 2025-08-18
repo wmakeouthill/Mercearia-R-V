@@ -492,6 +492,8 @@
         width: 12%;
     }
 
+    .col-acoes { width: 5%; }
+
     th {
         background: linear-gradient(135deg, var(--primary-blue) 0%, var(--secondary-blue) 100%);
         color: var(--white);
@@ -508,7 +510,8 @@
         &.col-data-hora,
         &.col-qtd,
         &.col-metodo,
-        &.col-total {
+        &.col-total,
+        &.col-acoes {
             text-align: center;
         }
     }
@@ -582,6 +585,10 @@
         font-weight: 700;
         color: var(--success);
         font-size: 0.9rem;
+    }
+
+    .acoes {
+        text-align: center;
     }
 }
 
@@ -824,3 +831,4 @@
 @keyframes fadeInUp { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
 .itens-tabela { width: 100%; border-collapse: collapse; }
 .itens-tabela th, .itens-tabela td { padding: 6px 8px; border-bottom: 1px solid rgba(0,0,0,0.06); font-size: 0.9rem; }
+.itens-tabela .produto-thumb-inline { width: 28px; height: 28px; border-radius: 6px; object-fit: cover; margin-right: 8px; }
