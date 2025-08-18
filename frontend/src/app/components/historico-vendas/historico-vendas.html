@@ -151,7 +151,10 @@
                                 <thead><tr><th>Produto</th><th>Qtd</th><th>Preço unit.</th><th>Preço total</th></tr></thead>
                                 <tbody>
                                     @for (it of venda.itens; track it.produto_id) {<tr>
-                                        <td>{{ it.produto_nome || it.produtoNome }}</td>
+                                        <td class="produto-info">
+                                            <img class="produto-thumb-inline" [src]="getImageUrl(it.produto_imagem || it.produtoImagem)" [alt]="it.produto_nome || it.produtoNome || 'Produto'" (error)="onImageError($event)">
+                                            <span>{{ it.produto_nome || it.produtoNome }}</span>
+                                        </td>
                                         <td>{{ it.quantidade || it.quantidade_vendida }}</td>
                                         <td>R$ {{ (it.preco_unitario || it.precoUnitario || 0).toFixed(2) }}</td>
                                         <td>R$ {{ (it.preco_total || it.precoTotal || 0).toFixed(2) }}</td>
