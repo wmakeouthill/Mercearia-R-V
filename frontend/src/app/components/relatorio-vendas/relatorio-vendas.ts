@@ -171,14 +171,23 @@ export class RelatorioVendasComponent implements OnInit {
       return (b.id || 0) - (a.id || 0);
     });
     this.vendasFiltradas = this.computeVendasFiltradas();
+    // Debug: log sample vendasFiltradas to verify itens presence for expand button
+    try {
+      logger.debug('RELATORIO_VENDAS', 'POST_MERGE_SAMPLE', 'Sample vendasFiltradas itens lengths', this.vendasFiltradas.slice(0, 20).map(v => ({ id: v.id, itensLen: Array.isArray((v as any).itens) ? (v as any).itens.length : 0 })));
+    } catch (e) { console.debug('RELATORIO_VENDAS: failed to log sample', e); }
     this.calcularEstatisticas(this.vendasFiltradas);
     this.gerarRelatorios(this.vendasFiltradas);
   }
 
   toggleExpand(id: number): void {
+    logger.debug('RELATORIO_VENDAS', 'TOGGLE_EXPAND', 'toggleExpand called', { id, before: Array.from(this.expandedRows) });
     if (!id) return;
-    if (this.expandedRows.has(id)) this.expandedRows.delete(id);
-    else this.expandedRows.add(id);
+    if (this.expandedRows.has(id)) {
+      this.expandedRows.delete(id);
+    } else {
+      this.expandedRows.add(id);
+    }
+    logger.debug('RELATORIO_VENDAS', 'TOGGLE_EXPAND', 'toggleExpand updated', { id, after: Array.from(this.expandedRows) });
   }
 
   calcularEstatisticas(vendasFiltradas?: Venda[]): void {

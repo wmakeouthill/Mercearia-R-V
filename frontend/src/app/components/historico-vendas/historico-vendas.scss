@@ -766,3 +766,10 @@
     border-bottom: 1px solid rgba(0,0,0,0.06);
     font-size: 0.85rem;
 }
+.itens-tabela .produto-thumb-inline {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    object-fit: cover;
+    margin-right: 8px;
+}

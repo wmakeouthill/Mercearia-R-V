@@ -219,7 +219,7 @@
                         </td>
                         <td class="valor-total">R$ {{ venda.preco_total.toFixed(2) }}</td>
                         <td class="acoes">
-                            <button *ngIf="venda.itens && venda.itens.length > 1" type="button" (click)="toggleExpand(venda.id)" class="btn-expand" [class.rotated]="expandedRows.has(venda.id)" [attr.aria-expanded]="expandedRows.has(venda.id)" title="Expandir venda">🔽</button>
+                            <button *ngIf="(venda.itens && venda.itens.length > 1) || (venda.quantidade_vendida && venda.quantidade_vendida > 1)" type="button" (click)="toggleExpand(venda.id)" class="btn-expand" [class.rotated]="expandedRows.has(venda.id)" [attr.aria-expanded]="expandedRows.has(venda.id)" title="Expandir venda">🔽</button>
                         </td>
                     </tr>}
 
