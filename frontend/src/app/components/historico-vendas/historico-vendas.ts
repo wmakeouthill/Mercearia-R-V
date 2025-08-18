@@ -22,7 +22,8 @@ export class HistoricoVendasComponent implements OnInit {
   vendas: Venda[] = [];
   private vendasLegado: Venda[] = [];
   private vendasCheckout: Venda[] = [];
-  vendasFiltradas: Venda[] = [];
+  vendasFiltradas: any[] = [];
+  expandedRows = new Set<string>();
   dataFiltro = '';
   produtoFiltro = '';
   metodoPagamentoFiltro = '';
@@ -71,7 +72,7 @@ export class HistoricoVendasComponent implements OnInit {
         return (b.id || 0) - (a.id || 0);
       });
 
-      // Checkout -> linhas por item com resumo de pagamentos
+      // Checkout -> uma linha por ordem (agregada) com resumo de pagamentos
       const linhas: Venda[] = [];
       const vendasCompletas = Array.isArray(checkout) ? checkout : [];
       let rowCounter = 0;
@@ -80,31 +81,43 @@ export class HistoricoVendasComponent implements OnInit {
         const pagamentos: Array<{ metodo: MetodoPagamento; valor: number }> = (v.pagamentos || []);
         const metodoResumo = this.buildPagamentoResumo(pagamentos);
         const metodosSet = new Set<MetodoPagamento>();
-        for (const p of pagamentos) metodosSet.add(p.metodo);
-        const multiCount = pagamentos.length;
+        for (const p of pagamentos) if (p?.metodo) metodosSet.add(p.metodo);
         const itens = v.itens || [];
-        for (const it of itens) {
-          const linha: Venda = {
-            id: v.id,
-            produto_id: it.produto_id,
-            quantidade_vendida: it.quantidade,
-            preco_total: it.preco_total,
-            data_venda: data,
-            metodo_pagamento: 'dinheiro',
-            produto_nome: it.produto_nome,
-            produto_imagem: it.produto_imagem,
-            pagamentos_resumo: metodoResumo,
-          } as any;
-          (linha as any).metodos_multi = Array.from(metodosSet);
-          // mark as checkout-derived and assign a unique row id to avoid duplicate track keys
-          (linha as any)._isCheckout = true;
-          (linha as any).row_id = `checkout-${v.id}-${it.produto_id}-${rowCounter++}`;
-          linhas.push(linha);
+
+        // agregar quantidade e total
+        const totalQuantidade = Array.isArray(itens) ? itens.reduce((s: number, it: any) => s + (Number(it.quantidade) || 0), 0) : 0;
+        let totalValor = (v.total_final ?? v.totalFinal ?? v.totalFinal ?? 0) as number;
+        if (!totalValor || totalValor === 0) {
+          totalValor = Array.isArray(itens) ? itens.reduce((s: number, it: any) => s + (Number(it.preco_total || it.precoTotal) || 0), 0) : 0;
         }
+
+        const produtoNome = Array.isArray(itens) && itens.length > 0
+          ? itens.map((it: any) => it.produto_nome || it.produtoNome || '').join(', ')
+          : (`Pedido #${v.id} (${itens.length} itens)`);
+
+        const produtoImagem = Array.isArray(itens) && itens.length > 0 ? itens[0].produto_imagem : null;
+
+        const linha: Venda = {
+          id: v.id,
+          produto_id: v.id,
+          quantidade_vendida: totalQuantidade,
+          preco_total: totalValor,
+          data_venda: data,
+          metodo_pagamento: 'dinheiro',
+          produto_nome: produtoNome,
+          produto_imagem: produtoImagem,
+          pagamentos_resumo: metodoResumo,
+        } as any;
+        (linha as any).itens = itens;
+        (linha as any).metodos_multi = Array.from(metodosSet);
+        (linha as any)._isCheckout = true;
+        (linha as any).row_id = `checkout-${v.id}-${rowCounter++}`;
+        linhas.push(linha);
+
         logger.info('HISTORICO_VENDAS', 'MAP_CHECKOUT_ORDEM', 'Ordem mapeada', {
           ordemId: v.id,
           itens: itens.length,
-          pagamentos: multiCount,
+          pagamentos: pagamentos.length,
           resumo: metodoResumo
         });
       }
@@ -146,6 +159,12 @@ export class HistoricoVendasComponent implements OnInit {
     this.filterVendas();
   }
 
+  toggleExpand(rowId: string): void {
+    if (!rowId) return;
+    if (this.expandedRows.has(rowId)) this.expandedRows.delete(rowId);
+    else this.expandedRows.add(rowId);
+  }
+
   filterVendas(): void {
     // Garantir que vendas sempre seja um array válido
     if (!Array.isArray(this.vendas)) {
@@ -171,11 +190,13 @@ export class HistoricoVendasComponent implements OnInit {
         }
       }
 
-      // Filtro por produto
+      // Filtro por produto (suporta vendas agregadas de checkout com vários itens)
       if (this.produtoFiltro?.trim()) {
-        const produtoNome = (venda.produto_nome || '').toLowerCase();
         const termoBusca = this.produtoFiltro.toLowerCase().trim();
-        matchProduto = produtoNome.includes(termoBusca);
+        const produtoNomePrincipal = (venda.produto_nome || '').toLowerCase();
+        const itensArr = (venda as any).itens || [];
+        const itensConcat = Array.isArray(itensArr) ? itensArr.map((it: any) => (it.produto_nome || it.produtoNome || '')).join(' ').toLowerCase() : '';
+        matchProduto = produtoNomePrincipal.includes(termoBusca) || itensConcat.includes(termoBusca);
       }
 
       // Filtro por método de pagamento (suporta múltiplos métodos nas vendas do checkout)
@@ -350,7 +371,7 @@ export class HistoricoVendasComponent implements OnInit {
     this.router.navigate(['/dashboard']);
   }
 
-  getImageUrl(imageName: string | null | undefined): string {
+  getImageUrl(imageName: any): string {
     return this.imageService.getImageUrl(imageName);
   }
 

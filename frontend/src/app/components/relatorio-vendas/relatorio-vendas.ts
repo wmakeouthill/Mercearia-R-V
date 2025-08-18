@@ -22,7 +22,8 @@ export class RelatorioVendasComponent implements OnInit {
   vendas: Venda[] = [];
   private vendasLegado: Venda[] = [];
   private vendasCheckout: Venda[] = [];
-  vendasFiltradas: Venda[] = [];
+  vendasFiltradas: any[] = [];
+  expandedRows = new Set<number>();
   relatorioDiario: RelatorioVendas[] = [];
   relatorioMensal: RelatorioVendas[] = [];
   resumoDia?: RelatorioResumo;
@@ -93,7 +94,7 @@ export class RelatorioVendasComponent implements OnInit {
         return (b.id || 0) - (a.id || 0);
       });
 
-      // Checkout -> itens explodidos
+      // Checkout -> uma linha por ordem (agregada)
       const linhas: Venda[] = [];
       const vendasCompletas = Array.isArray(checkout) ? checkout : [];
       logger.info('RELATORIO_VENDAS', 'LOAD_CHECKOUT_RAW', 'Payload de checkout recebido', {
@@ -105,27 +106,39 @@ export class RelatorioVendasComponent implements OnInit {
         const itens = v.itens || [];
         const metodoResumo = this.buildPagamentoResumo(pagamentos);
         const metodosSet = new Set<MetodoPagamento>();
-        for (const p of pagamentos) metodosSet.add(p.metodo);
-        const multiCount = pagamentos.length;
-        for (const it of itens) {
-          const linha: Venda = {
-            id: v.id,
-            produto_id: it.produto_id,
-            quantidade_vendida: it.quantidade,
-            preco_total: it.preco_total,
-            data_venda: data,
-            metodo_pagamento: 'dinheiro',
-            produto_nome: it.produto_nome,
-            produto_imagem: it.produto_imagem,
-            pagamentos_resumo: metodoResumo,
-          } as any;
-          (linha as any).metodos_multi = Array.from(metodosSet);
-          linhas.push(linha);
+        for (const p of pagamentos) if (p?.metodo) metodosSet.add(p.metodo);
+
+        const totalQuantidade = Array.isArray(itens) ? itens.reduce((s: number, it: any) => s + (Number(it.quantidade) || 0), 0) : 0;
+        let totalValor = (v.total_final ?? v.totalFinal ?? 0) as number;
+        if (!totalValor || totalValor === 0) {
+          totalValor = Array.isArray(itens) ? itens.reduce((s: number, it: any) => s + (Number(it.preco_total || it.precoTotal) || 0), 0) : 0;
         }
+
+        const produtoNome = Array.isArray(itens) && itens.length > 0
+          ? itens.map((it: any) => it.produto_nome || it.produtoNome || '').join(', ')
+          : (`Pedido #${v.id} (${itens.length} itens)`);
+
+        const produtoImagem = Array.isArray(itens) && itens.length > 0 ? itens[0].produto_imagem : null;
+
+        const linha: Venda = {
+          id: v.id,
+          produto_id: v.id,
+          quantidade_vendida: totalQuantidade,
+          preco_total: totalValor,
+          data_venda: data,
+          metodo_pagamento: 'dinheiro',
+          produto_nome: produtoNome,
+          produto_imagem: produtoImagem,
+          pagamentos_resumo: metodoResumo,
+        } as any;
+        (linha as any).itens = itens;
+        (linha as any).metodos_multi = Array.from(metodosSet);
+        linhas.push(linha);
+
         logger.info('RELATORIO_VENDAS', 'MAP_CHECKOUT_ORDEM', 'Ordem mapeada', {
           ordemId: v.id,
           itens: itens.length,
-          pagamentos: multiCount,
+          pagamentos: pagamentos.length,
           resumo: metodoResumo
         });
       }
@@ -160,6 +173,12 @@ export class RelatorioVendasComponent implements OnInit {
     this.vendasFiltradas = this.computeVendasFiltradas();
     this.calcularEstatisticas(this.vendasFiltradas);
     this.gerarRelatorios(this.vendasFiltradas);
+  }
+
+  toggleExpand(id: number): void {
+    if (!id) return;
+    if (this.expandedRows.has(id)) this.expandedRows.delete(id);
+    else this.expandedRows.add(id);
   }
 
   calcularEstatisticas(vendasFiltradas?: Venda[]): void {

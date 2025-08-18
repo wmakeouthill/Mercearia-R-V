@@ -5,8 +5,8 @@ import { ApiService } from '../../services/api';
 import { AuthService } from '../../services/auth';
 import { ImageService } from '../../services/image.service';
 import { logger } from '../../utils/logger';
-import { Venda, MetodoPagamento } from '../../models';
-import { extractLocalDate, formatDateBR, parseDate } from '../../utils/date-utils';
+import { MetodoPagamento } from '../../models';
+import { formatDateBR, parseDate } from '../../utils/date-utils';
 
 @Component({
     selector: 'app-historico-deletados',
@@ -20,6 +20,7 @@ export class HistoricoDeletadosComponent implements OnInit {
     error = '';
     deletions: any[] = [];
     vendasFiltradas: any[] = [];
+    expandedRows = new Set<string>();
 
     constructor(
         private readonly apiService: ApiService,
@@ -58,33 +59,52 @@ export class HistoricoDeletadosComponent implements OnInit {
             const saleType = d.saleType || 'legacy';
             let payload: any = null;
             try { payload = JSON.parse(d.payload); } catch { payload = d.payload; }
-
             if (saleType === 'checkout' && payload && Array.isArray(payload.itens)) {
                 const pagamentos = Array.isArray(payload.pagamentos) ? payload.pagamentos : [];
                 const metodoResumo = this.buildPagamentoResumo(pagamentos.map((p: any) => ({ metodo: p.metodo, valor: p.valor })));
                 const metodosSet = new Set<MetodoPagamento>();
                 for (const p of pagamentos) if (p?.metodo) metodosSet.add(p.metodo);
 
-                for (const it of payload.itens) {
-                    const linha: Venda = {
-                        id: payload.id || d.saleId,
-                        produto_id: it.produto_id || it.produtoId || 0,
-                        quantidade_vendida: it.quantidade || it.quantidade || 0,
-                        preco_total: it.preco_total || it.preco_total || 0,
-                        data_venda: payload.data_venda || payload.dataVenda || '',
-                        metodo_pagamento: 'dinheiro',
-                        produto_nome: it.produto_nome || it.produto_nome || ('Produto #' + (it.produto_id || it.produtoId || '')),
-                        produto_imagem: it.produto_imagem || it.produto_imagem || null,
-                        pagamentos_resumo: metodoResumo
-                    } as any;
-                    (linha as any).metodos_multi = Array.from(metodosSet);
-                    (linha as any)._isCheckout = true;
-                    (linha as any).row_id = `deleted-checkout-${payload.id || d.saleId}-${it.produto_id || it.produtoId}-${rowCounter++}`;
-                    (linha as any)._deletionId = d.id;
-                    rows.push(linha);
+                const itens = payload.itens || [];
+                const totalQuantidade = Array.isArray(itens) ? itens.reduce((s: number, it: any) => s + (Number(it.quantidade) || 0), 0) : 0;
+                let totalValor = Number(payload.total_final ?? payload.totalFinal ?? payload.total ?? 0) || 0;
+                if (!totalValor) {
+                    totalValor = Array.isArray(itens) ? itens.reduce((s: number, it: any) => s + (Number(it.preco_total || it.precoTotal) || 0), 0) : 0;
                 }
+
+                const produtoNome = Array.isArray(itens) && itens.length > 0
+                    ? itens.map((it: any) => it.produto_nome || it.produtoNome || '').join(', ')
+                    : (`Pedido #${payload.id || d.saleId}`);
+
+                const linha: any = {
+                    id: payload.id || d.saleId,
+                    produto_id: payload.id || d.saleId,
+                    quantidade_vendida: totalQuantidade,
+                    preco_total: totalValor,
+                    data_venda: payload.data_venda || payload.dataVenda || '',
+                    metodo_pagamento: 'dinheiro',
+                    produto_nome: produtoNome,
+                    produto_imagem: (itens[0] && (itens[0].produto_imagem || itens[0].produtoImagem)) || null,
+                    pagamentos_resumo: metodoResumo,
+                };
+                (linha as any).itens = itens;
+                (linha as any).metodos_multi = Array.from(metodosSet);
+                (linha as any)._isCheckout = true;
+                (linha as any).row_id = `deleted-checkout-${payload.id || d.saleId}-${rowCounter++}`;
+                (linha as any)._deletionId = d.id;
+                rows.push(linha);
             } else if (payload) {
-                const linha: Venda = {
+                // legacy single sale -> wrap into itens array for expand
+                const itens = [{
+                    produto_id: payload.produto_id || payload.produtoId || 0,
+                    produto_nome: payload.produto_nome || payload.produtoNome || '',
+                    quantidade: payload.quantidade_vendida || payload.quantidade || 0,
+                    preco_unitario: payload.preco_unitario || payload.precoUnitario || 0,
+                    preco_total: payload.preco_total || payload.precoTotal || 0,
+                    produto_imagem: payload.produto_imagem || payload.produtoImagem || null
+                }];
+
+                const linha: any = {
                     id: payload.id || d.saleId,
                     produto_id: payload.produto_id || payload.produtoId || 0,
                     quantidade_vendida: payload.quantidade_vendida || payload.quantidade || 0,
@@ -93,7 +113,8 @@ export class HistoricoDeletadosComponent implements OnInit {
                     metodo_pagamento: payload.metodo_pagamento || payload.metodoPagamento || 'dinheiro',
                     produto_nome: payload.produto_nome || payload.produtoNome || ('Produto #' + (payload.produto_id || payload.produtoId || '')),
                     produto_imagem: payload.produto_imagem || payload.produtoImagem || null,
-                } as any;
+                };
+                (linha as any).itens = itens;
                 (linha as any)._isCheckout = false;
                 (linha as any).row_id = `deleted-legacy-${linha.id}-${rowCounter++}`;
                 (linha as any)._deletionId = d.id;
@@ -195,6 +216,12 @@ export class HistoricoDeletadosComponent implements OnInit {
                 this.loading = false;
             }
         });
+    }
+
+    toggleExpand(rowId: string): void {
+        if (!rowId) return;
+        if (this.expandedRows.has(rowId)) this.expandedRows.delete(rowId);
+        else this.expandedRows.add(rowId);
     }
 }
 

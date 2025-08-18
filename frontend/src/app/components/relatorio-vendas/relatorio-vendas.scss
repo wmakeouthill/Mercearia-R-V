@@ -805,3 +805,22 @@
     object-fit: cover;
     border-radius: 6px;
 }
+
+/* Expand button and row animations (relatorio) */
+.btn-expand {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 1.05rem;
+    padding: 6px 8px;
+    border-radius: 6px;
+    transition: transform 220ms ease, color 180ms ease;
+    color: var(--primary-blue);
+}
+.btn-expand:hover { transform: scale(1.05); }
+.btn-expand.rotated { transform: rotate(180deg); }
+
+.venda-itens-row .itens-lista { animation: fadeInUp 180ms ease; }
+@keyframes fadeInUp { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+.itens-tabela { width: 100%; border-collapse: collapse; }
+.itens-tabela th, .itens-tabela td { padding: 6px 8px; border-bottom: 1px solid rgba(0,0,0,0.06); font-size: 0.9rem; }
