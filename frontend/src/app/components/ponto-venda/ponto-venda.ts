@@ -76,7 +76,38 @@ export class PontoVendaComponent implements OnInit, OnDestroy {
 
   isPagamentoValido(): boolean {
     const total = this.getTotalCarrinho();
-    return Math.abs(this.getTotalPagamentos() - total) < 0.01 && this.pagamentos.length > 0;
+    // Comparação em centavos (tolerância zero) para exigir igualdade exata em centavos
+    const diferencaCentavos = Math.round((this.getTotalPagamentos() - total) * 100);
+    return diferencaCentavos === 0 && this.pagamentos.length > 0;
+  }
+
+  /** Retorna quanto falta para cobrir o total (em reais), arredondado a centavos */
+  getFaltaTotal(): number {
+    const total = this.getTotalCarrinho();
+    const faltaCentavos = Math.round((total - this.getTotalPagamentos()) * 100);
+    return faltaCentavos > 0 ? faltaCentavos / 100 : 0;
+  }
+
+  /**
+   * Indica se o usuário pode finalizar a venda.
+   * Regras:
+   * - Deve haver itens no carrinho
+   * - Total do carrinho deve ser maior que zero
+   * - Se houver pagamentos detalhados, a soma deve ser igual ao total
+   * - Se não houver pagamentos detalhados, deve existir um método de pagamento selecionado
+   */
+  get podeFinalizar(): boolean {
+    const total = this.getTotalCarrinho();
+    if (this.carrinho.length === 0) return false;
+    if (total <= 0) return false;
+
+    // Exige que haja ao menos um pagamento (pode ser único) e que a soma bata com o total
+    if (this.pagamentos.length > 0) {
+      return this.isPagamentoValido();
+    }
+
+    // Sem pagamentos explícitos, não permite finalizar — exige que o operador adicione um pagamento
+    return false;
   }
 
   private readonly searchSubject = new Subject<string>();
@@ -366,6 +397,11 @@ export class PontoVendaComponent implements OnInit, OnDestroy {
 
     if (this.carrinho.length === 0) {
       this.error = 'Carrinho vazio';
+      return;
+    }
+
+    if (!this.podeFinalizar) {
+      this.error = 'Defina o(s) pagamento(s) com valor igual ao total antes de finalizar a venda';
       return;
     }
 

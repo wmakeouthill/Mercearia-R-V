@@ -949,6 +949,15 @@
             color: var(--primary-blue);
         }
     }
+    .total-falta {
+        margin-top: 6px;
+        color: var(--danger);
+        font-weight: 600;
+        font-size: 0.95rem;
+        display: flex;
+        justify-content: flex-start;
+        gap: 8px;
+    }
 }
 
 .carrinho-acoes-principais {

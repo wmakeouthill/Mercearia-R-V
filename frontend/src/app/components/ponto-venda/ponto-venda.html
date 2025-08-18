@@ -158,6 +158,10 @@
                         <span><strong>Total:</strong></span>
                         <span><strong>R$ {{ getTotalCarrinho().toFixed(2) }}</strong></span>
                     </div>
+                    @if (pagamentos.length >= 2 && getFaltaTotal() > 0) {<div class="total-falta">
+                        <span>Falta:</span>
+                        <span>R$ {{ getFaltaTotal().toFixed(2) }}</span>
+                    </div>}
                 </div>
 
                 <!-- Pagamentos -->
@@ -189,7 +193,11 @@
                     <button (click)="limparCarrinho()" class="btn-limpar">
                         🗑️ Limpar Carrinho
                     </button>
-                    <button (click)="finalizarVenda()" [disabled]="loading" class="btn-finalizar">
+                    <button (click)="finalizarVenda()"
+                            [disabled]="loading || !podeFinalizar"
+                            class="btn-finalizar"
+                            [class.bloqueado]="!podeFinalizar"
+                            [title]="!podeFinalizar ? 'Defina o método/valor do pagamento antes de finalizar' : ''">
                         @if (loading) {<span>⏳ Finalizando...</span>} @else {<span>💳 Finalizar Venda</span>}
                     </button>
                 </div>
