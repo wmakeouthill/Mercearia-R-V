@@ -9,6 +9,41 @@
   margin: 0 0 12px 0;
 }
 
+.historico-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding: 12px 0;
+}
+
+.historico-header .header-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* reuse visual style for voltar button from historico-vendas */
+.historico-deletados-container .btn-voltar {
+  background: linear-gradient(135deg, #DBC27D 0%, #D1B867 100%);
+  color: var(--primary-blue);
+  border: none;
+  padding: 10px 18px;
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: 0.95rem;
+  font-weight: 700;
+  transition: all 0.3s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  box-shadow: 0 4px 12px rgba(219, 194, 125, 0.3);
+}
+
+.historico-deletados-container .btn-voltar:hover {
+  background: linear-gradient(135deg, #D1B867 0%, #C9AA55 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(219, 194, 125, 0.45);
+}
+
 .tabela-deletions {
   width: 100%;
   border-collapse: collapse;
