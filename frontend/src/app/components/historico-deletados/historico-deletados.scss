@@ -31,4 +31,31 @@
 
 .loading, .vazio { color: var(--dark-gray); padding: 12px 0; }
 
+/* Match product thumbnail styling from historico-vendas */
+.tabela-vendas .produto-thumb-inline,
+.tabela-deletions .produto-thumb-inline {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: #f2f2f2;
+  border: 1px solid rgba(0,0,0,0.06);
+  flex-shrink: 0;
+}
+
+.tabela-vendas .produto-nome,
+.tabela-deletions .produto-nome {
+  color: var(--dark-gray);
+  font-weight: 500;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tabela-vendas .produto-info {
+  display: flex;
+  align-items: center;
+}
+
 
