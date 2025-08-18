@@ -28,6 +28,7 @@ public class SaleController {
     private final ProductRepository productRepository;
     private final SaleReportService saleReportService;
     private final SaleDeletionRepository saleDeletionRepository;
+    private final ObjectMapper objectMapper;
 
     private static final String KEY_ERROR = "error";
     private static final String KEY_MESSAGE = "message";
@@ -116,17 +117,10 @@ public class SaleController {
         payload.put("metodo_pagamento", venda.getMetodoPagamento());
         payload.put("produto_nome", venda.getProduto().getNome());
 
-        // restore stock
-        Product produto = venda.getProduto();
-        produto.setQuantidadeEstoque(produto.getQuantidadeEstoque() + venda.getQuantidadeVendida());
-        productRepository.save(produto);
-
-        saleRepository.deleteById(id);
-
-        // record deletion audit
+        // record deletion audit BEFORE deleting to ensure audit exists; keep within
+        // transaction so rollback will undo delete if audit fails
         try {
-            ObjectMapper om = new ObjectMapper();
-            String payloadJson = om.writeValueAsString(payload);
+            String payloadJson = objectMapper.writeValueAsString(payload);
             String deletedBy = null;
             Authentication auth = SecurityContextHolder.getContext().getAuthentication();
             if (auth != null)
@@ -138,13 +132,19 @@ public class SaleController {
                     .deletedBy(deletedBy)
                     .deletedAt(OffsetDateTime.now())
                     .build();
-            saleDeletionRepository.save(sd);
-            log.info("SALE_DELETION", "AUDIT_SAVED", "SaleDeletion saved",
-                    java.util.Map.of("saleDeletionId", sd.getId(), "saleId", sd.getSaleId()));
+            saleDeletionRepository.saveAndFlush(sd);
+            log.info("SALE_DELETION AUDIT_SAVED saleDeletionId={} saleId={}", sd.getId(), sd.getSaleId());
         } catch (Exception e) {
-            // do not fail deletion if audit fails; just log
-            log.warn("Failed to record sale deletion audit: {}", e.getMessage());
+            // if audit fails, abort (transactional) so delete won't happen
+            log.error("Audit save failed, aborting delete: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to record sale deletion audit", e);
         }
+
+        // restore stock and delete sale
+        Product produto = venda.getProduto();
+        produto.setQuantidadeEstoque(produto.getQuantidadeEstoque() + venda.getQuantidadeVendida());
+        productRepository.save(produto);
+        saleRepository.deleteById(id);
 
         return ResponseEntity.ok(Map.of(KEY_MESSAGE, "Venda deletada com sucesso"));
     }

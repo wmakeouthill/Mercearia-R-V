@@ -9,6 +9,8 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.Map;
 import java.util.Collections;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 
 @RestController
 @RequestMapping("/api/audit")
@@ -39,6 +41,20 @@ public class AuditController {
             // log and return empty list
             log.warn("Failed to load audit sales: {}", e.getMessage());
             return ResponseEntity.ok(Collections.emptyList());
+        }
+    }
+
+    // Debug endpoint (admins) to get count and recent raw entries to aid
+    // troubleshooting
+    @GetMapping("/debug")
+    public ResponseEntity<Map<String, Object>> debugAudit() {
+        try {
+            long count = saleDeletionRepository.count();
+            var page = saleDeletionRepository.findAll(PageRequest.of(0, 10, Sort.by(Sort.Direction.DESC, "deletedAt")));
+            return ResponseEntity.ok(Map.of("count", count, "recent", page.getContent()));
+        } catch (Exception e) {
+            log.warn("Failed to debug audit: {}", e.getMessage(), e);
+            return ResponseEntity.ok(Map.of("count", 0, "recent", List.of()));
         }
     }
 }

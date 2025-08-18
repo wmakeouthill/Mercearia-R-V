@@ -1,32 +1,44 @@
 <div class="historico-deletados-container">
   <div class="historico-header">
     <h1>🗄️ Auditoria de Vendas Deletadas</h1>
+    <div class="header-actions">
+      <button class="btn-voltar" (click)="voltarAoHistorico()">← Voltar ao Histórico</button>
+    </div>
   </div>
 
   <div *ngIf="loading" class="loading">Carregando auditoria...</div>
   <div *ngIf="error" class="error-message">{{ error }}</div>
 
-  <div *ngIf="!loading && deletions.length > 0" class="deletions-list">
-    <table class="tabela-deletions">
+  <div *ngIf="!loading && vendasFiltradas.length > 0" class="vendas-tabela">
+    <table class="tabela-vendas">
       <thead>
         <tr>
-          <th>ID</th>
-          <th>Sale ID</th>
-          <th>Tipo</th>
-          <th>Deletado por</th>
-          <th>Quando</th>
-          <th>Payload</th>
+          <th class="col-numero">Nº</th>
+          <th class="col-produto">Produto</th>
+          <th class="col-qtd">Qtd</th>
+          <th class="col-metodo">Pagamentos</th>
+          <th class="col-total">Total</th>
+          <th class="col-data">Data/Hora</th>
         </tr>
       </thead>
       <tbody>
-        <tr *ngFor="let d of deletions">
-          <td>{{ d.id }}</td>
-          <td>{{ d.saleId }}</td>
-          <td>{{ d.saleType }}</td>
-          <td>{{ d.deletedBy || '-' }}</td>
-          <td>{{ d.deletedAt }}</td>
-          <td><pre class="payload">{{ formatPayload(d.payload) }}</pre></td>
-        </tr>
+        @for (venda of vendasFiltradas; track venda.row_id; let i = $index) {<tr class="venda-row">
+          <td class="venda-numero">{{ vendasFiltradas.length - i }}</td>
+          <td class="produto-info">
+            <div class="produto-nome com-imagem">
+              <img class="produto-thumb-inline" [src]="getImageUrl(venda.produto_imagem)" [alt]="venda.produto_nome" (error)="onImageError($event)">
+              <span>{{ venda.produto_nome || 'Produto #' + venda.produto_id }}</span>
+            </div>
+          </td>
+          <td class="quantidade">{{ venda.quantidade_vendida }}</td>
+          <td class="metodo-pagamento">
+            @if (venda['pagamentos_resumo']) {<div class="pagamentos-resumo">
+              {{ venda['pagamentos_resumo'] }}
+            </div>} @else {<ng-template>{{ venda.metodo_pagamento }}</ng-template>}
+          </td>
+          <td class="valor-total">R$ {{ (venda.preco_total || 0).toFixed(2) }}</td>
+          <td class="venda-data"><span class="data-hora-inline">{{ formatarData(venda.data_venda) }}</span></td>
+        </tr>}
       </tbody>
     </table>
   </div>

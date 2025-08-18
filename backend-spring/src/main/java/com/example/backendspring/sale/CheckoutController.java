@@ -30,6 +30,7 @@ public class CheckoutController {
     private final SaleOrderRepository saleOrderRepository;
     private final ProductRepository productRepository;
     private final SaleDeletionRepository saleDeletionRepository;
+    private final ObjectMapper objectMapper;
 
     private static final String DEFAULT_PAGAMENTO = "dinheiro";
     private static final String KEY_ERROR = "error";
@@ -158,19 +159,10 @@ public class CheckoutController {
         // build response payload before deletion
         Map<String, Object> resp = buildResponse(venda);
 
-        // restaurar estoque para cada item da ordem
-        venda.getItens().forEach(it -> {
-            Product produto = it.getProduto();
-            produto.setQuantidadeEstoque(produto.getQuantidadeEstoque() + it.getQuantidade());
-            productRepository.save(produto);
-        });
-
-        saleOrderRepository.deleteById(id);
-
-        // record deletion audit
+        // record deletion audit BEFORE deleting to ensure audit exists; keep within
+        // transaction so rollback will undo delete if audit fails
         try {
-            ObjectMapper om = new ObjectMapper();
-            String payloadJson = om.writeValueAsString(resp);
+            String payloadJson = objectMapper.writeValueAsString(resp);
             String deletedBy = null;
             Authentication auth = SecurityContextHolder.getContext().getAuthentication();
             if (auth != null)
@@ -182,12 +174,21 @@ public class CheckoutController {
                     .deletedBy(deletedBy)
                     .deletedAt(OffsetDateTime.now())
                     .build();
-            saleDeletionRepository.save(sd);
-            log.info("SALE_DELETION", "AUDIT_SAVED", "Checkout SaleDeletion saved",
-                    java.util.Map.of("saleDeletionId", sd.getId(), "saleId", sd.getSaleId()));
+            saleDeletionRepository.saveAndFlush(sd);
+            log.info("SALE_DELETION AUDIT_SAVED saleDeletionId={} saleId={}", sd.getId(), sd.getSaleId());
         } catch (Exception e) {
-            log.warn("Failed to record checkout deletion audit: {}", e.getMessage());
+            log.error("Audit save failed, aborting delete: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to record checkout deletion audit", e);
         }
+
+        // restaurar estoque para cada item da ordem
+        venda.getItens().forEach(it -> {
+            Product produto = it.getProduto();
+            produto.setQuantidadeEstoque(produto.getQuantidadeEstoque() + it.getQuantidade());
+            productRepository.save(produto);
+        });
+
+        saleOrderRepository.deleteById(id);
 
         return ResponseEntity.ok(Map.of("message", "Venda deletada com sucesso"));
     }
