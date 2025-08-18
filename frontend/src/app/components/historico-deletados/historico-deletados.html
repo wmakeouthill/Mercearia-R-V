@@ -19,6 +19,7 @@
           <th class="col-metodo">Pagamentos</th>
           <th class="col-total">Total</th>
           <th class="col-data">Data/Hora</th>
+          <th class="col-acoes">Ações</th>
         </tr>
       </thead>
       <tbody>
@@ -38,6 +39,12 @@
           </td>
           <td class="valor-total">R$ {{ (venda.preco_total || 0).toFixed(2) }}</td>
           <td class="venda-data"><span class="data-hora-inline">{{ formatarData(venda.data_venda) }}</span></td>
+          <td class="acoes">
+            <button type="button" (click)="restoreDeletion(venda._deletionId)" class="btn-restaurar"
+                    [disabled]="!authService.isAdmin()" [attr.title]="!authService.isAdmin() ? 'Somente administradores podem restaurar vendas' : 'Restaurar venda'">
+              ♻️
+            </button>
+          </td>
         </tr>}
       </tbody>
     </table>

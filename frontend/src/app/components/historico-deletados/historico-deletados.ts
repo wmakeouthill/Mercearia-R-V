@@ -19,7 +19,7 @@ export class HistoricoDeletadosComponent implements OnInit {
     loading = false;
     error = '';
     deletions: any[] = [];
-    vendasFiltradas: Venda[] = [];
+    vendasFiltradas: any[] = [];
 
     constructor(
         private readonly apiService: ApiService,
@@ -51,8 +51,8 @@ export class HistoricoDeletadosComponent implements OnInit {
         });
     }
 
-    private mapDeletionsToVendas(deletions: any[]): Venda[] {
-        const rows: Venda[] = [];
+    private mapDeletionsToVendas(deletions: any[]): any[] {
+        const rows: any[] = [];
         let rowCounter = 0;
         for (const d of deletions || []) {
             const saleType = d.saleType || 'legacy';
@@ -80,6 +80,7 @@ export class HistoricoDeletadosComponent implements OnInit {
                     (linha as any).metodos_multi = Array.from(metodosSet);
                     (linha as any)._isCheckout = true;
                     (linha as any).row_id = `deleted-checkout-${payload.id || d.saleId}-${it.produto_id || it.produtoId}-${rowCounter++}`;
+                    (linha as any)._deletionId = d.id;
                     rows.push(linha);
                 }
             } else if (payload) {
@@ -95,6 +96,7 @@ export class HistoricoDeletadosComponent implements OnInit {
                 } as any;
                 (linha as any)._isCheckout = false;
                 (linha as any).row_id = `deleted-legacy-${linha.id}-${rowCounter++}`;
+                (linha as any)._deletionId = d.id;
                 rows.push(linha);
             }
         }
@@ -165,6 +167,34 @@ export class HistoricoDeletadosComponent implements OnInit {
         } catch {
             return payload || '';
         }
+    }
+
+    restoreDeletion(deletionId: number): void {
+        logger.debug('HISTORICO_DELETADOS', 'RESTORE_CLICK', 'restoreDeletion called', { deletionId, isAdmin: this.authService.isAdmin() });
+        if (!this.authService.isAdmin()) {
+            this.error = 'Permissão negada: somente administradores podem restaurar vendas';
+            logger.warn('HISTORICO_DELETADOS', 'RESTORE_DENIED', 'Usuário não é admin');
+            return;
+        }
+        if (!deletionId) {
+            this.error = 'ID de deleção inválido';
+            logger.warn('HISTORICO_DELETADOS', 'RESTORE_INVALID_ID', 'deletionId ausente');
+            return;
+        }
+
+        this.loading = true;
+        this.error = '';
+        this.apiService.restoreDeletedSale(deletionId).subscribe({
+            next: () => {
+                logger.debug('HISTORICO_DELETADOS', 'RESTORE_SUCCESS', 'Restauração bem sucedida', { deletionId });
+                this.loadDeletions();
+            },
+            error: (err) => {
+                logger.error('HISTORICO_DELETADOS', 'RESTORE', 'Erro ao restaurar venda', err);
+                this.error = err?.error?.error || 'Falha ao restaurar venda';
+                this.loading = false;
+            }
+        });
     }
 }
 

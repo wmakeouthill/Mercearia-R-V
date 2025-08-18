@@ -351,6 +351,13 @@ export class ApiService {
     );
   }
 
+  restoreDeletedSale(deletionId: number): Observable<any> {
+    return this.makeRequest(
+      () => this.http.put<any>(`${this.baseUrl}/audit/sales/${deletionId}/restore`, {}),
+      'RESTORE_AUDIT_SALE'
+    );
+  }
+
   getResumoMesAtual(): Observable<RelatorioResumo> {
     return this.makeRequest(
       () => this.http.get<RelatorioResumo>(`${this.baseUrl}/vendas/relatorios/mes`),
