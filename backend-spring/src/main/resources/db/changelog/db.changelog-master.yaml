@@ -100,4 +100,20 @@ databaseChangeLog:
                   name: deleted_at
                   type: TIMESTAMP WITH TIME ZONE
 
+  - changeSet:
+      id: 005-add-customer-fields-to-venda_cabecalho
+      author: system
+      changes:
+        - addColumn:
+            tableName: venda_cabecalho
+            columns:
+              - column:
+                  name: customer_name
+                  type: VARCHAR(255)
+              - column:
+                  name: customer_email
+                  type: VARCHAR(255)
+              - column:
+                  name: customer_phone
+                  type: VARCHAR(50)
 

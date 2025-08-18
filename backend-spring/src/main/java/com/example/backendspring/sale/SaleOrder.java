@@ -34,6 +34,16 @@ public class SaleOrder {
     @Column(name = "total_final", nullable = false)
     private Double totalFinal;
 
+    // Customer contact fields (optional)
+    @Column(name = "customer_name")
+    private String customerName;
+
+    @Column(name = "customer_email")
+    private String customerEmail;
+
+    @Column(name = "customer_phone")
+    private String customerPhone;
+
     @OneToMany(mappedBy = "venda", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<SaleItem> itens = new ArrayList<>();

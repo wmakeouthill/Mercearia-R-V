@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, ElementRef, Renderer2, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -10,6 +10,8 @@ import { RelatorioVendas, Venda, MetodoPagamento, RelatorioResumo } from '../../
 import { forkJoin, of } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { logger } from '../../utils/logger';
+import { PontoVendaComponent } from '../ponto-venda/ponto-venda';
+import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 
 @Component({
   selector: 'app-relatorio-vendas',
@@ -48,8 +50,21 @@ export class RelatorioVendasComponent implements OnInit {
     private readonly apiService: ApiService,
     private readonly authService: AuthService,
     private readonly imageService: ImageService,
-    private readonly router: Router
+    private readonly router: Router,
+    private readonly sanitizer: DomSanitizer,
+    private readonly renderer: Renderer2
   ) { }
+
+  // Modal reuse from PontoVendaComponent logic: show preview modal
+  showEnviarModal = false;
+  modalOrderId: number | null = null;
+  modalCustomerName = '';
+  modalCustomerEmail = '';
+  modalCustomerPhone = '';
+  previewLoading = false;
+  previewBlobUrl: SafeResourceUrl | null = null;
+  previewObjectUrl: string | null = null;
+  @ViewChild('previewObject') previewObjectRef?: ElementRef<HTMLObjectElement>;
 
   ngOnInit(): void {
     logger.info('RELATORIO_VENDAS', 'INIT', 'Componente iniciado');
@@ -58,6 +73,96 @@ export class RelatorioVendasComponent implements OnInit {
     this.filtroData = '';
     this.loadVendas();
     this.loadResumos();
+  }
+
+  openEnviarModal(orderId: number): void {
+    this.modalOrderId = orderId;
+    this.modalCustomerName = '';
+    this.modalCustomerEmail = '';
+    this.modalCustomerPhone = '';
+    this.previewLoading = true;
+    this.previewBlobUrl = null;
+    this.showEnviarModal = true;
+
+    this.apiService.getNotaPdf(orderId).subscribe({
+      next: (blob: any) => {
+        try {
+          const url = URL.createObjectURL(blob as Blob);
+          this.previewObjectUrl = url;
+          this.previewBlobUrl = this.sanitizer.bypassSecurityTrustResourceUrl(url);
+
+          // set object.data attribute safely via renderer
+          setTimeout(() => {
+            try {
+              if (this.previewObjectRef && this.previewObjectRef.nativeElement) {
+                this.renderer.setAttribute(this.previewObjectRef.nativeElement, 'data', url);
+              }
+            } catch (e) { /* ignore */ }
+          }, 0);
+        } catch (e) {
+          console.error('Falha ao criar preview do PDF', e);
+        }
+        this.previewLoading = false;
+      },
+      error: (err) => {
+        console.error('Erro ao obter PDF para preview', err);
+        this.previewLoading = false;
+      }
+    });
+  }
+
+  closeEnviarModal(): void {
+    this.showEnviarModal = false;
+    this.modalOrderId = null;
+    if (this.previewObjectUrl) {
+      try { URL.revokeObjectURL(this.previewObjectUrl); } catch (e) { /* ignore */ }
+      this.previewObjectUrl = null;
+    }
+    this.previewBlobUrl = null;
+  }
+
+  sendNotaByEmailFromModal(): void {
+    if (!this.modalOrderId) return;
+    const orderId = this.modalOrderId;
+    const contactPayload: any = {};
+    if (this.modalCustomerName) contactPayload.customerName = this.modalCustomerName;
+    if (this.modalCustomerEmail) contactPayload.customerEmail = this.modalCustomerEmail;
+    if (this.modalCustomerPhone) contactPayload.customerPhone = this.modalCustomerPhone;
+
+    if (Object.keys(contactPayload).length > 0) {
+      this.apiService.updateOrderContact(orderId, contactPayload).subscribe({ next: () => { }, error: () => { } });
+    }
+
+    const pdfUrl = this.apiService.getNotaPdfUrl(orderId);
+    const subject = `Comprovante - Pedido #${orderId}`;
+    const body = `Segue a nota do seu último pedido na nossa loja:\n\n${pdfUrl}`;
+    const mailto = `mailto:${encodeURIComponent(this.modalCustomerEmail || '')}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    window.open(mailto, '_blank');
+    this.closeEnviarModal();
+  }
+
+  sendNotaByWhatsappFromModal(): void {
+    if (!this.modalOrderId) return;
+    const orderId = this.modalOrderId;
+    const contactPayload: any = {};
+    if (this.modalCustomerName) contactPayload.customerName = this.modalCustomerName;
+    if (this.modalCustomerEmail) contactPayload.customerEmail = this.modalCustomerEmail;
+    if (this.modalCustomerPhone) contactPayload.customerPhone = this.modalCustomerPhone;
+
+    if (Object.keys(contactPayload).length > 0) {
+      this.apiService.updateOrderContact(orderId, contactPayload).subscribe({ next: () => { }, error: () => { } });
+    }
+
+    let phone = (this.modalCustomerPhone || '').replace(/\D/g, '');
+    if (!phone) { this.closeEnviarModal(); return; }
+    if (!phone.startsWith('55')) {
+      if (phone.length <= 11) phone = '55' + phone;
+    }
+    const pdfUrl = this.apiService.getNotaPdfUrl(orderId);
+    const msg = `Segue a nota do seu último pedido na nossa loja: ${pdfUrl}`;
+    const waUrl = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
+    window.open(waUrl, '_blank');
+    this.closeEnviarModal();
   }
   loadResumos(): void {
     this.apiService.getResumoDia().subscribe({
@@ -450,5 +555,43 @@ export class RelatorioVendasComponent implements OnInit {
     if (event.target.src !== fallbackUrl) {
       event.target.src = fallbackUrl;
     }
+  }
+
+  // Enviar nota via email (abre mailto:) — pede email via prompt
+  sendNotaByEmail(venda: any): void {
+    if (!venda || !venda.id) return;
+    const orderId = venda.id;
+    const defaultEmail = (venda.customer_email || '') as string;
+    const email = window.prompt('Email para enviar a nota:', defaultEmail);
+    if (!email) return;
+    // attempt update contact (best-effort)
+    const payload: any = { customerEmail: email };
+    this.apiService.updateOrderContact(orderId, payload).subscribe({ next: () => { }, error: () => { } });
+
+    const pdfUrl = this.apiService.getNotaPdfUrl(orderId);
+    const subject = `Comprovante - Pedido #${orderId}`;
+    const body = `Segue a nota do seu último pedido na nossa loja:\n\n${pdfUrl}`;
+    const mailto = `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    window.open(mailto, '_blank');
+  }
+
+  // Enviar nota via WhatsApp (abre wa.me) — pede telefone via prompt
+  sendNotaByWhatsapp(venda: any): void {
+    if (!venda || !venda.id) return;
+    const orderId = venda.id;
+    const defaultPhone = (venda.customer_phone || '') as string;
+    let phone = window.prompt('Telefone (com DDI) para enviar por WhatsApp (ex: 5511999998888):', defaultPhone);
+    if (!phone) return;
+    phone = phone.replace(/\D/g, '');
+    if (!phone.startsWith('55')) {
+      if (phone.length <= 11) phone = '55' + phone;
+    }
+    const payload: any = { customerPhone: phone };
+    this.apiService.updateOrderContact(orderId, payload).subscribe({ next: () => { }, error: () => { } });
+
+    const pdfUrl = this.apiService.getNotaPdfUrl(orderId);
+    const msg = `Segue a nota do seu último pedido na nossa loja: ${pdfUrl}`;
+    const waUrl = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
+    window.open(waUrl, '_blank');
   }
 }

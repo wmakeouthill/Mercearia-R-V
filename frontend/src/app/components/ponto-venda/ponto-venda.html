@@ -205,3 +205,33 @@
         </div>
     </div>
 </div>
+
+@if (showEnviarModal) {<div class="modal-overlay">
+    <div class="modal enviar-nota-modal">
+        <h3>Enviar comprovante</h3>
+        <div class="modal-field">
+            <label for="modalCustomerName">Nome (opcional)</label>
+            <input id="modalCustomerName" type="text" [(ngModel)]="modalCustomerName" class="input-modal">
+        </div>
+        <div class="modal-field">
+            <label for="modalCustomerEmail">Email (opcional)</label>
+            <input id="modalCustomerEmail" type="email" [(ngModel)]="modalCustomerEmail" class="input-modal">
+        </div>
+        <div class="modal-field">
+            <label for="modalCustomerPhone">Telefone (opcional)</label>
+            <input id="modalCustomerPhone" type="text" [(ngModel)]="modalCustomerPhone" class="input-modal" placeholder="Ex: 5511999998888">
+        </div>
+        <!-- Preview do PDF -->
+        <div class="modal-preview">
+            @if (previewLoading) {<div class="preview-loading">Carregando pré-visualização...</div>}
+            @if (!previewLoading) {<div class="preview-container">
+                <object #previewObject type="application/pdf" class="pdf-preview">Preview não disponível.</object>
+            </div>}
+        </div>
+        <div class="modal-actions">
+            <button class="btn-primary" (click)="sendNotaByEmail()">📧 Abrir cliente de Email (mailto)</button>
+            <button class="btn-primary" (click)="sendNotaByWhatsapp()">💬 Enviar por WhatsApp</button>
+            <button class="btn-secondary" (click)="closeEnviarModal()">Fechar</button>
+        </div>
+    </div>
+</div>}

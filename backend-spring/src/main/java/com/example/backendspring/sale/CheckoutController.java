@@ -92,6 +92,14 @@ public class CheckoutController {
 
             // criar venda e persistir
             SaleOrder venda = createSaleOrder(subtotal, desconto, acrescimo, totalFinal);
+            // se vier dados do cliente, persistir
+            if (req.getCustomerName() != null)
+                venda.setCustomerName(req.getCustomerName());
+            if (req.getCustomerEmail() != null)
+                venda.setCustomerEmail(req.getCustomerEmail());
+            if (req.getCustomerPhone() != null)
+                venda.setCustomerPhone(req.getCustomerPhone());
+
             saleOrderRepository.save(venda);
 
             addItemsToOrder(venda, req.getItens());
@@ -106,6 +114,24 @@ public class CheckoutController {
             return ResponseEntity.status(500)
                     .body(Map.of(KEY_ERROR, "Falha ao processar checkout", "details", e.getMessage()));
         }
+    }
+
+    @PatchMapping("/{id}/contato")
+    @Transactional
+    public ResponseEntity<Object> updateContact(@PathVariable Long id, @RequestBody Map<String, String> payload) {
+        var venda = saleOrderRepository.findById(id).orElse(null);
+        if (venda == null)
+            return ResponseEntity.status(404).body(Map.of(KEY_ERROR, "Venda não encontrada"));
+
+        if (payload.containsKey("customerName"))
+            venda.setCustomerName(payload.get("customerName"));
+        if (payload.containsKey("customerEmail"))
+            venda.setCustomerEmail(payload.get("customerEmail"));
+        if (payload.containsKey("customerPhone"))
+            venda.setCustomerPhone(payload.get("customerPhone"));
+
+        saleOrderRepository.save(venda);
+        return ResponseEntity.ok(Map.of("message", "Contato atualizado"));
     }
 
     @GetMapping
@@ -319,6 +345,13 @@ public class CheckoutController {
         resp.put("total_final", venda.getTotalFinal());
         resp.put("itens", itens);
         resp.put("pagamentos", pagamentos);
+        // include customer contact fields if present
+        if (venda.getCustomerName() != null)
+            resp.put("customer_name", venda.getCustomerName());
+        if (venda.getCustomerEmail() != null)
+            resp.put("customer_email", venda.getCustomerEmail());
+        if (venda.getCustomerPhone() != null)
+            resp.put("customer_phone", venda.getCustomerPhone());
         return resp;
     }
 
@@ -352,5 +385,11 @@ public class CheckoutController {
         private Double desconto;
         @JsonProperty("acrescimo")
         private Double acrescimo;
+        @JsonProperty("customerName")
+        private String customerName;
+        @JsonProperty("customerEmail")
+        private String customerEmail;
+        @JsonProperty("customerPhone")
+        private String customerPhone;
     }
 }

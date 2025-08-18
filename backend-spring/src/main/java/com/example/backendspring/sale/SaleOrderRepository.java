@@ -9,12 +9,12 @@ import java.util.List;
 
 public interface SaleOrderRepository extends JpaRepository<SaleOrder, Long> {
 
-    @Query(value = "SELECT * FROM venda_cabecalho WHERE DATE(data_venda) = :dia ORDER BY data_venda DESC", nativeQuery = true)
+    @Query("select so from SaleOrder so left join fetch so.itens left join fetch so.pagamentos where function('date', so.dataVenda) = :dia order by so.dataVenda desc")
     List<SaleOrder> findByDia(@Param("dia") LocalDate dia);
 
-    @Query(value = "SELECT * FROM venda_cabecalho WHERE DATE(data_venda) BETWEEN :inicio AND :fim ORDER BY data_venda DESC", nativeQuery = true)
+    @Query("select so from SaleOrder so where function('date', so.dataVenda) between :inicio and :fim order by so.dataVenda desc")
     List<SaleOrder> findByPeriodo(@Param("inicio") LocalDate inicio, @Param("fim") LocalDate fim);
 
-    @Query(value = "SELECT * FROM venda_cabecalho ORDER BY data_venda DESC", nativeQuery = true)
+    @Query("select distinct so from SaleOrder so left join fetch so.itens left join fetch so.pagamentos order by so.dataVenda desc")
     List<SaleOrder> findAllOrderByData();
 }

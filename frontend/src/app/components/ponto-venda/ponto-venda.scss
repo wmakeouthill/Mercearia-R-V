@@ -1354,3 +1354,30 @@
         font-size: 18px;
     }
 }
+
+/* Estilos do preview de PDF na modal */
+.modal-preview {
+    margin: 12px 0 18px 0;
+}
+.preview-loading,
+.preview-empty {
+    padding: 12px;
+    background: rgba(0,0,0,0.04);
+    border: 1px dashed rgba(0,0,0,0.06);
+    color: rgba(0,0,0,0.6);
+    border-radius: 8px;
+}
+.preview-container {
+    width: 100%;
+    height: 360px;
+    background: #fff;
+    border: 1px solid rgba(0,0,0,0.06);
+    border-radius: 8px;
+    overflow: hidden;
+}
+.pdf-preview {
+    width: 100%;
+    height: 100%;
+    display: block;
+    background: #fff;
+}

@@ -492,7 +492,7 @@
         width: 12%;
     }
 
-    .col-acoes { width: 5%; }
+    .col-acoes { width: 8%; min-width: 80px; }
 
     th {
         background: linear-gradient(135deg, var(--primary-blue) 0%, var(--secondary-blue) 100%);
@@ -588,7 +588,24 @@
     }
 
     .acoes {
-        text-align: center;
+        display: flex; /* usar flex para ocupar corretamente o espaço da célula */
+        gap: 8px;
+        justify-content: center; /* centraliza ações dentro da célula para parecer parte da tabela */
+        align-items: center;
+        padding: 8px 10px;
+        height: 100%;
+        box-sizing: border-box;
+    }
+
+    .acoes button {
+        min-height: 36px;
+        height: 36px;
+        line-height: 1;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 6px 8px;
+        vertical-align: middle;
     }
 }
 
@@ -612,6 +629,37 @@
         font-weight: 500;
     }
 }
+
+/* Modal styles (shared simplified) */
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1500;
+}
+.modal {
+    background: var(--white);
+    border-radius: 12px;
+    padding: 18px;
+    width: 720px;
+    max-width: calc(100% - 40px);
+    box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+}
+.enviar-nota-modal h3 { margin: 0 0 12px 0; }
+.modal-field { margin-bottom: 10px; }
+.input-modal {
+    width: 100%;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid rgba(0,0,0,0.08);
+}
+.preview-area { border: 1px solid rgba(0,0,0,0.06); padding: 8px; border-radius: 8px; background: #fafafa; }
+.preview-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:8px; }
+.preview-actions .btn-primary { background: linear-gradient(135deg, var(--primary-blue) 0%, var(--secondary-blue) 100%); color: #fff; border: none; padding: 8px 12px; border-radius: 8px; cursor: pointer; }
+.preview-actions .btn-secondary { background: transparent; border: 1px solid rgba(0,0,0,0.08); padding: 8px 12px; border-radius: 8px; cursor: pointer; }
 
 // Responsividade
 @media (max-width: 768px) {

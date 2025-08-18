@@ -221,6 +221,7 @@
                         <td class="valor-total">R$ {{ venda.preco_total.toFixed(2) }}</td>
                         <td class="acoes">
                             <button *ngIf="venda.itens && venda.itens.length > 1" type="button" (click)="toggleExpand(venda.row_id)" class="btn-expand" [class.rotated]="expandedRows.has(venda.row_id)" [attr.aria-expanded]="expandedRows.has(venda.row_id)" title="Expandir venda">🔽</button>
+                            <button *ngIf="venda._isCheckout" type="button" class="btn-enviar" (click)="openEnviarModal(venda.id)" title="Enviar nota">📩</button>
                         </td>
                     </tr>
 
@@ -252,5 +253,35 @@
         </div>}
     </div>
 
+    @if (showEnviarModal) {<div class="modal-overlay">
+        <div class="modal enviar-nota-modal">
+            <h3>Enviar comprovante</h3>
+            <div class="modal-field">
+                <label for="modalCustomerName">Nome (opcional)</label>
+                <input id="modalCustomerName" type="text" [(ngModel)]="modalCustomerName" class="input-modal">
+            </div>
+            <div class="modal-field">
+                <label for="modalCustomerEmail">Email (opcional)</label>
+                <input id="modalCustomerEmail" type="email" [(ngModel)]="modalCustomerEmail" class="input-modal">
+            </div>
+            <div class="modal-field">
+                <label for="modalCustomerPhone">Telefone (opcional)</label>
+                <input id="modalCustomerPhone" type="text" [(ngModel)]="modalCustomerPhone" class="input-modal" placeholder="Ex: 5511999998888">
+            </div>
+            <div class="modal-field">
+                <label for="previewIframe">Pré-visualização</label>
+                <div class="preview-area">
+                    @if (previewLoading) {<div>Carregando preview...</div>} @else {<div>
+                        <object #previewObject type="application/pdf" width="100%" height="320" title="Pré-visualização">PDF não disponível.</object>
+                        <div class="preview-actions">
+                            <button class="btn-secondary" (click)="closeEnviarModal()">Fechar</button>
+                            <button class="btn-primary" (click)="sendNotaByEmailFromModal()">📧 Abrir cliente de Email (mailto)</button>
+                            <button class="btn-primary" (click)="sendNotaByWhatsappFromModal()">💬 Enviar por WhatsApp</button>
+                        </div>
+                    </div>}
+                </div>
+            </div>
+        </div>
+    </div>}
 
 </div>

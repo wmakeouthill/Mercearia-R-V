@@ -47,6 +47,10 @@ public class SecurityConfig {
                         .authenticated()
                         .anyRequest().permitAll())
                 .httpBasic(Customizer.withDefaults());
+        // Allow embedding responses from same origin (needed for PDF preview in
+        // <object>)
+        http.headers(headers -> headers.frameOptions(frame -> frame.sameOrigin()));
+
         http.addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
         http.addFilterAfter(authAttributesFilter, JwtAuthFilter.class);
         return http.build();

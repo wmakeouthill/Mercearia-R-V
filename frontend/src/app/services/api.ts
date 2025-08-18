@@ -291,6 +291,35 @@ export class ApiService {
     );
   }
 
+  // Atualizar contato da ordem (customer data)
+  updateOrderContact(orderId: number, contact: { customerName?: string; customerEmail?: string; customerPhone?: string }): Observable<any> {
+    return this.makeRequest(
+      () => this.http.patch<any>(`${this.baseUrl}/checkout/${orderId}/contato`, contact),
+      'UPDATE_ORDER_CONTACT'
+    );
+  }
+
+  // Retorna URL pública do PDF da nota (inline)
+  getNotaPdfUrl(orderId: number): string {
+    return `${this.baseUrl}/checkout/${orderId}/nota`;
+  }
+
+  // Obter PDF da nota como blob
+  getNotaPdf(orderId: number) {
+    return this.makeRequest(
+      () => this.http.get(`${this.baseUrl}/checkout/${orderId}/nota`, { responseType: 'blob' as 'blob' }),
+      'GET_NOTA_PDF'
+    );
+  }
+
+  // Enviar email via servidor com anexo
+  sendNotaEmail(orderId: number, payload: { to: string; subject?: string; body?: string }) {
+    return this.makeRequest(
+      () => this.http.post<any>(`${this.baseUrl}/checkout/${orderId}/send-email`, payload),
+      'SEND_NOTA_EMAIL'
+    );
+  }
+
   // Método para a estrutura atual de vendas (individual)
   createVenda(venda: { produto_id: number, quantidade_vendida: number, preco_total: number, data_venda: string, metodo_pagamento: string }): Observable<Venda> {
     return this.postVenda(venda);
