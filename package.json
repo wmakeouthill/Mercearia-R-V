@@ -7,7 +7,7 @@
         "build:frontend": "cd frontend && npm run build -- --configuration=production",
         "copy-frontend-to-backend": "node scripts/copy-frontend-to-backend.js",
         "prebuild:backend": "npm run build:frontend && npm run copy-frontend-to-backend",
-        "build:backend": "cd backend-spring && mvn -q -DskipTests package",
+        "build:backend": "cd backend-spring && mvn -DskipTests package",
         "check-env": "node scripts/check-env.js",
         "build:electron": "cd electron && npm run build",
         "build:all": "npm run build:backend && npm run build:frontend && npm run build:electron",

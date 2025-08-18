@@ -7,6 +7,10 @@ import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
@@ -25,6 +29,7 @@ public class CheckoutController {
 
     private final SaleOrderRepository saleOrderRepository;
     private final ProductRepository productRepository;
+    private final SaleDeletionRepository saleDeletionRepository;
 
     private static final String DEFAULT_PAGAMENTO = "dinheiro";
     private static final String KEY_ERROR = "error";
@@ -140,6 +145,51 @@ public class CheckoutController {
                     return resp;
                 }).toList();
         return ResponseEntity.ok(lista);
+    }
+
+    @DeleteMapping("/{id}")
+    @Transactional
+    public ResponseEntity<Object> deleteOrder(@PathVariable Long id, HttpServletRequest request) {
+        var venda = saleOrderRepository.findById(id).orElse(null);
+        if (venda == null) {
+            return ResponseEntity.status(404).body(Map.of(KEY_ERROR, "Venda não encontrada"));
+        }
+
+        // build response payload before deletion
+        Map<String, Object> resp = buildResponse(venda);
+
+        // restaurar estoque para cada item da ordem
+        venda.getItens().forEach(it -> {
+            Product produto = it.getProduto();
+            produto.setQuantidadeEstoque(produto.getQuantidadeEstoque() + it.getQuantidade());
+            productRepository.save(produto);
+        });
+
+        saleOrderRepository.deleteById(id);
+
+        // record deletion audit
+        try {
+            ObjectMapper om = new ObjectMapper();
+            String payloadJson = om.writeValueAsString(resp);
+            String deletedBy = null;
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            if (auth != null)
+                deletedBy = auth.getName();
+            SaleDeletion sd = SaleDeletion.builder()
+                    .saleId(venda.getId())
+                    .saleType("checkout")
+                    .payload(payloadJson)
+                    .deletedBy(deletedBy)
+                    .deletedAt(OffsetDateTime.now())
+                    .build();
+            saleDeletionRepository.save(sd);
+            log.info("SALE_DELETION", "AUDIT_SAVED", "Checkout SaleDeletion saved",
+                    java.util.Map.of("saleDeletionId", sd.getId(), "saleId", sd.getSaleId()));
+        } catch (Exception e) {
+            log.warn("Failed to record checkout deletion audit: {}", e.getMessage());
+        }
+
+        return ResponseEntity.ok(Map.of("message", "Venda deletada com sucesso"));
     }
 
     private ResponseEntity<Object> badRequest(String message) {

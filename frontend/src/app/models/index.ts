@@ -42,6 +42,10 @@ export interface Venda {
     produto_nome?: string;
     produto_imagem?: string | null;
     pagamentos_resumo?: string; // campo auxiliar para exibição
+    // Campos auxiliares usados apenas no frontend para renderização
+    row_id?: string;
+    _isCheckout?: boolean;
+    metodos_multi?: MetodoPagamento[];
 }
 
 export interface VendaSimples {

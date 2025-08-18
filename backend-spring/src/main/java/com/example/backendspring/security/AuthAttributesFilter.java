@@ -32,7 +32,14 @@ public class AuthAttributesFilter extends OncePerRequestFilter {
                     return;
                 }
                 log.debug("wrapper[{}]={}", depth, cur.getClass().getName());
-                ServletRequest inner = wrapper.getRequest();
+                ServletRequest inner = getInnerSafely(wrapper, depth);
+                if (inner == null)
+                    return;
+                // Defensive: if inner is same as current wrapper, break to avoid infinite loop
+                if (inner == cur) {
+                    log.warn("Detected wrapper self-reference at depth {}: class={}", depth, cur.getClass().getName());
+                    return;
+                }
                 cur = inner;
                 depth++;
                 if (depth > 50) {
@@ -45,6 +52,21 @@ public class AuthAttributesFilter extends OncePerRequestFilter {
             // Log and handle: warn-level because this is unexpected and we want to surface
             // it in logs
             log.warn("error while logging wrapper chain", t);
+        }
+    }
+
+    /**
+     * Safely obtain the inner request from a ServletRequestWrapper.
+     * Extracted to avoid nested try/catch and to catch only Exception (not
+     * Throwable).
+     * Returns null when inner request cannot be obtained (and logs a warning).
+     */
+    private ServletRequest getInnerSafely(ServletRequestWrapper wrapper, int depth) {
+        try {
+            return wrapper.getRequest();
+        } catch (Exception e) {
+            log.warn("Error while accessing inner request of wrapper at depth {}: {}", depth, e.toString());
+            return null;
         }
     }
 

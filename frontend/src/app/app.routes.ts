@@ -61,6 +61,11 @@ export const routes: Routes = [
         canActivate: [AuthGuard, AdminGuard]
     },
     {
+        path: 'vendas/deletados',
+        loadComponent: () => import('./components/historico-deletados/historico-deletados').then(m => m.HistoricoDeletadosComponent),
+        canActivate: [AuthGuard, AdminGuard]
+    },
+    {
         path: 'administracao',
         loadComponent: () => import('./components/administracao/administracao').then(m => m.AdministracaoComponent),
         canActivate: [AuthGuard, AdminGuard]

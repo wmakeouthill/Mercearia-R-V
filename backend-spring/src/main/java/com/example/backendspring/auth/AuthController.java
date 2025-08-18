@@ -46,26 +46,27 @@ public class AuthController {
             return ResponseEntity.badRequest()
                     .body(Map.<String, Object>of(KEY_ERROR, "Username e password são obrigatórios"));
         }
-        return userRepository.findByUsername(req.getUsername())
-                .map(u -> {
-                    if (!passwordEncoder.matches(req.getPassword(), u.getPassword())) {
-                        log.warn("Failed login for username={} - invalid password", req.getUsername());
-                        return ResponseEntity.status(401)
-                                .body(Map.<String, Object>of(KEY_ERROR, "Credenciais inválidas"));
-                    }
-                    Map<String, Object> claims = new HashMap<>();
-                    claims.put("id", u.getId());
-                    claims.put(KEY_USERNAME, u.getUsername());
-                    claims.put(KEY_ROLE, u.getRole());
-                    String token = jwtService.generateToken(claims);
-                    Map<String, Object> user = new HashMap<>();
-                    user.put("id", u.getId());
-                    user.put(KEY_USERNAME, u.getUsername());
-                    user.put(KEY_ROLE, u.getRole());
-                    user.put(KEY_PODE_CONTROLAR_CAIXA, Boolean.TRUE.equals(u.getPodeControlarCaixa()));
-                    return ResponseEntity.ok(Map.<String, Object>of(KEY_TOKEN, token, KEY_USER, user));
-                })
-                .orElse(ResponseEntity.status(401).body(Map.<String, Object>of(KEY_ERROR, "Credenciais inválidas")));
+        var maybeUser = userRepository.findByUsername(req.getUsername());
+        if (maybeUser.isEmpty()) {
+            log.warn("Failed login for username={} - user not found", req.getUsername());
+            return ResponseEntity.status(401).body(Map.<String, Object>of(KEY_ERROR, "Credenciais inválidas"));
+        }
+        var u = maybeUser.get();
+        if (!passwordEncoder.matches(req.getPassword(), u.getPassword())) {
+            log.warn("Failed login for username={} - invalid password", req.getUsername());
+            return ResponseEntity.status(401).body(Map.<String, Object>of(KEY_ERROR, "Credenciais inválidas"));
+        }
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("id", u.getId());
+        claims.put(KEY_USERNAME, u.getUsername());
+        claims.put(KEY_ROLE, u.getRole());
+        String token = jwtService.generateToken(claims);
+        Map<String, Object> user = new HashMap<>();
+        user.put("id", u.getId());
+        user.put(KEY_USERNAME, u.getUsername());
+        user.put(KEY_ROLE, u.getRole());
+        user.put(KEY_PODE_CONTROLAR_CAIXA, Boolean.TRUE.equals(u.getPodeControlarCaixa()));
+        return ResponseEntity.ok(Map.<String, Object>of(KEY_TOKEN, token, KEY_USER, user));
     }
 
     @GetMapping("/profile")

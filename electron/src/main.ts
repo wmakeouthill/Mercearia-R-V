@@ -564,6 +564,16 @@ function createWindow(): void {
         });
     }
 
+    // Log renderer console messages to main process logs (helps debugging in production)
+    mainWindow.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+        console.log(`🖥️ Renderer console [level=${level}] ${sourceId}:${line} -> ${message}`);
+    });
+
+    // Log failed loads (useful to see why frontend didn't finish loading)
+    mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+        console.error('❌ did-fail-load:', { errorCode, errorDescription, validatedURL });
+    });
+
     // Melhorar performance de renderização
     mainWindow.webContents.once('dom-ready', () => {
         console.log('✅ DOM pronto');
@@ -1417,7 +1427,18 @@ function stopBackend(): void {
     if (backendProcess) {
         try {
             // Tentar graceful shutdown primeiro
-            backendProcess.kill('SIGTERM');
+            // On Windows `SIGTERM` may not terminate child Java processes reliably,
+            // so use taskkill as a fallback to ensure the whole process tree is stopped.
+            try {
+                backendProcess.kill('SIGTERM');
+            } catch { /* ignore */ }
+            if (process.platform === 'win32' && backendProcess.pid) {
+                try {
+                    childProcess.spawnSync('taskkill', ['/PID', String(backendProcess.pid), '/T', '/F']);
+                } catch (e) {
+                    console.warn('⚠️ taskkill failed:', (e as Error)?.message || e);
+                }
+            }
 
             // Force kill após 5 segundos se não parar
             setTimeout(() => {

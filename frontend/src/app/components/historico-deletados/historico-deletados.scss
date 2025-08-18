@@ -1,0 +1,34 @@
+.historico-deletados-container {
+  padding: 20px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.historico-header h1 {
+  color: var(--primary-blue);
+  margin: 0 0 12px 0;
+}
+
+.tabela-deletions {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.tabela-deletions th, .tabela-deletions td {
+  padding: 8px;
+  border: 1px solid rgba(0,0,0,0.06);
+  text-align: left;
+  vertical-align: top;
+}
+
+.payload {
+  max-height: 160px;
+  overflow: auto;
+  background: #f8f9fa;
+  padding: 8px;
+  border-radius: 6px;
+}
+
+.loading, .vazio { color: var(--dark-gray); padding: 12px 0; }
+
+

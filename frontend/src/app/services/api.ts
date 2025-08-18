@@ -303,6 +303,13 @@ export class ApiService {
     );
   }
 
+  deleteCheckoutOrder(id: number): Observable<void> {
+    return this.makeRequest(
+      () => this.http.delete<void>(`${this.baseUrl}/checkout/${id}`),
+      'DELETE_CHECKOUT_ORDER'
+    );
+  }
+
   // RELATÓRIOS
   getRelatorioVendasDia(data?: string): Observable<RelatorioVendas> {
     const url = data
@@ -333,6 +340,14 @@ export class ApiService {
     return this.makeRequest(
       () => this.http.get<RelatorioResumo>(url),
       'GET_RESUMO_DIA'
+    );
+  }
+
+  // AUDIT
+  getDeletedSales(): Observable<any[]> {
+    return this.makeRequest(
+      () => this.http.get<any[]>(`${this.baseUrl}/audit/sales`),
+      'GET_AUDIT_SALES'
     );
   }
 

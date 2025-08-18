@@ -42,13 +42,13 @@ cors:
   max-age: 86400
 
 logging:
-  # Desativado: antes gravava em arquivo (backend.log) na raiz. Removido para não gerar arquivos em produção.
-  # file:
-  #   name: ${LOG_FILE:../backend.log}
   level:
     root: INFO
     "[org.springframework.web]": INFO
     "[com.example.backendspring]": DEBUG
+  file:
+    # If LOG_FILE env var is set, logs will also be written to that file
+    name: ${LOG_FILE:../backend.log}
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n"
-    # pattern.file removido pois não usamos mais saída em arquivo
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n"

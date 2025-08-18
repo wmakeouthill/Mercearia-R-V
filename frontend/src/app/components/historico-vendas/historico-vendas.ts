@@ -28,12 +28,18 @@ export class HistoricoVendasComponent implements OnInit {
   metodoPagamentoFiltro = '';
   loading = false;
   error = '';
+  // confirmação customizada
+  showConfirmModal = false;
+  confirmTitle = '';
+  confirmMessage = '';
+  private pendingDeleteId: number | null = null;
+  private pendingIsCheckout = false;
 
   constructor(
     private readonly apiService: ApiService,
-    private readonly authService: AuthService,
+    public readonly authService: AuthService,
     private readonly imageService: ImageService,
-    private readonly router: Router
+    public readonly router: Router
   ) { }
 
   ngOnInit(): void {
@@ -54,6 +60,11 @@ export class HistoricoVendasComponent implements OnInit {
       });
       // Legacy
       const arr = Array.isArray(legado) ? legado : [];
+      // ensure unique row id for legacy entries (avoid duplicate track keys)
+      arr.forEach((row: any, idx: number) => {
+        row._isCheckout = false;
+        row.row_id = `legacy-${row.id ?? idx}`;
+      });
       this.vendasLegado = [...arr].sort((a, b) => {
         const timeDiff = (parseDate(b.data_venda).getTime() - parseDate(a.data_venda).getTime());
         if (timeDiff !== 0) return timeDiff;
@@ -63,6 +74,7 @@ export class HistoricoVendasComponent implements OnInit {
       // Checkout -> linhas por item com resumo de pagamentos
       const linhas: Venda[] = [];
       const vendasCompletas = Array.isArray(checkout) ? checkout : [];
+      let rowCounter = 0;
       for (const v of vendasCompletas) {
         const data = v.data_venda;
         const pagamentos: Array<{ metodo: MetodoPagamento; valor: number }> = (v.pagamentos || []);
@@ -84,6 +96,9 @@ export class HistoricoVendasComponent implements OnInit {
             pagamentos_resumo: metodoResumo,
           } as any;
           (linha as any).metodos_multi = Array.from(metodosSet);
+          // mark as checkout-derived and assign a unique row id to avoid duplicate track keys
+          (linha as any)._isCheckout = true;
+          (linha as any).row_id = `checkout-${v.id}-${it.produto_id}-${rowCounter++}`;
           linhas.push(linha);
         }
         logger.info('HISTORICO_VENDAS', 'MAP_CHECKOUT_ORDEM', 'Ordem mapeada', {
@@ -102,6 +117,12 @@ export class HistoricoVendasComponent implements OnInit {
       // Mesclar e filtrar
       this.mergeAndFilter();
       this.loading = false;
+      // Debug: log first rows to inspect row_id/_isCheckout/pagamentos_resumo
+      try {
+        logger.debug('HISTORICO_VENDAS', 'POST_MERGE_SAMPLE', 'Sample vendasFiltradas', this.vendasFiltradas.slice(0, 10).map(v => ({ id: v.id, row_id: (v as any).row_id, _isCheckout: (v as any)._isCheckout, pagamentos_resumo: (v as any).pagamentos_resumo, metodo_pagamento: v.metodo_pagamento })));
+      } catch (e) {
+        console.debug('HISTORICO_VENDAS: failed to log sample', e);
+      }
       logger.info('HISTORICO_VENDAS', 'LOAD_ALL', 'Vendas unificadas carregadas', {
         legado: this.vendasLegado.length,
         checkout: this.vendasCheckout.length,
@@ -187,25 +208,73 @@ export class HistoricoVendasComponent implements OnInit {
   }
 
   excluirVenda(id: number): void {
-    if (confirm('Tem certeza que deseja excluir esta venda?')) {
-      this.apiService.deleteVenda(id).subscribe({
+    const venda = this.vendas.find(v => v.id === id);
+    if (!venda) return;
+
+    if ((venda as any)._isCheckout) {
+      this.apiService.deleteCheckoutOrder(id).subscribe({
         next: () => {
-          this.vendas = this.vendas.filter(v => v.id !== id);
-          this.vendasFiltradas = this.vendasFiltradas
-            .filter(v => v.id !== id)
-            .sort((a, b) => {
-              const timeDiff = (parseDate(b.data_venda).getTime() - parseDate(a.data_venda).getTime());
-              if (timeDiff !== 0) return timeDiff;
-              return (b.id || 0) - (a.id || 0);
-            });
-          logger.info('HISTORICO_VENDAS', 'DELETE_VENDA', 'Venda excluída', { id });
+          this.removeVendaFromLists(id);
+          logger.info('HISTORICO_VENDAS', 'DELETE_CHECKOUT_ORDER', 'Ordem de checkout excluída', { id });
         },
         error: (error: any) => {
-          logger.error('HISTORICO_VENDAS', 'DELETE_VENDA', 'Erro ao excluir venda', error);
-          alert('Erro ao excluir venda');
+          logger.error('HISTORICO_VENDAS', 'DELETE_CHECKOUT_ORDER', 'Erro ao excluir ordem de checkout', error);
+          alert('Erro ao excluir venda de checkout');
         }
       });
+      return;
     }
+
+    this.apiService.deleteVenda(id).subscribe({
+      next: () => {
+        this.removeVendaFromLists(id);
+        logger.info('HISTORICO_VENDAS', 'DELETE_VENDA', 'Venda excluída', { id });
+      },
+      error: (error: any) => {
+        logger.error('HISTORICO_VENDAS', 'DELETE_VENDA', 'Erro ao excluir venda', error);
+        alert('Erro ao excluir venda');
+      }
+    });
+  }
+
+  private removeVendaFromLists(id: number): void {
+    this.vendas = this.vendas.filter(v => v.id !== id);
+    this.vendasFiltradas = this.vendasFiltradas
+      .filter(v => v.id !== id)
+      .sort((a, b) => {
+        const timeDiff = (parseDate(b.data_venda).getTime() - parseDate(a.data_venda).getTime());
+        if (timeDiff !== 0) return timeDiff;
+        return (b.id || 0) - (a.id || 0);
+      });
+  }
+
+  // helper called from template to ensure event propagation handled correctly
+  onDeleteClick(event: Event, id: number | undefined): void {
+    event.stopPropagation();
+    console.debug('HISTORICO_VENDAS: delete click', { id });
+    if (!id) return;
+    const venda = this.vendas.find(v => v.id === id);
+    if (!venda) return;
+    this.pendingDeleteId = id;
+    this.pendingIsCheckout = !!(venda as any)._isCheckout;
+    this.confirmTitle = 'Confirmar exclusão';
+    this.confirmMessage = this.pendingIsCheckout
+      ? 'Deseja realmente excluir esta venda de checkout? Esta ação restaurará o estoque.'
+      : 'Deseja realmente excluir esta venda?';
+    this.showConfirmModal = true;
+  }
+
+  confirmModalCancel(): void {
+    this.showConfirmModal = false;
+    this.pendingDeleteId = null;
+  }
+
+  confirmModalConfirm(): void {
+    this.showConfirmModal = false;
+    if (this.pendingDeleteId) {
+      this.excluirVenda(this.pendingDeleteId);
+    }
+    this.pendingDeleteId = null;
   }
 
   formatarData(data: string): string {

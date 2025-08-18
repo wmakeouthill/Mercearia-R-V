@@ -39,6 +39,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.PUT, PRODUTOS_ALL).hasRole(ROLE_ADMIN)
                         .requestMatchers(HttpMethod.DELETE, PRODUTOS_ALL).hasRole(ROLE_ADMIN)
                         .requestMatchers(HttpMethod.DELETE, "/api/vendas/**").hasRole(ROLE_ADMIN)
+                        .requestMatchers(HttpMethod.DELETE, "/api/checkout/**").hasRole(ROLE_ADMIN)
+                        .requestMatchers(HttpMethod.GET, "/api/audit/sales").hasRole(ROLE_ADMIN)
                         .requestMatchers(HttpMethod.PUT, "/api/caixa/horarios").hasRole(ROLE_ADMIN)
                         .requestMatchers(PRODUTOS_ALL, "/api/vendas/**", "/api/caixa/**", "/api/checkout/**")
                         .authenticated()

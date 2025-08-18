@@ -40,7 +40,13 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                     return;
                 }
                 log.debug("wrapper[{}]={}", depth, cur.getClass().getName());
-                ServletRequest inner = wrapper.getRequest();
+                ServletRequest inner = getInnerSafely(wrapper, depth);
+                if (inner == null)
+                    return;
+                if (inner == cur) {
+                    log.warn("Detected wrapper self-reference at depth {}: class={}", depth, cur.getClass().getName());
+                    return;
+                }
                 cur = inner;
                 depth++;
                 if (depth > 50) {
@@ -56,6 +62,16 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         }
     }
 
+    // Extracted helper to avoid catching Throwable and nested try/catch in the loop
+    private ServletRequest getInnerSafely(ServletRequestWrapper wrapper, int depth) {
+        try {
+            return wrapper.getRequest();
+        } catch (Exception e) {
+            log.warn("Error while accessing inner request of wrapper at depth {}: {}", depth, e.toString());
+            return null;
+        }
+    }
+
     @Override
     @SuppressWarnings("squid:S2139")
     // Suppress Sonar S2139: we intentionally catch StackOverflowError to wrap it
@@ -67,12 +83,19 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
         String header = request.getHeader(HttpHeaders.AUTHORIZATION);
         log.debug("enter JwtAuthFilter for {}", request.getRequestURI());
-        logRequestWrapperChain(request);
+        if (log.isDebugEnabled()) {
+            // Only inspect wrapper chain when debug logging is enabled to avoid
+            // interacting with request wrappers in production (can trigger edge-case
+            // recursion).
+            logRequestWrapperChain(request);
+        }
         if (header != null && header.startsWith("Bearer ")) {
+            log.debug("Authorization header present for request {} (len={})", request.getRequestURI(), header.length());
             try {
                 String token = header.substring(7);
                 Claims claims = jwtService.parseToken(token);
                 Long id = ((Number) claims.get("id")).longValue();
+                log.debug("JWT parsed for request {} -> userId={}", request.getRequestURI(), id);
                 String username = (String) claims.get("username");
                 String role = (String) claims.get("role");
                 UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(

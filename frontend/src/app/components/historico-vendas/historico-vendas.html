@@ -2,6 +2,8 @@
     <div class="historico-header">
         <h1>📈 Histórico de Vendas</h1>
         <div class="header-actions">
+            <!-- Botão de auditoria visível apenas para admins (lado esquerdo) -->
+            <button *ngIf="authService.isAdmin()" (click)="router.navigate(['/vendas/deletados'])" class="btn-audit">🗄️ Auditoria</button>
             <button (click)="voltarAoDashboard()" class="btn-voltar">← Voltar ao Dashboard</button>
         </div>
     </div>
@@ -87,6 +89,18 @@
     <div class="vendas-detalhadas">
         <h2>📋 Vendas Registradas</h2>
 
+        <!-- Modal de confirmação customizado -->
+        <div *ngIf="showConfirmModal" class="confirm-overlay">
+            <div class="confirm-dialog">
+                <h3>{{ confirmTitle }}</h3>
+                <p>{{ confirmMessage }}</p>
+                <div class="confirm-actions">
+                    <button class="btn-cancel" (click)="confirmModalCancel()">Cancelar</button>
+                    <button class="btn-confirm" (click)="confirmModalConfirm()">Confirmar</button>
+                </div>
+            </div>
+        </div>
+
         @if (loading) {<div class="loading">
             Carregando vendas...
         </div>}
@@ -105,7 +119,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                    @for (venda of vendasFiltradas; track venda.id; let i = $index) {<tr class="venda-row">
+                    @for (venda of vendasFiltradas; track venda.row_id; let i = $index) {<tr class="venda-row">
                         <td class="venda-numero">{{ vendasFiltradas.length - i }}</td>
                         <td class="produto-info">
                             <div class="produto-nome com-imagem">
@@ -124,7 +138,8 @@
                             <span class="data-hora-inline">{{ formatarData(venda.data_venda) }}</span>
                         </td>
                         <td class="acoes">
-                            <button (click)="excluirVenda(venda.id!)" class="btn-excluir" title="Excluir venda">
+                            <button type="button" (click)="onDeleteClick($event, venda.id!)" class="btn-excluir"
+                                    [disabled]="!authService.isAdmin()" [attr.title]="!authService.isAdmin() ? 'Somente administradores podem excluir vendas' : 'Excluir venda'">
                                 🗑️
                             </button>
                         </td>

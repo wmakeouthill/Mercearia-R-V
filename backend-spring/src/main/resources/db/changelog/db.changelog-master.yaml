@@ -69,4 +69,35 @@ databaseChangeLog:
         - customChange:
             class: com.example.backendspring.db.LiquibaseSeedUsers
 
+  - changeSet:
+      id: 004-create-sale-deletions
+      author: system
+      changes:
+        - createTable:
+            tableName: sale_deletions
+            ifNotExists: true
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: sale_id
+                  type: BIGINT
+              - column:
+                  name: sale_type
+                  type: VARCHAR(50)
+              - column:
+                  name: payload
+                  type: TEXT
+              - column:
+                  name: deleted_by
+                  type: VARCHAR(255)
+              - column:
+                  name: deleted_at
+                  type: TIMESTAMP WITH TIME ZONE
+
 

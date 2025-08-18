@@ -8,6 +8,12 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import jakarta.servlet.http.HttpServletRequest;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -21,11 +27,13 @@ public class SaleController {
     private final SaleRepository saleRepository;
     private final ProductRepository productRepository;
     private final SaleReportService saleReportService;
+    private final SaleDeletionRepository saleDeletionRepository;
 
     private static final String KEY_ERROR = "error";
     private static final String KEY_MESSAGE = "message";
     private static final String KEY_QTD_VENDIDA = "quantidade_vendida";
     private static final String DEFAULT_PAGAMENTO = "dinheiro";
+    private static final Logger log = LoggerFactory.getLogger(SaleController.class);
 
     @GetMapping
     public List<Map<String, Object>> getAll() {
@@ -93,14 +101,51 @@ public class SaleController {
 
     @DeleteMapping("/{id}")
     @Transactional
-    public ResponseEntity<Object> delete(@PathVariable Long id) {
+    public ResponseEntity<Object> delete(@PathVariable Long id, HttpServletRequest request) {
         Sale venda = saleRepository.findById(id).orElse(null);
         if (venda == null)
             return ResponseEntity.status(404).body(Map.of(KEY_ERROR, "Venda não encontrada"));
+
+        // build payload to store in audit
+        Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("id", venda.getId());
+        payload.put("produto_id", venda.getProduto().getId());
+        payload.put(KEY_QTD_VENDIDA, venda.getQuantidadeVendida());
+        payload.put("preco_total", venda.getPrecoTotal());
+        payload.put("data_venda", venda.getDataVenda());
+        payload.put("metodo_pagamento", venda.getMetodoPagamento());
+        payload.put("produto_nome", venda.getProduto().getNome());
+
+        // restore stock
         Product produto = venda.getProduto();
         produto.setQuantidadeEstoque(produto.getQuantidadeEstoque() + venda.getQuantidadeVendida());
         productRepository.save(produto);
+
         saleRepository.deleteById(id);
+
+        // record deletion audit
+        try {
+            ObjectMapper om = new ObjectMapper();
+            String payloadJson = om.writeValueAsString(payload);
+            String deletedBy = null;
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            if (auth != null)
+                deletedBy = auth.getName();
+            SaleDeletion sd = SaleDeletion.builder()
+                    .saleId(venda.getId())
+                    .saleType("legacy")
+                    .payload(payloadJson)
+                    .deletedBy(deletedBy)
+                    .deletedAt(OffsetDateTime.now())
+                    .build();
+            saleDeletionRepository.save(sd);
+            log.info("SALE_DELETION", "AUDIT_SAVED", "SaleDeletion saved",
+                    java.util.Map.of("saleDeletionId", sd.getId(), "saleId", sd.getSaleId()));
+        } catch (Exception e) {
+            // do not fail deletion if audit fails; just log
+            log.warn("Failed to record sale deletion audit: {}", e.getMessage());
+        }
+
         return ResponseEntity.ok(Map.of(KEY_MESSAGE, "Venda deletada com sucesso"));
     }
 

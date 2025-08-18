@@ -13,7 +13,10 @@ export class AuthService {
   private readonly currentUserSubject = new BehaviorSubject<Usuario | null>(null);
   public currentUser$ = this.currentUserSubject.asObservable();
 
-  constructor(private readonly router: Router, private readonly backendDetector: BackendDetectorService) {
+  constructor(
+    private readonly router: Router,
+    private readonly backendDetector: BackendDetectorService
+  ) {
     this.loadUserFromStorage();
   }
 
@@ -50,15 +53,19 @@ export class AuthService {
     return new Promise((resolve, reject) => {
       logger.info('AUTH_SERVICE', 'LOGIN', 'Tentativa de login', { username: credentials.username });
 
-      // Chamada real à API (resolver URL dinamicamente)
-      this.getApiUrl().then((apiUrl) => fetch(`${apiUrl}/auth/login`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(credentials)
-      }))
-        .then(response => {
+      this.getApiUrl()
+        .then((apiUrl) => {
+          logger.debug('AUTH_SERVICE', 'LOGIN_REQUEST', 'Calling login endpoint', {
+            apiUrl,
+            username: credentials.username
+          });
+          return fetch(`${apiUrl}/auth/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(credentials)
+          });
+        })
+        .then((response) => {
           if (!response.ok) {
             logger.error('AUTH_SERVICE', 'LOGIN', 'Credenciais inválidas', { username: credentials.username });
             throw new Error('Credenciais inválidas');
@@ -84,7 +91,7 @@ export class AuthService {
 
           resolve(true);
         })
-        .catch(error => {
+        .catch((error) => {
           const err = error instanceof Error ? error : new Error(String(error));
           logger.error('AUTH_SERVICE', 'LOGIN', 'Erro no login', err);
           reject(err);
@@ -123,7 +130,7 @@ export class AuthService {
 
   podeControlarCaixa(): boolean {
     const user = this.getCurrentUser();
-    return user ? (user.role === 'admin' || Boolean(user.pode_controlar_caixa)) : false;
+    return user ? user.role === 'admin' || Boolean(user.pode_controlar_caixa) : false;
   }
 
   getCurrentUser(): Usuario | null {
@@ -145,7 +152,7 @@ export class AuthService {
       const response = await fetch(`${apiUrl}/auth/me`, {
         method: 'GET',
         headers: {
-          'Authorization': `Bearer ${token}`,
+          Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json'
         }
       });

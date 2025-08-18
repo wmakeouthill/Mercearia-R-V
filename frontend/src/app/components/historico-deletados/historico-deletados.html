@@ -1,0 +1,37 @@
+<div class="historico-deletados-container">
+  <div class="historico-header">
+    <h1>🗄️ Auditoria de Vendas Deletadas</h1>
+  </div>
+
+  <div *ngIf="loading" class="loading">Carregando auditoria...</div>
+  <div *ngIf="error" class="error-message">{{ error }}</div>
+
+  <div *ngIf="!loading && deletions.length > 0" class="deletions-list">
+    <table class="tabela-deletions">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Sale ID</th>
+          <th>Tipo</th>
+          <th>Deletado por</th>
+          <th>Quando</th>
+          <th>Payload</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let d of deletions">
+          <td>{{ d.id }}</td>
+          <td>{{ d.saleId }}</td>
+          <td>{{ d.saleType }}</td>
+          <td>{{ d.deletedBy || '-' }}</td>
+          <td>{{ d.deletedAt }}</td>
+          <td><pre class="payload">{{ formatPayload(d.payload) }}</pre></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div *ngIf="!loading && deletions.length === 0" class="vazio">Nenhum registro de deleção encontrado.</div>
+</div>
+
+
