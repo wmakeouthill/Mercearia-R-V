@@ -258,6 +258,10 @@ public class NotaController {
         html.append(
                 "table{width:100%;border-collapse:collapse;margin-top:6px;font-size:10px;table-layout:auto;box-sizing:border-box}");
         html.append("th,td{padding:4px 6px;border-bottom:1px solid #ddd;box-sizing:border-box}");
+        // avoid double-thick line between last item row and the tfoot border: remove
+        // bottom border on the last tbody row so tfoot border-top is the single
+        // separator
+        html.append("tbody tr:last-child td{border-bottom:none}");
         html.append("td.prod{display:flex;align-items:center;gap:6px;white-space:normal;overflow-wrap:break-word}");
         html.append(
                 ".prod-name{display:block;flex:1;min-width:0;white-space:normal;overflow-wrap:break-word;word-break:normal}");
