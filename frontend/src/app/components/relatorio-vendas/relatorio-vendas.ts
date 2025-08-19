@@ -69,6 +69,12 @@ export class RelatorioVendasComponent implements OnInit {
   @ViewChild('pdfViewerContainer', { read: ElementRef }) pdfViewerContainer?: ElementRef<HTMLDivElement>;
   previewHtml: string | null = null;
   objectFailed = false;
+  // PDF.js state
+  private pdfArrayBuffer: ArrayBuffer | null = null;
+  public pdfScale = 1.4;
+  private pdfDoc: any = null;
+  private pageObserver: IntersectionObserver | null = null;
+  private renderedPages = new Set<number>();
 
   ngOnInit(): void {
     logger.info('RELATORIO_VENDAS', 'INIT', 'Componente iniciado');
@@ -91,7 +97,7 @@ export class RelatorioVendasComponent implements OnInit {
     // previewHtml not required for PDF preview; avoid calling /nota/html to reduce payload/log noise
     this.previewHtml = null;
     this.apiService.getNotaPdf(orderId).subscribe({
-      next: (blob: any) => {
+      next: async (blob: any) => {
         try {
           const pdfBlob = blob as Blob;
           // debug info to help diagnose preview issues
@@ -115,15 +121,14 @@ export class RelatorioVendasComponent implements OnInit {
           this.previewBlobUrl = this.sanitizer.bypassSecurityTrustResourceUrl(url); // sanitized for iframe src if needed
 
           // Render PDF directly from Blob (avoid fetching blob: URL which may be blocked by CSP)
-          try {
-            this.renderPdfJsFromBlob(pdfBlob);
-          } catch (e) {
-            console.debug('RELATORIO_VENDAS: renderPdfJsFromBlob failed scheduling', e);
-          }
+          // fire-and-forget: render and keep arrayBuffer for zoom operations
+          (this.renderPdfJsFromBlob(pdfBlob) as Promise<void>).catch(e => console.debug('RELATORIO_VENDAS: renderPdfJsFromBlob failed scheduling', e));
           // attempt to render preview with PDF.js (after view has had chance to mount)
           setTimeout(() => {
             try {
               // render directly from the received Blob (pdfBlob is in scope)
+              // fire-and-forget: rendering already attempted above but allow a quick retry
+              // eslint-disable-next-line @typescript-eslint/no-floating-promises
               this.renderPdfJsFromBlob(pdfBlob);
             } catch (e) { console.debug('renderPdfJs scheduling failed', e); }
           }, 60);
@@ -162,11 +167,49 @@ export class RelatorioVendasComponent implements OnInit {
     a.click();
   }
 
+  printPdf(): void {
+    if (!this.previewObjectUrl) return;
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.src = this.previewObjectUrl as string;
+    document.body.appendChild(iframe);
+    iframe.onload = () => {
+      try {
+        iframe.contentWindow?.focus();
+        iframe.contentWindow?.print();
+      } catch (e) {
+        console.error('Failed to print PDF', e);
+      } finally {
+        setTimeout(() => { document.body.removeChild(iframe); }, 500);
+      }
+    };
+  }
+
+  fitWidth(): void {
+    // set scale so that pages fit the container width
+    if (!this.pdfViewerContainer) return;
+    const containerWidth = this.pdfViewerContainer.nativeElement.clientWidth || 420;
+    // approximate: use first canvas width to compute scale
+    const firstCanvas = this.pdfViewerContainer.nativeElement.querySelector('.pdf-page-canvas') as HTMLCanvasElement | null;
+    if (!firstCanvas) return;
+    const intrinsic = firstCanvas.width || (firstCanvas.getBoundingClientRect().width || containerWidth);
+    const newScale = Math.max(0.6, Math.min(3, containerWidth / intrinsic * this.pdfScale));
+    this.pdfScale = Number(newScale.toFixed(2));
+    // re-render
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.reRenderPdf();
+  }
+
   // Render PDF with PDF.js into the modal container
   private async renderPdfJsFromBlob(pdfBlob: Blob): Promise<void> {
     try {
       if (!this.pdfViewerContainer) return;
-      // Clear previous viewer
+      // Clear previous viewer and observer
+      this.cleanupObserverAndSlots();
       this.pdfViewerContainer.nativeElement.innerHTML = '';
 
       // Convert blob to arrayBuffer without fetch to avoid blob: CSP issues
@@ -176,10 +219,7 @@ export class RelatorioVendasComponent implements OnInit {
       const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf');
 
       // Configure workerSrc to avoid "No GlobalWorkerOptions.workerSrc specified" error.
-      // Using unpkg CDN for the worker; for offline or locked-down environments
-      // consider copying pdf.worker.min.js into your assets and pointing workerSrc there.
       try {
-        // Prefer local worker from assets to satisfy strict CSP
         (pdfjsLib as any).GlobalWorkerOptions.workerSrc = '/assets/pdfjs/pdf.worker.min.js';
       } catch (e) {
         console.warn('Could not set pdfjs workerSrc via GlobalWorkerOptions', e);
@@ -188,27 +228,120 @@ export class RelatorioVendasComponent implements OnInit {
       const loadingTask = (pdfjsLib as any).getDocument({ data: arrayBuffer });
       const pdf = await loadingTask.promise;
 
-      // Render all pages vertically with increased scale for readability
-      const scale = 1.4;
-      for (let p = 1; p <= pdf.numPages; p++) {
-        const page = await pdf.getPage(p);
-        const viewport = page.getViewport({ scale });
+      // save arrayBuffer and pdfDoc for zoom/pan operations and render-on-demand
+      this.pdfArrayBuffer = arrayBuffer;
+      this.pdfDoc = pdf;
+      this.renderedPages.clear();
 
-        const canvas = document.createElement('canvas');
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-        canvas.className = 'pdf-page-canvas';
-        this.pdfViewerContainer.nativeElement.appendChild(canvas);
-        const ctx = canvas.getContext('2d');
-        if (!ctx) continue;
-        const renderContext = { canvasContext: ctx, viewport };
-        // render pages sequentially to avoid heavy parallel rendering
-        // eslint-disable-next-line no-await-in-loop
-        await page.render(renderContext).promise;
-      }
+      // create placeholders and observer to render pages on demand
+      this.setupPlaceholders(pdf.numPages);
     } catch (e) {
       console.error('PDF.js render failed', e);
     }
+  }
+
+  zoomIn(): void {
+    this.pdfScale = Math.min(this.pdfScale + 0.2, 3);
+    this.reRenderPdf();
+  }
+
+  zoomOut(): void {
+    this.pdfScale = Math.max(this.pdfScale - 0.2, 0.6);
+    this.reRenderPdf();
+  }
+
+  private async reRenderPdf(): Promise<void> {
+    try {
+      if (!this.pdfViewerContainer) return;
+      // If we have arrayBuffer but not pdfDoc, load it; otherwise reuse
+      if (!this.pdfDoc) {
+        if (!this.pdfArrayBuffer) return;
+        const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf');
+        (pdfjsLib as any).GlobalWorkerOptions.workerSrc = '/assets/pdfjs/pdf.worker.min.js';
+        const loadingTask = (pdfjsLib as any).getDocument({ data: this.pdfArrayBuffer });
+        this.pdfDoc = await loadingTask.promise;
+      }
+
+      // clear previous slots/observer and recreate placeholders so observer will render visible pages
+      this.cleanupObserverAndSlots();
+      this.pdfViewerContainer.nativeElement.innerHTML = '';
+      this.renderedPages.clear();
+      this.setupPlaceholders(this.pdfDoc.numPages);
+    } catch (e) {
+      console.error('reRenderPdf failed', e);
+    }
+  }
+
+  private setupPlaceholders(numPages: number): void {
+    if (!this.pdfViewerContainer) return;
+    const container = this.pdfViewerContainer.nativeElement;
+    // create observer
+    const options: IntersectionObserverInit = { root: container, rootMargin: '400px', threshold: 0.1 };
+    this.pageObserver = new IntersectionObserver((entries) => {
+      entries.forEach(ent => {
+        if (ent.isIntersecting) {
+          const slot = ent.target as HTMLElement;
+          const pageAttr = slot.getAttribute('data-page');
+          if (!pageAttr) return;
+          const pageNum = Number(pageAttr);
+          // eslint-disable-next-line @typescript-eslint/no-floating-promises
+          this.renderPageIfNeeded(pageNum).catch(e => console.error('renderPageIfNeeded failed', e));
+        }
+      });
+    }, options);
+
+    for (let p = 1; p <= numPages; p++) {
+      const slot = document.createElement('div');
+      slot.className = 'pdf-page-slot';
+      slot.setAttribute('data-page', String(p));
+      // visual placeholder size to avoid layout shift; will be replaced by canvas when rendered
+      slot.style.minHeight = '360px';
+      slot.style.display = 'flex';
+      slot.style.alignItems = 'center';
+      slot.style.justifyContent = 'center';
+      slot.style.marginBottom = '12px';
+      slot.innerHTML = `<div class="page-loading">Carregando página ${p}...</div>`;
+      container.appendChild(slot);
+      if (this.pageObserver) this.pageObserver.observe(slot);
+    }
+  }
+
+  private async renderPageIfNeeded(pageNum: number): Promise<void> {
+    if (!this.pdfDoc || !this.pdfViewerContainer) return;
+    if (this.renderedPages.has(pageNum)) return;
+    try {
+      const page = await this.pdfDoc.getPage(pageNum);
+      const viewport = page.getViewport({ scale: this.pdfScale });
+      const canvas = document.createElement('canvas');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      canvas.className = 'pdf-page-canvas';
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      await page.render({ canvasContext: ctx, viewport }).promise;
+      // replace placeholder slot content with canvas
+      const container = this.pdfViewerContainer.nativeElement;
+      const slot = container.querySelector(`.pdf-page-slot[data-page="${pageNum}"]`);
+      if (slot && slot.parentElement) {
+        slot.parentElement.replaceChild(canvas, slot);
+      }
+      this.renderedPages.add(pageNum);
+    } catch (e) {
+      console.error('renderPage failed', e);
+    }
+  }
+
+  private cleanupObserverAndSlots(): void {
+    try {
+      if (this.pageObserver) {
+        this.pageObserver.disconnect();
+        this.pageObserver = null;
+      }
+    } catch (e) {
+      // ignore
+    }
+    this.renderedPages.clear();
+    // don't clear pdfDoc here; keep for re-render
   }
 
   onOverlayClick(event: MouseEvent): void {

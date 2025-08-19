@@ -287,6 +287,13 @@
                     <button class="btn-primary" (click)="sendNotaByEmailFromModal()">📧 Email</button>
                     <button class="btn-primary" (click)="sendNotaByWhatsappFromModal()">💬 WhatsApp</button>
                 </div>
+                <div class="pdf-tools centered">
+                    <button class="btn-secondary" (click)="zoomOut()">➖</button>
+                    <button class="btn-secondary" (click)="fitWidth()">↔️ Ajustar largura</button>
+                    <span class="scale-label">{{ pdfScale | number:'1.1-1' }}x</span>
+                    <button class="btn-secondary" (click)="zoomIn()">➕</button>
+                    <button class="btn-secondary" (click)="printPdf()">🖨️ Imprimir</button>
+                </div>
             </div>
         </div>
     </div>}

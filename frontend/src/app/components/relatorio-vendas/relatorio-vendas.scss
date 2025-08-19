@@ -663,7 +663,10 @@
 .preview-actions .btn-primary { background: linear-gradient(135deg, var(--primary-blue) 0%, var(--secondary-blue) 100%); color: #fff; border: none; padding: 8px 12px; border-radius: 8px; cursor: pointer; }
 .preview-actions .btn-secondary { background: transparent; border: 1px solid rgba(0,0,0,0.08); padding: 8px 12px; border-radius: 8px; cursor: pointer; }
 .preview-actions.centered { justify-content:center; }
-.pdf-page-canvas { display:block; max-width:100%; height:auto; margin-bottom:8px; }
+.pdf-page-canvas { display:block; max-width:100%; height:auto; margin-bottom:8px; box-shadow: 0 4px 12px rgba(0,0,0,0.06); border-radius: 6px; }
+
+.pdf-tools { margin-top:8px; display:flex; justify-content:center; gap:8px; align-items:center; }
+.pdf-tools .scale-label { font-weight:700; color:var(--primary-blue); }
 
 // Responsividade
 @media (max-width: 768px) {
