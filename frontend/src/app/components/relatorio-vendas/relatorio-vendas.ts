@@ -232,6 +232,11 @@ export class RelatorioVendasComponent implements OnInit {
       this.pdfArrayBuffer = arrayBuffer;
       this.pdfDoc = pdf;
       this.renderedPages.clear();
+      // If the PDF has a single page (cupom), render it immediately for best UX
+      if (pdf.numPages === 1) {
+        await this.renderSinglePage(1);
+        return;
+      }
 
       // create placeholders and observer to render pages on demand
       this.setupPlaceholders(pdf.numPages);
@@ -262,13 +267,38 @@ export class RelatorioVendasComponent implements OnInit {
         this.pdfDoc = await loadingTask.promise;
       }
 
-      // clear previous slots/observer and recreate placeholders so observer will render visible pages
+      // clear previous slots/observer
       this.cleanupObserverAndSlots();
       this.pdfViewerContainer.nativeElement.innerHTML = '';
       this.renderedPages.clear();
+      // If single page, render immediately
+      if (this.pdfDoc.numPages === 1) {
+        await this.renderSinglePage(1);
+        return;
+      }
       this.setupPlaceholders(this.pdfDoc.numPages);
     } catch (e) {
       console.error('reRenderPdf failed', e);
+    }
+  }
+
+  private async renderSinglePage(pageNum: number): Promise<void> {
+    if (!this.pdfDoc || !this.pdfViewerContainer) return;
+    if (this.renderedPages.has(pageNum)) return;
+    try {
+      const page = await this.pdfDoc.getPage(pageNum);
+      const viewport = page.getViewport({ scale: this.pdfScale });
+      const canvas = document.createElement('canvas');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      canvas.className = 'pdf-page-canvas';
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      await page.render({ canvasContext: ctx, viewport }).promise;
+      this.pdfViewerContainer.nativeElement.appendChild(canvas);
+      this.renderedPages.add(pageNum);
+    } catch (e) {
+      console.error('renderSinglePage failed', e);
     }
   }
 
