@@ -1,0 +1,52 @@
+<div class="clientes-container">
+  <div class="clientes-header">
+    <h1>Clientes</h1>
+    <div class="actions">
+      <button (click)="goBack()" class="btn-voltar">← Voltar</button>
+    </div>
+  </div>
+
+  <div class="search">
+    <input type="text" [(ngModel)]="search" placeholder="Pesquisar clientes..." (input)="loadClientes()" />
+  </div>
+
+  <div *ngIf="loading" class="loading">Carregando...</div>
+  <div *ngIf="error" class="error">{{ error }}</div>
+
+  <div *ngIf="!loading">
+    <table class="tabela-clientes">
+      <thead>
+        <tr><th>Nome</th><th>Email</th><th>Telefone</th><th>Últimas Compras</th></tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let c of clientes">
+          <td>{{ c.nome }}</td>
+          <td>{{ c.email }}</td>
+          <td>{{ c.telefone }}</td>
+          <td>
+            <button *ngIf="true" (click)="toggleExpand(c.id)">🔽</button>
+          </td>
+        </tr>
+        <tr *ngFor="let c of clientes">
+          <td colspan="4" *ngIf="expanded.has(c.id)">
+            <div *ngIf="vendasPorCliente[c.id]">
+              <table class="tabela-vendas-mini">
+                <thead><tr><th>#</th><th>Total</th><th>Data</th></tr></thead>
+                <tbody>
+                  <tr *ngFor="let v of vendasPorCliente[c.id]; let i = index">
+                    <td>{{ v.id }}</td>
+                    <td>R$ {{ v.preco_total }}</td>
+                    <td>{{ v.data_venda }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div *ngIf="!vendasPorCliente[c.id]">Carregando vendas...</div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+

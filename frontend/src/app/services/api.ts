@@ -395,6 +395,24 @@ export class ApiService {
     );
   }
 
+  // CLIENTES
+  getClientes(q?: string): Observable<any[]> {
+    const url = q ? `${this.baseUrl}/clientes?q=${encodeURIComponent(q)}` : `${this.baseUrl}/clientes`;
+    return this.makeRequest(() => this.http.get<any[]>(url), 'GET_CLIENTES');
+  }
+
+  getClienteVendas(clienteId: number, limit: number = 5): Observable<any[]> {
+    return this.makeRequest(() => this.http.get<any[]>(`${this.baseUrl}/clientes/${clienteId}/vendas?limit=${limit}`), 'GET_CLIENTE_VENDAS');
+  }
+
+  createCliente(cliente: any): Observable<any> {
+    return this.makeRequest(() => this.http.post<any>(`${this.baseUrl}/clientes`, cliente), 'CREATE_CLIENTE');
+  }
+
+  updateCliente(id: number, cliente: any): Observable<any> {
+    return this.makeRequest(() => this.http.put<any>(`${this.baseUrl}/clientes/${id}`, cliente), 'UPDATE_CLIENTE');
+  }
+
   getResumoMesAtual(): Observable<RelatorioResumo> {
     return this.makeRequest(
       () => this.http.get<RelatorioResumo>(`${this.baseUrl}/vendas/relatorios/mes`),

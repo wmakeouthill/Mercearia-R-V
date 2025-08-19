@@ -301,6 +301,10 @@ export class AdministracaoComponent implements OnInit {
     this.router.navigate(['/dashboard']);
   }
 
+  goToClientes(): void {
+    this.router.navigate(['/administracao/clientes']);
+  }
+
   getRoleDisplayName(role: string): string {
     return role === 'admin' ? 'Administrador' : 'Operador';
   }

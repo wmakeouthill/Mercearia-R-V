@@ -44,6 +44,10 @@ public class SaleOrder {
     @Column(name = "customer_phone")
     private String customerPhone;
 
+    @ManyToOne(optional = true)
+    @JoinColumn(name = "cliente_id")
+    private com.example.backendspring.client.Client cliente;
+
     @OneToMany(mappedBy = "venda", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<SaleItem> itens = new ArrayList<>();

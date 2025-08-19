@@ -212,6 +212,12 @@
         <div class="modal-field">
             <label for="modalCustomerName">Nome (opcional)</label>
             <input id="modalCustomerName" type="text" [(ngModel)]="modalCustomerName" class="input-modal">
+            <div class="client-autocomplete">
+                <input type="text" placeholder="Pesquisar clientes..." [(ngModel)]="clientSearchTerm" (input)="onClientSearchChange()" />
+                <ul *ngIf="clientResults.length > 0" class="autocomplete-list">
+                    <li *ngFor="let c of clientResults" (click)="selectClient(c)">{{ c.nome }} — {{ c.email || c.telefone }}</li>
+                </ul>
+            </div>
         </div>
         <div class="modal-field">
             <label for="modalCustomerEmail">Email (opcional)</label>
@@ -231,6 +237,7 @@
         <div class="modal-actions">
             <button class="btn-primary" (click)="sendNotaByEmail()">📧 Abrir cliente de Email (mailto)</button>
             <button class="btn-primary" (click)="sendNotaByWhatsapp()">💬 Enviar por WhatsApp</button>
+            <button class="btn-secondary" (click)="saveModalAsCliente()">💾 Salvar/Atualizar Cliente</button>
             <button class="btn-secondary" (click)="closeEnviarModal()">Fechar</button>
         </div>
     </div>

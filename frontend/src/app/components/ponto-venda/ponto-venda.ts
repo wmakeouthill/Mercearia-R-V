@@ -37,6 +37,11 @@ export class PontoVendaComponent implements OnInit, OnDestroy {
   modalCustomerName = '';
   modalCustomerEmail = '';
   modalCustomerPhone = '';
+  // Cliente autocomplete
+  clientSearchTerm = '';
+  clientResults: any[] = [];
+  clientSearching = false;
+  private clientSearchSubject = new Subject<string>();
   // Preview do PDF
   previewLoading = false;
   previewBlobUrl: string | null = null;
@@ -147,6 +152,38 @@ export class PontoVendaComponent implements OnInit, OnDestroy {
     this.setupPeriodicCaixaCheck();
     this.loadProdutos();
     this.setupSearch();
+    this.setupClientSearch();
+  }
+
+  private setupClientSearch(): void {
+    this.clientSearchSubject.pipe(debounceTime(300), distinctUntilChanged()).subscribe(term => {
+      const t = (term || '').trim();
+      if (!t) {
+        this.clientResults = [];
+        this.clientSearching = false;
+        return;
+      }
+      this.clientSearching = true;
+      this.apiService.getClientes(t).subscribe({ next: r => { this.clientResults = r; this.clientSearching = false; }, error: () => { this.clientResults = []; this.clientSearching = false; } });
+    });
+  }
+
+  onClientSearchChange(): void {
+    this.clientSearchSubject.next(this.clientSearchTerm);
+  }
+
+  selectClient(c: any): void {
+    this.modalCustomerName = c.nome || '';
+    this.modalCustomerEmail = c.email || '';
+    this.modalCustomerPhone = c.telefone || '';
+    this.clientResults = [];
+    this.clientSearchTerm = '';
+  }
+
+  saveModalAsCliente(): void {
+    const payload: any = { nome: this.modalCustomerName, email: this.modalCustomerEmail, telefone: this.modalCustomerPhone };
+    if (!payload.nome) { alert('Nome é obrigatório para salvar cliente'); return; }
+    this.apiService.createCliente(payload).subscribe({ next: () => { this.showModernNotification = true; this.modernNotificationMessage = 'Cliente criado com sucesso'; setTimeout(() => this.hideModernNotification(), 3000); }, error: (e) => { this.error = 'Erro ao criar cliente'; console.error(e); } });
   }
 
   ngOnDestroy(): void {

@@ -3,6 +3,8 @@ package com.example.backendspring.sale;
 import com.example.backendspring.product.Product;
 import com.example.backendspring.product.ProductRepository;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.example.backendspring.client.Client;
+import com.example.backendspring.client.ClientRepository;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -26,6 +28,7 @@ public class SaleController {
 
     private final SaleRepository saleRepository;
     private final ProductRepository productRepository;
+    private final ClientRepository clientRepository;
     private final SaleReportService saleReportService;
     private final SaleDeletionRepository saleDeletionRepository;
     private final ObjectMapper objectMapper;
@@ -81,23 +84,39 @@ public class SaleController {
         produto.setQuantidadeEstoque(produto.getQuantidadeEstoque() - req.getQuantidadeVendida());
         productRepository.save(produto);
 
-        Sale sale = Sale.builder()
+        Sale.SaleBuilder builder = Sale.builder()
                 .produto(produto)
                 .quantidadeVendida(req.getQuantidadeVendida())
                 .precoTotal(req.getPrecoTotal())
                 .dataVenda(OffsetDateTime.now())
-                .metodoPagamento(metodo)
-                .build();
+                .metodoPagamento(metodo);
+
+        if (req.getClienteId() != null) {
+            Client cliente = clientRepository.findById(req.getClienteId()).orElse(null);
+            if (cliente != null) {
+                builder.cliente(cliente);
+            }
+        }
+
+        Sale sale = builder.build();
         saleRepository.save(sale);
 
-        return ResponseEntity.status(201).body(Map.of(
-                "id", sale.getId(),
-                "produto_id", produto.getId(),
-                KEY_QTD_VENDIDA, sale.getQuantidadeVendida(),
-                "preco_total", sale.getPrecoTotal(),
-                "data_venda", sale.getDataVenda(),
-                "metodo_pagamento", sale.getMetodoPagamento(),
-                "produto_nome", produto.getNome()));
+        java.util.Map<String, Object> resp = new java.util.LinkedHashMap<>();
+        resp.put("id", sale.getId());
+        resp.put("produto_id", produto.getId());
+        resp.put(KEY_QTD_VENDIDA, sale.getQuantidadeVendida());
+        resp.put("preco_total", sale.getPrecoTotal());
+        resp.put("data_venda", sale.getDataVenda());
+        resp.put("metodo_pagamento", sale.getMetodoPagamento());
+        resp.put("produto_nome", produto.getNome());
+        if (sale.getCliente() != null) {
+            resp.put("cliente_id", sale.getCliente().getId());
+            resp.put("cliente_nome", sale.getCliente().getNome());
+            resp.put("cliente_email", sale.getCliente().getEmail());
+            resp.put("cliente_telefone", sale.getCliente().getTelefone());
+        }
+
+        return ResponseEntity.status(201).body(resp);
     }
 
     @DeleteMapping("/{id}")
@@ -175,5 +194,7 @@ public class SaleController {
 
         @JsonProperty("metodo_pagamento")
         private String metodoPagamento;
+        @JsonProperty("cliente_id")
+        private Long clienteId;
     }
 }

@@ -1,6 +1,7 @@
 package com.example.backendspring.sale;
 
 import com.example.backendspring.product.Product;
+import com.example.backendspring.client.Client;
 import jakarta.persistence.*;
 import lombok.*;
 import java.time.OffsetDateTime;
@@ -32,4 +33,8 @@ public class Sale {
 
     @Column(name = "metodo_pagamento", nullable = false)
     private String metodoPagamento; // dinheiro | cartao_credito | cartao_debito | pix
+
+    @ManyToOne(optional = true)
+    @JoinColumn(name = "cliente_id")
+    private Client cliente;
 }

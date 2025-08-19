@@ -33,12 +33,15 @@ public class NotaController {
     private static final String CLOSE_TD = "</td>";
 
     private final SaleOrderRepository saleOrderRepository;
+    private final com.example.backendspring.client.ClientRepository clientRepository;
     private EmailService emailService; // optional, injected via constructor
 
     private static final String ERROR_KEY = "error";
 
-    public NotaController(SaleOrderRepository saleOrderRepository, @Nullable EmailService emailService) {
+    public NotaController(SaleOrderRepository saleOrderRepository,
+            com.example.backendspring.client.ClientRepository clientRepository, @Nullable EmailService emailService) {
         this.saleOrderRepository = saleOrderRepository;
+        this.clientRepository = clientRepository;
         this.emailService = emailService; // may be null if JavaMailSender not configured
         log.info("EmailService present: {}", this.emailService != null);
     }
@@ -148,7 +151,7 @@ public class NotaController {
     }
 
     @PostMapping("/{id}/send-email")
-    @Transactional(readOnly = true)
+    @Transactional
     public ResponseEntity<Object> sendNotaEmail(@PathVariable Long id, @RequestBody SendEmailRequest req) {
         var vendaOpt = saleOrderRepository.findById(id);
         if (vendaOpt.isEmpty())
@@ -174,6 +177,36 @@ public class NotaController {
                 return ResponseEntity.status(500).body(Map.of(ERROR_KEY, "Email service not configured"));
             }
             emailService.sendEmailWithAttachment(to, subject, body, pdfBytes, NOTE_PREFIX + id + ".pdf");
+
+            // After successful send, persist or link client based on saleOrder contact
+            // fields
+            try {
+                com.example.backendspring.client.Client cliente = null;
+                if (venda.getCustomerEmail() != null && !venda.getCustomerEmail().isBlank()) {
+                    cliente = clientRepository.findByEmail(venda.getCustomerEmail()).orElse(null);
+                }
+                if (cliente == null && venda.getCustomerPhone() != null && !venda.getCustomerPhone().isBlank()) {
+                    cliente = clientRepository.findByTelefone(venda.getCustomerPhone()).orElse(null);
+                }
+                if (cliente == null) {
+                    // create new client
+                    cliente = com.example.backendspring.client.Client.builder()
+                            .nome(venda.getCustomerName() != null ? venda.getCustomerName() : "Cliente")
+                            .email(venda.getCustomerEmail())
+                            .telefone(venda.getCustomerPhone())
+                            .createdAt(java.time.OffsetDateTime.now())
+                            .build();
+                    clientRepository.save(cliente);
+                }
+                // associate sale order with client if not already linked
+                if (cliente != null && venda.getCliente() == null) {
+                    venda.setCliente(cliente);
+                    saleOrderRepository.save(venda);
+                }
+            } catch (Exception e) {
+                log.warn("Failed to create/link client after send-email: {}", e.getMessage());
+            }
+
             return ResponseEntity.ok(Map.of("message", "Email enviado"));
         } catch (Exception e) {
             return ResponseEntity.status(500)

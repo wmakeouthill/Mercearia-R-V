@@ -17,4 +17,6 @@ public interface SaleOrderRepository extends JpaRepository<SaleOrder, Long> {
 
     @Query("select distinct so from SaleOrder so left join fetch so.itens left join fetch so.pagamentos order by so.dataVenda desc")
     List<SaleOrder> findAllOrderByData();
+
+    List<SaleOrder> findByClienteIdOrderByDataVendaDesc(Long clienteId);
 }

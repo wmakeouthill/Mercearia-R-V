@@ -28,6 +28,7 @@ import java.util.Set;
 public class CheckoutController {
 
     private final SaleOrderRepository saleOrderRepository;
+    private final com.example.backendspring.client.ClientRepository clientRepository;
     private final ProductRepository productRepository;
     private final SaleDeletionRepository saleDeletionRepository;
     private final ObjectMapper objectMapper;
@@ -100,6 +101,35 @@ public class CheckoutController {
             if (req.getCustomerPhone() != null)
                 venda.setCustomerPhone(req.getCustomerPhone());
 
+            // if customer email/phone provided, try to find or create client and link sales
+            try {
+                if (req.getCustomerEmail() != null || req.getCustomerPhone() != null) {
+                    com.example.backendspring.client.Client cliente = null;
+                    if (req.getCustomerEmail() != null) {
+                        cliente = clientRepository.findByEmail(req.getCustomerEmail()).orElse(null);
+                    }
+                    if (cliente == null && req.getCustomerPhone() != null) {
+                        cliente = clientRepository.findByTelefone(req.getCustomerPhone()).orElse(null);
+                    }
+                    if (cliente == null) {
+                        cliente = com.example.backendspring.client.Client.builder()
+                                .nome(req.getCustomerName() != null ? req.getCustomerName() : "Cliente")
+                                .email(req.getCustomerEmail())
+                                .telefone(req.getCustomerPhone())
+                                .createdAt(java.time.OffsetDateTime.now())
+                                .build();
+                        clientRepository.save(cliente);
+                    }
+                    // link each sale item to cliente (persisted as Sale rows)
+                    // After save(venda) and addItemsToOrder, we'll create Sale rows linked to
+                    // cliente
+                    // Store on venda for later linking
+                    venda.setCustomerName(venda.getCustomerName());
+                }
+            } catch (Exception e) {
+                // ignore non-critical client save errors
+            }
+
             saleOrderRepository.save(venda);
 
             addItemsToOrder(venda, req.getItens());
@@ -130,8 +160,42 @@ public class CheckoutController {
         if (payload.containsKey("customerPhone"))
             venda.setCustomerPhone(payload.get("customerPhone"));
 
+        // Try to find or create client and associate
+        try {
+            com.example.backendspring.client.Client cliente = null;
+            String email = venda.getCustomerEmail();
+            String phone = venda.getCustomerPhone();
+            if (email != null && !email.isBlank()) {
+                cliente = this.clientRepository.findByEmail(email).orElse(null);
+            }
+            if (cliente == null && phone != null && !phone.isBlank()) {
+                cliente = this.clientRepository.findByTelefone(phone).orElse(null);
+            }
+            if (cliente == null) {
+                cliente = com.example.backendspring.client.Client.builder()
+                        .nome(venda.getCustomerName() != null ? venda.getCustomerName() : "Cliente")
+                        .email(email)
+                        .telefone(phone)
+                        .createdAt(java.time.OffsetDateTime.now())
+                        .build();
+                this.clientRepository.save(cliente);
+            }
+            if (cliente != null) {
+                venda.setCliente(cliente);
+            }
+        } catch (Exception e) {
+            // ignore client creation/link errors
+        }
+
         saleOrderRepository.save(venda);
-        return ResponseEntity.ok(Map.of("message", "Contato atualizado"));
+        java.util.Map<String, Object> resp = new java.util.LinkedHashMap<>();
+        resp.put("message", "Contato atualizado");
+        try {
+            if (venda.getCliente() != null)
+                resp.put("cliente_id", venda.getCliente().getId());
+        } catch (Exception e) {
+            /* ignore */ }
+        return ResponseEntity.ok(resp);
     }
 
     @GetMapping

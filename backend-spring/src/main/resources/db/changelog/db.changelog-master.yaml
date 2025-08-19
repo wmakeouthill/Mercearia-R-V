@@ -117,3 +117,78 @@ databaseChangeLog:
                   name: customer_phone
                   type: VARCHAR(50)
 
+  - changeSet:
+      id: 007-create-clientes-and-link-to-vendas
+      author: system
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - columnExists:
+                tableName: vendas
+                columnName: cliente_id
+      changes:
+        - createTable:
+            tableName: clientes
+            ifNotExists: true
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: nome
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: email
+                  type: VARCHAR(255)
+              - column:
+                  name: telefone
+                  type: VARCHAR(50)
+              - column:
+                  name: documento
+                  type: VARCHAR(100)
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+        - addColumn:
+            tableName: vendas
+            columns:
+              - column:
+                  name: cliente_id
+                  type: BIGINT
+                  remarks: "FK para clientes (opcional)"
+        - addForeignKeyConstraint:
+            baseTableName: vendas
+            baseColumnNames: cliente_id
+            constraintName: fk_vendas_clientes
+            referencedTableName: clientes
+            referencedColumnNames: id
+
+  - changeSet:
+      id: 008-link-clientes-to-venda_cabecalho
+      author: system
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - columnExists:
+                tableName: venda_cabecalho
+                columnName: cliente_id
+      changes:
+        - addColumn:
+            tableName: venda_cabecalho
+            columns:
+              - column:
+                  name: cliente_id
+                  type: BIGINT
+                  remarks: "FK para clientes (opcional)"
+        - addForeignKeyConstraint:
+            baseTableName: venda_cabecalho
+            baseColumnNames: cliente_id
+            constraintName: fk_venda_cabecalho_clientes
+            referencedTableName: clientes
+            referencedColumnNames: id
