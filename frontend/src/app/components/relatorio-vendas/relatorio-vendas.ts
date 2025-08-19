@@ -188,17 +188,24 @@ export class RelatorioVendasComponent implements OnInit {
       const loadingTask = (pdfjsLib as any).getDocument({ data: arrayBuffer });
       const pdf = await loadingTask.promise;
 
-      const page = await pdf.getPage(1);
-      const viewport = page.getViewport({ scale: 1.2 });
+      // Render all pages vertically with increased scale for readability
+      const scale = 1.4;
+      for (let p = 1; p <= pdf.numPages; p++) {
+        const page = await pdf.getPage(p);
+        const viewport = page.getViewport({ scale });
 
-      const canvas = document.createElement('canvas');
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
-      this.pdfViewerContainer.nativeElement.appendChild(canvas);
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-      const renderContext = { canvasContext: ctx, viewport };
-      await page.render(renderContext).promise;
+        const canvas = document.createElement('canvas');
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        canvas.className = 'pdf-page-canvas';
+        this.pdfViewerContainer.nativeElement.appendChild(canvas);
+        const ctx = canvas.getContext('2d');
+        if (!ctx) continue;
+        const renderContext = { canvasContext: ctx, viewport };
+        // render pages sequentially to avoid heavy parallel rendering
+        // eslint-disable-next-line no-await-in-loop
+        await page.render(renderContext).promise;
+      }
     } catch (e) {
       console.error('PDF.js render failed', e);
     }
