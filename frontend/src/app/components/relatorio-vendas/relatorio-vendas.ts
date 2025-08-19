@@ -417,16 +417,27 @@ export class RelatorioVendasComponent implements OnInit {
       this.apiService.updateOrderContact(orderId, contactPayload).subscribe({ next: () => { }, error: () => { } });
     }
 
-    const pdfUrl = this.apiService.getNotaPdfUrl(orderId);
+    const to = this.modalCustomerEmail || '';
+    if (!to || to.trim().length === 0) {
+      alert('Informe um e-mail válido para enviar a nota.');
+      return;
+    }
+
     const subject = `Comprovante - Pedido #${orderId}`;
-    const body = `Segue a nota do seu último pedido na nossa loja:\n\n${pdfUrl}`;
-    // Prefer opening in external browser (Gmail) with prefilled body; mailto may open default mail client
-    const mailto = `mailto:${encodeURIComponent(this.modalCustomerEmail || '')}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-    // Try to open via electron API in external browser; fallback to mailto
-    const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(this.modalCustomerEmail || '')}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-    // If running inside Electron, use openExternal to open Gmail in default browser
-    this.openExternalUrl(gmailUrl);
-    this.closeEnviarModal();
+    const body = `Segue a nota do seu último pedido na nossa loja.`;
+
+    // Call backend endpoint that generates the PDF and sends it via SMTP (uses EmailService)
+    this.apiService.sendNotaEmail(orderId, { to, subject, body }).subscribe({
+      next: (res) => {
+        alert('Email enviado com sucesso.');
+        this.closeEnviarModal();
+      },
+      error: (err) => {
+        console.error('SEND_NOTA_EMAIL failed', err);
+        const msg = err?.error?.message || err?.error?.error || err?.message || 'Falha ao enviar email';
+        alert(msg);
+      }
+    });
   }
 
   sendNotaByWhatsappFromModal(): void {

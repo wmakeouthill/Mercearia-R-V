@@ -40,6 +40,7 @@ public class NotaController {
     public NotaController(SaleOrderRepository saleOrderRepository, @Nullable EmailService emailService) {
         this.saleOrderRepository = saleOrderRepository;
         this.emailService = emailService; // may be null if JavaMailSender not configured
+        log.info("EmailService present: {}", this.emailService != null);
     }
 
     // Extracted helper so the main method is shorter and Sonar S1141/Cognitive
