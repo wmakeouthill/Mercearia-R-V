@@ -25,7 +25,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getBackendUrl: () => ipcRenderer.invoke('get-backend-url'),
 
     // Log: enviar linha de log para o processo principal gravar em arquivo
-    writeLog: (line: string) => ipcRenderer.invoke('write-log', line)
+    writeLog: (line: string) => ipcRenderer.invoke('write-log', line),
+    // Abrir link no navegador externo padrão (Chrome etc.)
+    openExternal: (url: string) => ipcRenderer.invoke('open-external', url)
 });
 
 // Tipos para TypeScript
@@ -39,6 +41,7 @@ declare global {
             platform: string;
             isDev: boolean;
             writeLog: (line: string) => Promise<void>;
+            openExternal: (url: string) => Promise<boolean>;
         };
     }
 } 

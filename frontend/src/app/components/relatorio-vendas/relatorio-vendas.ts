@@ -204,6 +204,20 @@ export class RelatorioVendasComponent implements OnInit {
     this.reRenderPdf();
   }
 
+  private openExternalUrl(url: string): void {
+    try {
+      const api = (window as any).electronAPI;
+      if (api && typeof api.openExternal === 'function') {
+        // open in external browser via main process; fallback to window.open on failure
+        api.openExternal(url).catch(() => { window.open(url, '_blank'); });
+        return;
+      }
+    } catch (e) {
+      // ignore and fallback
+    }
+    window.open(url, '_blank');
+  }
+
   // Render PDF with PDF.js into the modal container
   private async renderPdfJsFromBlob(pdfBlob: Blob): Promise<void> {
     try {
@@ -406,8 +420,12 @@ export class RelatorioVendasComponent implements OnInit {
     const pdfUrl = this.apiService.getNotaPdfUrl(orderId);
     const subject = `Comprovante - Pedido #${orderId}`;
     const body = `Segue a nota do seu último pedido na nossa loja:\n\n${pdfUrl}`;
+    // Prefer opening in external browser (Gmail) with prefilled body; mailto may open default mail client
     const mailto = `mailto:${encodeURIComponent(this.modalCustomerEmail || '')}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-    window.open(mailto, '_blank');
+    // Try to open via electron API in external browser; fallback to mailto
+    const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(this.modalCustomerEmail || '')}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    // If running inside Electron, use openExternal to open Gmail in default browser
+    this.openExternalUrl(gmailUrl);
     this.closeEnviarModal();
   }
 
@@ -430,8 +448,9 @@ export class RelatorioVendasComponent implements OnInit {
     }
     const pdfUrl = this.apiService.getNotaPdfUrl(orderId);
     const msg = `Segue a nota do seu último pedido na nossa loja: ${pdfUrl}`;
-    const waUrl = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
-    window.open(waUrl, '_blank');
+    // Try open WhatsApp Desktop/Web via external browser
+    const waUrl = `https://web.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(msg)}`;
+    this.openExternalUrl(waUrl);
     this.closeEnviarModal();
   }
   loadResumos(): void {
@@ -850,7 +869,7 @@ export class RelatorioVendasComponent implements OnInit {
     if (!venda || !venda.id) return;
     const orderId = venda.id;
     const defaultPhone = (venda.customer_phone || '') as string;
-    let phone = window.prompt('Telefone (com DDI) para enviar por WhatsApp (ex: 5511999998888):', defaultPhone);
+    let phone = window.prompt('Telefone (com DDI) para enviar por WhatsApp (ex: 5521999998888):', defaultPhone);
     if (!phone) return;
     phone = phone.replace(/\D/g, '');
     if (!phone.startsWith('55')) {

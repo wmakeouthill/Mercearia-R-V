@@ -1699,6 +1699,18 @@ ipcMain.handle('get-backend-url', () => {
     return `http://127.0.0.1:${currentBackendPort}`;
 });
 
+// Open external URL in the user's default browser
+ipcMain.handle('open-external', async (_event, url: string) => {
+    try {
+        const { shell } = require('electron');
+        const ok = await shell.openExternal(url);
+        return Boolean(ok);
+    } catch (e) {
+        console.error('Failed to open external URL', e);
+        return false;
+    }
+});
+
 ipcMain.handle('restart-backend', async () => {
     try {
         console.log('🔄 Reiniciando backend via IPC (manual)...');
