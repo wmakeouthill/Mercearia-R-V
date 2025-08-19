@@ -1,6 +1,5 @@
 package com.example.backendspring.sale;
 
-import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -12,7 +11,6 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 
-import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -28,6 +26,12 @@ import org.slf4j.LoggerFactory;
 @RequestMapping("/api/checkout")
 public class NotaController {
 
+    private static final String NOTE_PREFIX = "nota-";
+    private static final String USER_DIR_PROPERTY = "user.dir";
+    // inline HTML fragments used multiple times
+    private static final String CLOSE_DIV = "</div>";
+    private static final String CLOSE_TD = "</td>";
+
     private final SaleOrderRepository saleOrderRepository;
     private EmailService emailService; // optional, injected via constructor
 
@@ -36,6 +40,51 @@ public class NotaController {
     public NotaController(SaleOrderRepository saleOrderRepository, @Nullable EmailService emailService) {
         this.saleOrderRepository = saleOrderRepository;
         this.emailService = emailService; // may be null if JavaMailSender not configured
+    }
+
+    // Extracted helper so the main method is shorter and Sonar S1141/Cognitive
+    // Complexity is reduced.
+    private boolean runPuppeteerRender(Path script, Path htmlTmp, Path pdfOut)
+            throws java.io.IOException, InterruptedException {
+        java.io.File scriptsDir = Paths.get(System.getProperty(USER_DIR_PROPERTY)).resolve("..")
+                .resolve("scripts").normalize().toFile();
+        ProcessBuilder pb = new ProcessBuilder("node", script.toString(), htmlTmp.toString(), pdfOut.toString());
+        pb.directory(scriptsDir.exists() ? scriptsDir : new java.io.File(System.getProperty(USER_DIR_PROPERTY)));
+        pb.redirectErrorStream(true);
+        Process p = pb.start();
+        String out = readProcessOutput(p);
+        log.debug("puppeteer output: {}", out);
+        boolean finished = p.waitFor(45, java.util.concurrent.TimeUnit.SECONDS);
+        if (!finished) {
+            p.destroyForcibly();
+            log.warn("Puppeteer timed out");
+            return false;
+        }
+        int exit = p.exitValue();
+        return exit == 0 && Files.exists(pdfOut);
+    }
+
+    private String readProcessOutput(Process p) throws java.io.IOException {
+        try (java.io.InputStream is = p.getInputStream();
+                java.util.Scanner s = new java.util.Scanner(is).useDelimiter("\\A")) {
+            return s.hasNext() ? s.next() : "";
+        }
+    }
+
+    // removed unused PuppeteerRenderException
+
+    // Attempts rendering (may call Puppeteer multiple times) and returns PDF bytes.
+    private byte[] attemptPuppeteerRender(Path script, Path htmlTmp, Path pdfOut)
+            throws InterruptedException, java.io.IOException {
+        int attempts = 1;
+        for (int attempt = 1; attempt <= attempts; attempt++) {
+            boolean ok = runPuppeteerRender(script, htmlTmp, pdfOut);
+            if (ok) {
+                return Files.readAllBytes(pdfOut);
+            }
+            log.warn("Puppeteer attempt {} failed", attempt);
+        }
+        throw new IllegalStateException("Puppeteer render failed after " + attempts + " attempts");
     }
 
     private String getProductImageDataUri(String imagePath) {
@@ -123,7 +172,7 @@ public class NotaController {
             if (emailService == null) {
                 return ResponseEntity.status(500).body(Map.of(ERROR_KEY, "Email service not configured"));
             }
-            emailService.sendEmailWithAttachment(to, subject, body, pdfBytes, "nota-" + id + ".pdf");
+            emailService.sendEmailWithAttachment(to, subject, body, pdfBytes, NOTE_PREFIX + id + ".pdf");
             return ResponseEntity.ok(Map.of("message", "Email enviado"));
         } catch (Exception e) {
             return ResponseEntity.status(500)
@@ -190,40 +239,32 @@ public class NotaController {
         // increase per-item estimate to avoid accidental pagination; allow large
         // max so renderer will place everything in a single page (we crop a bit
         // of white space rather than split into multiple pages)
-        int items = venda.getItens() == null ? 0 : venda.getItens().size();
-        int estimatedHeightMm = 30 + items * 12; // base + per-item
-        if (estimatedHeightMm < 60)
-            estimatedHeightMm = 60;
-        if (estimatedHeightMm > 1000)
-            estimatedHeightMm = 1000;
         // Let Puppeteer measure the .invoice bounding box and size the PDF to content
         // so we avoid forced pagination via @page CSS.
         html.append(
                 "body{font-family: 'Segoe UI', Arial, Helvetica, sans-serif; font-size:9px; color:#111;margin:0;padding:0}");
         // make invoice slightly narrower than page to avoid any clipping
         html.append(
-                ".invoice{width:90mm;margin:0 auto;padding:6px 6px;font-family:'Segoe UI', Arial, Helvetica, sans-serif;background:#fff;color:#111;display:block;box-sizing:border-box;line-height:1}");
+                ".invoice{width:94mm;margin:0 auto;padding:6px 6px;font-family:'Segoe UI', Arial, Helvetica, sans-serif;background:#fff;color:#111;display:block;box-sizing:border-box;line-height:1}");
         // keep logo small (receipt style) and centered
         html.append(".logo{max-width:22mm;width:auto;height:auto;display:block;margin:4px auto 2px auto}");
+        // thumbnail and product layout
         html.append(
                 ".thumb{width:10mm;height:10mm;margin-right:6px;border-radius:2px;object-fit:cover;display:inline-block}");
-        html.append("td.prod{display:flex;align-items:center}");
         html.append(".store{font-size:12px;font-weight:700;text-align:center;margin-top:2px}");
         html.append(".meta{font-size:9px;color:#444;text-align:center;margin:2px 0}");
-        // fixed layout: widths by mm to match receipt, ensure product wraps and numbers
-        // never break
+        // table: let product column size by content; reserve fixed mm widths for
+        // numeric columns
         html.append(
-                "table{width:100%;border-collapse:collapse;margin-top:6px;font-size:10px;table-layout:fixed;box-sizing:border-box}");
+                "table{width:100%;border-collapse:collapse;margin-top:6px;font-size:10px;table-layout:auto;box-sizing:border-box}");
         html.append("th,td{padding:4px 6px;border-bottom:1px solid #ddd;box-sizing:border-box}");
-        // column widths match the table colgroup; give more room to price/total
-        // (50/10/20/20)
+        html.append("td.prod{display:flex;align-items:center;gap:6px;white-space:normal;overflow-wrap:break-word}");
         html.append(
-                "td.prod{width:50%;max-width:50%;white-space:normal;overflow-wrap:break-word;word-break:break-word}");
-        html.append("td.qty{width:10%;text-align:center;white-space:nowrap}");
-        // center numeric columns to avoid overlap and improve legibility on narrow
-        // receipts
-        html.append("td.price{width:25%;text-align:center;white-space:nowrap;padding-right:8px}");
-        html.append("td.total{width:25%;text-align:center;white-space:nowrap;padding-right:8px}");
+                ".prod-name{display:block;flex:1;min-width:0;white-space:normal;overflow-wrap:break-word;word-break:normal}");
+        html.append("td.qty{text-align:center;vertical-align:middle;white-space:nowrap}");
+        // center numeric columns
+        html.append("td.price{text-align:center;vertical-align:middle;white-space:nowrap;padding-right:4px}");
+        html.append("td.total{text-align:center;vertical-align:middle;white-space:nowrap;padding-right:4px}");
         html.append("tfoot td{padding-top:8px;font-weight:700;border-top:1px solid #ddd}");
         html.append(".small{font-size:10px;color:#666;text-align:center;margin-top:6px}");
         html.append("</style></head><body>");
@@ -244,23 +285,22 @@ public class NotaController {
 
         DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
         if (venda.getCustomerName() != null)
-            html.append("<div class=\"small\">Cliente: ").append(escapeHtml(venda.getCustomerName())).append("</div>");
+            html.append("<div class=\"small\">Cliente: ").append(escapeHtml(venda.getCustomerName())).append(CLOSE_DIV);
         if (venda.getCustomerEmail() != null)
-            html.append("<div class=\"small\">Email: ").append(escapeHtml(venda.getCustomerEmail())).append("</div>");
+            html.append("<div class=\"small\">Email: ").append(escapeHtml(venda.getCustomerEmail())).append(CLOSE_DIV);
         if (venda.getCustomerPhone() != null)
             html.append("<div class=\"small\">Telefone: ").append(escapeHtml(venda.getCustomerPhone()))
-                    .append("</div>");
-        html.append("<div class=\"small\">Data: ").append(venda.getDataVenda().format(fmt)).append("</div>");
+                    .append(CLOSE_DIV);
+        html.append("<div class=\"small\">Data: ").append(venda.getDataVenda().format(fmt)).append(CLOSE_DIV);
 
-        // use fixed table layout with percentage columns so widths match CSS and wrap
-        // works
+        // let columns size by content; reserve fixed mm widths for numeric columns
         // let CSS control font-size; avoid inline font-size to prevent conflicts
         html.append(
-                "<table style=\"width:100%;border-collapse:collapse;margin-top:6px;table-layout:fixed;\">\n");
+                "<table style=\"width:100%;border-collapse:collapse;margin-top:6px;table-layout:auto;\">\n");
         html.append(
-                "<colgroup><col style=\"width:40%\"/><col style=\"width:10%\"/><col style=\"width:25%\"/><col style=\"width:25%\"/></colgroup>\n");
+                "<colgroup><col style=\"width:auto\"/><col style=\"width:10mm\"/><col style=\"width:21mm\"/><col style=\"width:21mm\"/></colgroup>\n");
         html.append(
-                "<thead><tr><th style=\"text-align:left;padding:6px 4px;border-bottom:1px solid #ddd\">Produto</th><th style=\"text-align:center;padding:6px 4px;border-bottom:1px solid #ddd\">Qtd</th><th style=\"text-align:right;padding:6px 4px;border-bottom:1px solid #ddd\">Preço</th><th style=\"text-align:right;padding:6px 4px;border-bottom:1px solid #ddd\">Total</th></tr></thead>\n");
+                "<thead><tr><th style=\"text-align:left;padding:6px 4px;border-bottom:1px solid #ddd\">Produto</th><th style=\"text-align:center;padding:6px 4px;border-bottom:1px solid #ddd\">Qtd</th><th style=\"text-align:center;padding:6px 4px;border-bottom:1px solid #ddd\">Preço</th><th style=\"text-align:center;padding:6px 4px;border-bottom:1px solid #ddd\">Total</th></tr></thead>\n");
         html.append("<tbody>\n");
         venda.getItens().forEach(it -> {
             html.append("<tr>");
@@ -271,11 +311,13 @@ public class NotaController {
                 html.append("<img class=\"thumb\" src=\"" + imgUri + "\" alt=\"\"/>");
             }
             html.append("<span class=\"prod-name\">" + escapeHtml(it.getProduto().getNome()) + "</span>");
-            html.append("</td>");
-            html.append("<td class=\"qty\">" + it.getQuantidade() + "</td>");
+            html.append(CLOSE_TD);
+            html.append("<td class=\"qty\">").append(it.getQuantidade()).append(CLOSE_TD);
             // use numeric non-breaking entity (&#160;) to be XML-safe and avoid line breaks
-            html.append("<td class=\"price\">R$&#160;" + String.format("%.2f", it.getPrecoUnitario()) + "</td>");
-            html.append("<td class=\"total\">R$&#160;" + String.format("%.2f", it.getPrecoTotal()) + "</td>");
+            html.append("<td class=\"price\">R$&#160;").append(String.format("%.2f", it.getPrecoUnitario()))
+                    .append(CLOSE_TD);
+            html.append("<td class=\"total\">R$&#160;").append(String.format("%.2f", it.getPrecoTotal()))
+                    .append(CLOSE_TD);
             html.append("</tr>\n");
         });
         html.append("</tbody>\n");
@@ -297,149 +339,27 @@ public class NotaController {
         try {
             Path outDir = Paths.get(System.getProperty("java.io.tmpdir"));
             Files.createDirectories(outDir);
-            Path htmlTmp = outDir.resolve("nota-" + id + ".html");
+            Path htmlTmp = outDir.resolve(NOTE_PREFIX + id + ".html");
             Files.write(htmlTmp, htmlStr.getBytes(StandardCharsets.UTF_8));
             log.info("Saved nota HTML to {}", htmlTmp.toAbsolutePath());
 
             // script is located in repo root `scripts/`; backend runs with cwd
             // backend-spring,
             // so resolve parent then scripts
-            Path script = Paths.get(System.getProperty("user.dir")).resolve("..").resolve("scripts")
+            Path script = Paths.get(System.getProperty(USER_DIR_PROPERTY)).resolve("..").resolve("scripts")
                     .resolve("render-nota-pdf.js").normalize().toAbsolutePath();
-            Path pdfOut = outDir.resolve("nota-" + id + ".pdf");
+            Path pdfOut = outDir.resolve(NOTE_PREFIX + id + ".pdf");
 
-            int attempts = 1; // single attempt as requested
-            for (int attempt = 1; attempt <= attempts; attempt++) {
-                try {
-                    ProcessBuilder pb = new ProcessBuilder("node", script.toString(), htmlTmp.toString(),
-                            pdfOut.toString());
-                    // set working directory to scripts folder (repo root/scripts) so local
-                    // node_modules (puppeteer) is resolved
-                    java.io.File scriptsDir = Paths.get(System.getProperty("user.dir")).resolve("..").resolve("scripts")
-                            .normalize().toFile();
-                    pb.directory(scriptsDir.exists() ? scriptsDir : new java.io.File(System.getProperty("user.dir")));
-                    pb.redirectErrorStream(true);
-                    Process p = pb.start();
-                    try (java.io.InputStream is = p.getInputStream()) {
-                        java.util.Scanner s = new java.util.Scanner(is).useDelimiter("\\A");
-                        String out = s.hasNext() ? s.next() : "";
-                        log.debug("puppeteer output (attempt {}): {}", attempt, out);
-                    }
-                    boolean finished = p.waitFor(45, java.util.concurrent.TimeUnit.SECONDS);
-                    if (!finished) {
-                        p.destroyForcibly();
-                        log.warn("Puppeteer attempt {} timed out", attempt);
-                        continue;
-                    }
-                    int exit = p.exitValue();
-                    if (exit == 0 && Files.exists(pdfOut)) {
-                        byte[] pdf = Files.readAllBytes(pdfOut);
-                        log.info("Puppeteer produced PDF {} ({} bytes)", pdfOut.toAbsolutePath(), pdf.length);
-                        return pdf;
-                    } else {
-                        log.warn("Puppeteer attempt {} failed exit {}", attempt, exit);
-                    }
-                } catch (Exception ex) {
-                    log.warn("Puppeteer attempt {} error: {}", attempt, ex.getMessage());
-                }
-            }
-            throw new IllegalStateException("Puppeteer render failed after " + attempts + " attempts");
+            // delegate to helper that attempts render and either returns bytes or throws
+            return attemptPuppeteerRender(script, htmlTmp, pdfOut);
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Failed to render PDF with Puppeteer", ie);
         } catch (Exception e) {
             throw new IllegalStateException("Failed to render PDF with Puppeteer", e);
         }
     }
 
-    // Crops the first page of the given PDF file to the minimal bounding box that
-    // contains non-white content. Returns new PDF bytes or null on failure.
-    private byte[] cropPdfToContent(Path pdfPath) {
-        try (org.apache.pdfbox.pdmodel.PDDocument doc = org.apache.pdfbox.pdmodel.PDDocument.load(pdfPath.toFile())) {
-            if (doc.getNumberOfPages() == 0)
-                return null;
-            org.apache.pdfbox.rendering.PDFRenderer renderer = new org.apache.pdfbox.rendering.PDFRenderer(doc);
-            // render at higher DPI to improve content detection (anti-aliased text)
-            final int dpi = 150;
-            java.awt.image.BufferedImage image = renderer.renderImageWithDPI(0, dpi);
-            int w = image.getWidth();
-            int h = image.getHeight();
-
-            int top = 0, bottom = h - 1;
-            // find top
-            // treat near-white pixels as white; improves robustness to anti-aliasing
-            outer: for (int y = 0; y < h; y++) {
-                for (int x = 0; x < w; x++) {
-                    int rgb = image.getRGB(x, y);
-                    int r = (rgb >> 16) & 0xFF;
-                    int g = (rgb >> 8) & 0xFF;
-                    int b = (rgb) & 0xFF;
-                    int lum = (r + g + b) / 3;
-                    if (lum < 250) {
-                        top = y;
-                        break outer;
-                    }
-                }
-            }
-            // find bottom
-            outer2: for (int y = h - 1; y >= 0; y--) {
-                for (int x = 0; x < w; x++) {
-                    int rgb = image.getRGB(x, y);
-                    int r = (rgb >> 16) & 0xFF;
-                    int g = (rgb >> 8) & 0xFF;
-                    int b = (rgb) & 0xFF;
-                    int lum = (r + g + b) / 3;
-                    if (lum < 250) {
-                        bottom = y;
-                        break outer2;
-                    }
-                }
-            }
-
-            // convert pixel heights to points: 1 pt = 1/72 in; pixel->pt = 72 / dpi
-            float ptPerPixel = 72.0f / dpi;
-            // add small margin in pixels to avoid cutting glyphs
-            int marginPx = Math.min(12, h / 40); // adaptive margin
-            int topWithMargin = Math.max(0, top - marginPx);
-            int bottomWithMargin = Math.min(h - 1, bottom + marginPx);
-            float cropHeightPt = (bottomWithMargin - topWithMargin + 1) * ptPerPixel;
-            float pageWidthPt = doc.getPage(0).getMediaBox().getWidth();
-
-            // create new document with cropped height
-            try (org.apache.pdfbox.pdmodel.PDDocument out = new org.apache.pdfbox.pdmodel.PDDocument()) {
-                org.apache.pdfbox.pdmodel.common.PDRectangle rect = new org.apache.pdfbox.pdmodel.common.PDRectangle(
-                        pageWidthPt, cropHeightPt);
-                org.apache.pdfbox.pdmodel.PDPage newPage = new org.apache.pdfbox.pdmodel.PDPage(rect);
-                out.addPage(newPage);
-
-                // import content from original first page onto new page but translated
-                org.apache.pdfbox.multipdf.Overlay overlay = new org.apache.pdfbox.multipdf.Overlay();
-                // As a simpler approach, draw original page as Form XObject and place with
-                // translation
-                org.apache.pdfbox.pdmodel.PDPage original = doc.getPage(0);
-                org.apache.pdfbox.pdmodel.PDResources resources = original.getResources();
-
-                // Use PDFRenderer to render the cropped area into image and then place it into
-                // new PDF
-                java.awt.image.BufferedImage croppedImage = image.getSubimage(0, topWithMargin, w,
-                        bottomWithMargin - topWithMargin + 1);
-                try (java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream()) {
-                    javax.imageio.ImageIO.write(croppedImage, "PNG", baos);
-                    baos.flush();
-                    byte[] imgBytes = baos.toByteArray();
-
-                    org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject pdImage = org.apache.pdfbox.pdmodel.graphics.image.LosslessFactory
-                            .createFromImage(out, croppedImage);
-                    try (org.apache.pdfbox.pdmodel.PDPageContentStream cs = new org.apache.pdfbox.pdmodel.PDPageContentStream(
-                            out, newPage)) {
-                        cs.drawImage(pdImage, 0, 0, pageWidthPt, cropHeightPt);
-                    }
-                }
-
-                java.io.ByteArrayOutputStream bout = new java.io.ByteArrayOutputStream();
-                out.save(bout);
-                return bout.toByteArray();
-            }
-        } catch (Exception e) {
-            log.warn("cropPdfToContent failed: {}", e.getMessage());
-            return null;
-        }
-    }
+    // cropPdfToContent was unused and produced many Sonar warnings; remove it to
+    // keep the controller focused on HTML -> Puppeteer rendering.
 }

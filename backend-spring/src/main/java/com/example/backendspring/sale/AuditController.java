@@ -46,8 +46,7 @@ public class AuditController {
                     }).toList();
             return ResponseEntity.ok(list);
         } catch (Exception e) {
-            // If audit table missing or other DB error occurs, don't return 500 to client;
-            // log and return empty list
+            // If audit table missing or other DB error occurs, log and return empty list
             log.warn("Failed to load audit sales: {}", e.getMessage());
             return ResponseEntity.ok(Collections.emptyList());
         }
@@ -63,6 +62,7 @@ public class AuditController {
 
             SaleDeletion sd = maybe.get();
             String payload = sd.getPayload();
+            @SuppressWarnings("unchecked")
             Map<String, Object> data = objectMapper.readValue(payload, Map.class);
 
             String type = sd.getSaleType() == null ? "legacy" : sd.getSaleType();
@@ -122,6 +122,7 @@ public class AuditController {
                         .totalFinal(totalNum == null ? 0.0 : totalNum.doubleValue())
                         .build();
 
+                @SuppressWarnings("unchecked")
                 List<Map<String, Object>> itens = (List<Map<String, Object>>) data.getOrDefault("itens", List.of());
                 for (Map<String, Object> it : itens) {
                     Number prodIdNum = (Number) (it.getOrDefault("produto_id", it.get("produtoId")));
@@ -155,6 +156,7 @@ public class AuditController {
                     order.getItens().add(si);
                 }
 
+                @SuppressWarnings("unchecked")
                 List<Map<String, Object>> pagamentos = (List<Map<String, Object>>) data.getOrDefault("pagamentos",
                         List.of());
                 for (Map<String, Object> pg : pagamentos) {
