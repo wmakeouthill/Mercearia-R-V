@@ -13,7 +13,6 @@ import java.util.Optional;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Collections;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 
@@ -30,25 +29,32 @@ public class AuditController {
     private final ObjectMapper objectMapper;
 
     @GetMapping("/sales")
-    public ResponseEntity<List<Map<String, Object>>> listDeletedSales() {
+    public ResponseEntity<Map<String, Object>> listDeletedSales(
+            @RequestParam(value = "page", required = false, defaultValue = "0") int page,
+            @RequestParam(value = "size", required = false, defaultValue = "20") int size) {
         try {
-            List<Map<String, Object>> list = saleDeletionRepository.findAll().stream()
-                    .sorted((a, b) -> b.getDeletedAt().compareTo(a.getDeletedAt()))
-                    .map(sd -> {
-                        java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
-                        m.put("id", sd.getId());
-                        m.put("saleId", sd.getSaleId());
-                        m.put("saleType", sd.getSaleType());
-                        m.put("payload", sd.getPayload());
-                        m.put("deletedBy", sd.getDeletedBy());
-                        m.put("deletedAt", sd.getDeletedAt());
-                        return m;
-                    }).toList();
-            return ResponseEntity.ok(list);
+            var pg = saleDeletionRepository
+                    .findAll(PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "deletedAt")));
+            var items = pg.getContent().stream().map(sd -> {
+                java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
+                m.put("id", sd.getId());
+                m.put("saleId", sd.getSaleId());
+                m.put("saleType", sd.getSaleType());
+                m.put("payload", sd.getPayload());
+                m.put("deletedBy", sd.getDeletedBy());
+                m.put("deletedAt", sd.getDeletedAt());
+                return m;
+            }).toList();
+            java.util.Map<String, Object> resp = new java.util.LinkedHashMap<>();
+            resp.put("items", items);
+            resp.put("total", pg.getTotalElements());
+            resp.put("hasNext", pg.hasNext());
+            resp.put("page", pg.getNumber());
+            resp.put("size", pg.getSize());
+            return ResponseEntity.ok(resp);
         } catch (Exception e) {
-            // If audit table missing or other DB error occurs, log and return empty list
             log.warn("Failed to load audit sales: {}", e.getMessage());
-            return ResponseEntity.ok(Collections.emptyList());
+            return ResponseEntity.ok(Map.of("items", List.of(), "total", 0, "hasNext", false, "page", 0, "size", size));
         }
     }
 

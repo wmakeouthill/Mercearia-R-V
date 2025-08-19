@@ -7,6 +7,7 @@ import org.springframework.data.repository.query.Param;
 import java.time.LocalDate;
 import java.util.List;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Page;
 
 public interface SaleRepository extends JpaRepository<Sale, Long> {
 
@@ -29,5 +30,5 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
     List<Sale> findAllOrderByData();
 
     // Buscar vendas por cliente ordenadas por data (paginação suportada)
-    List<Sale> findByClienteIdOrderByDataVendaDesc(Long clienteId, Pageable pageable);
+    Page<Sale> findByClienteIdOrderByDataVendaDesc(Long clienteId, Pageable pageable);
 }

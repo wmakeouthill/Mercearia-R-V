@@ -211,7 +211,7 @@
         <h3>Enviar comprovante</h3>
         <div class="modal-field">
             <label for="modalCustomerName">Nome (opcional)</label>
-            <input id="modalCustomerName" type="text" [(ngModel)]="modalCustomerName" class="input-modal">
+            <input id="modalCustomerName" type="text" [(ngModel)]="modalCustomerName" class="input-modal" (focus)="openClientAutocomplete()">
             <div class="client-autocomplete">
                 <input type="text" placeholder="Pesquisar clientes..." [(ngModel)]="clientSearchTerm" (input)="onClientSearchChange()" />
                 <ul *ngIf="clientResults.length > 0" class="autocomplete-list">

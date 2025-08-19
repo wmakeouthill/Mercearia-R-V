@@ -1,6 +1,6 @@
 package com.example.backendspring.client;
 
-import com.example.backendspring.sale.Sale;
+// removed unused import Sale
 import com.example.backendspring.sale.SaleRepository;
 import com.example.backendspring.sale.SaleOrderRepository;
 import lombok.RequiredArgsConstructor;
@@ -20,16 +20,29 @@ public class ClientController {
     private final SaleOrderRepository saleOrderRepository;
 
     @GetMapping
-    public List<Client> list(@RequestParam(value = "q", required = false) String q) {
-        if (q == null || q.isBlank()) {
-            return clientRepository.findAll();
+    public ResponseEntity<java.util.Map<String, Object>> list(
+            @RequestParam(value = "q", required = false) String q,
+            @RequestParam(value = "page", required = false, defaultValue = "0") int page,
+            @RequestParam(value = "size", required = false, defaultValue = "20") int size) {
+        if (q != null && !q.isBlank()) {
+            String term = q.toLowerCase();
+            var filtered = clientRepository.findAll().stream()
+                    .filter(c -> (c.getNome() != null && c.getNome().toLowerCase().contains(term)) ||
+                            (c.getEmail() != null && c.getEmail().toLowerCase().contains(term)) ||
+                            (c.getTelefone() != null && c.getTelefone().toLowerCase().contains(term)))
+                    .toList();
+            return ResponseEntity.ok(java.util.Map.of("items", filtered, "total", filtered.size(), "hasNext", false,
+                    "page", 0, "size", filtered.size()));
         }
-        String term = q.toLowerCase();
-        return clientRepository.findAll().stream()
-                .filter(c -> (c.getNome() != null && c.getNome().toLowerCase().contains(term)) ||
-                        (c.getEmail() != null && c.getEmail().toLowerCase().contains(term)) ||
-                        (c.getTelefone() != null && c.getTelefone().toLowerCase().contains(term)))
-                .toList();
+        var pg = clientRepository.findAll(org.springframework.data.domain.PageRequest.of(page, size));
+        var items = pg.getContent();
+        var resp = new java.util.LinkedHashMap<String, Object>();
+        resp.put("items", items);
+        resp.put("total", pg.getTotalElements());
+        resp.put("hasNext", pg.hasNext());
+        resp.put("page", pg.getNumber());
+        resp.put("size", pg.getSize());
+        return ResponseEntity.ok(resp);
     }
 
     @GetMapping("/{id}")
@@ -38,32 +51,115 @@ public class ClientController {
     }
 
     @GetMapping("/{id}/vendas")
-    public List<Sale> vendas(@PathVariable Long id,
-            @RequestParam(value = "limit", required = false, defaultValue = "5") int limit) {
-        // Return both legacy sales and checkout orders associated with this client
-        var vendasLegado = saleRepository.findByClienteIdOrderByDataVendaDesc(id,
-                PageRequest.of(0, Math.max(1, limit)));
-        var ordens = saleOrderRepository.findByClienteIdOrderByDataVendaDesc(id);
-        // Map SaleOrder to a simplified Sale-like DTO (id, preco_total, data_venda)
-        var mappedOrdens = ordens.stream().map(o -> {
-            Sale s = new Sale();
-            s.setId(o.getId());
-            s.setPrecoTotal(o.getTotalFinal());
-            s.setDataVenda(o.getDataVenda());
-            return s;
-        }).toList();
-        var merged = new java.util.ArrayList<Sale>();
-        merged.addAll(vendasLegado);
-        merged.addAll(mappedOrdens);
-        // sort by data desc
-        merged.sort((a, b) -> b.getDataVenda().compareTo(a.getDataVenda()));
+    public List<java.util.Map<String, Object>> vendas(@PathVariable Long id,
+            @RequestParam(value = "limit", required = false, defaultValue = "50") int limit,
+            @RequestParam(value = "from", required = false) String from,
+            @RequestParam(value = "to", required = false) String to) {
+        java.time.LocalDate inicio = null;
+        java.time.LocalDate fim = null;
+        if (from != null && !from.isBlank()) {
+            try {
+                inicio = java.time.LocalDate.parse(from);
+            } catch (Exception ignored) {
+                inicio = null;
+            }
+        }
+        if (to != null && !to.isBlank()) {
+            try {
+                fim = java.time.LocalDate.parse(to);
+            } catch (Exception ignored) {
+                fim = null;
+            }
+        }
+
+        java.util.List<com.example.backendspring.sale.Sale> vendasLegado;
+        java.util.List<com.example.backendspring.sale.SaleOrder> ordens;
+
+        if (inicio != null && fim != null) {
+            // filter period then limit to 'limit'
+            var tmp = saleRepository.findByPeriodo(inicio, fim).stream()
+                    .filter(s -> s.getCliente() != null && s.getCliente().getId() != null
+                            && s.getCliente().getId().equals(id))
+                    .sorted((a, b) -> b.getDataVenda().compareTo(a.getDataVenda()))
+                    .toList();
+            vendasLegado = tmp.subList(0, Math.min(tmp.size(), limit));
+            ordens = saleOrderRepository.findByClienteIdAndPeriodo(id, inicio, fim, PageRequest.of(0, limit));
+        } else {
+            var pr = PageRequest.of(0, limit);
+            var pageResult = saleRepository.findByClienteIdOrderByDataVendaDesc(id, pr);
+            vendasLegado = pageResult != null && pageResult.hasContent() ? pageResult.getContent()
+                    : java.util.Collections.emptyList();
+            ordens = saleOrderRepository.findByClienteIdOrderByDataVendaDesc(id, pr);
+        }
+
+        java.util.List<java.util.Map<String, Object>> merged = new java.util.ArrayList<>();
+        vendasLegado.forEach(s -> merged.add(mapLegacySale(s)));
+        ordens.forEach(o -> merged.add(mapSaleOrder(o)));
+
+        // sort by data desc and limit to requested 'limit'
+        merged.sort((a, b) -> {
+            var da = (java.time.OffsetDateTime) a.get("data_venda");
+            var db = (java.time.OffsetDateTime) b.get("data_venda");
+            return db.compareTo(da);
+        });
+
         return merged.stream().limit(Math.max(1, limit)).toList();
+    }
+
+    private java.util.Map<String, Object> mapLegacySale(com.example.backendspring.sale.Sale s) {
+        var m = new java.util.LinkedHashMap<String, Object>();
+        m.put("id", s.getId());
+        m.put("preco_total", s.getPrecoTotal());
+        m.put("data_venda", s.getDataVenda());
+        m.put("tipo", "legado");
+        m.put("quantidade_vendida", s.getQuantidadeVendida());
+        if (s.getProduto() != null) {
+            m.put("produto_id", s.getProduto().getId());
+            m.put("produto_nome", s.getProduto().getNome());
+            m.put("produto_imagem", s.getProduto().getImagem());
+        }
+        return m;
+    }
+
+    private java.util.Map<String, Object> mapSaleOrder(com.example.backendspring.sale.SaleOrder o) {
+        var m = new java.util.LinkedHashMap<String, Object>();
+        m.put("id", o.getId());
+        m.put("preco_total", o.getTotalFinal());
+        m.put("data_venda", o.getDataVenda());
+        m.put("tipo", "order");
+        m.put("subtotal", o.getSubtotal());
+        m.put("desconto", o.getDesconto());
+        m.put("acrescimo", o.getAcrescimo());
+        m.put("customer_name", o.getCustomerName());
+        m.put("customer_email", o.getCustomerEmail());
+        m.put("customer_phone", o.getCustomerPhone());
+        var itens = o.getItens().stream().map(it -> {
+            var im = new java.util.LinkedHashMap<String, Object>();
+            im.put("id", it.getId());
+            im.put("produto_id", it.getProduto() != null ? it.getProduto().getId() : null);
+            im.put("produto_nome", it.getProduto() != null ? it.getProduto().getNome() : null);
+            im.put("produto_imagem", it.getProduto() != null ? it.getProduto().getImagem() : null);
+            im.put("quantidade", it.getQuantidade());
+            im.put("preco_unitario", it.getPrecoUnitario());
+            im.put("preco_total", it.getPrecoTotal());
+            return im;
+        }).toList();
+        m.put("itens", itens);
+        return m;
     }
 
     @PostMapping
     public Client create(@RequestBody Client payload) {
         payload.setCreatedAt(OffsetDateTime.now());
         return clientRepository.save(payload);
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<java.util.Map<String, Object>> delete(@PathVariable Long id) {
+        if (!clientRepository.existsById(id))
+            return ResponseEntity.status(404).body(java.util.Map.of("error", "Cliente não encontrado"));
+        clientRepository.deleteById(id);
+        return ResponseEntity.ok(java.util.Map.of("message", "Cliente deletado"));
     }
 
     @PutMapping("/{id}")

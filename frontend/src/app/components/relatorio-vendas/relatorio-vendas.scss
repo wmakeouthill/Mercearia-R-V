@@ -1,3 +1,11 @@
+/* styles for client autocomplete in modal */
+.client-autocomplete { position: relative; }
+.autocomplete-list { position: absolute; left: 0; right: 0; background: #fff; border: 1px solid #ddd; max-height: 220px; overflow:auto; z-index: 80; border-radius:6px; margin-top:6px; padding:0; }
+.autocomplete-list li { list-style:none; padding:8px 10px; cursor:pointer; border-bottom:1px solid #f3f3f3; }
+.autocomplete-list li:hover { background:#f5f7fb; }
+.ac-item-name { font-weight:700; }
+.ac-item-meta { font-size:12px; color:#666; }
+
 .relatorio-container {
     padding: 24px;
     max-width: 1400px;

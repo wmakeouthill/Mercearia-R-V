@@ -643,6 +643,16 @@ export class PontoVendaComponent implements OnInit, OnDestroy {
     });
   }
 
+  /**
+   * Abre o autocomplete de cliente no modal carregando clientes existentes
+   */
+  openClientAutocomplete(): void {
+    this.clientSearchTerm = '';
+    this.clientResults = [];
+    this.clientSearching = true;
+    this.apiService.getClientes().subscribe({ next: r => { this.clientResults = r; this.clientSearching = false; }, error: () => { this.clientResults = []; this.clientSearching = false; } });
+  }
+
   closeEnviarModal(): void {
     this.showEnviarModal = false;
     this.modalOrderId = null;

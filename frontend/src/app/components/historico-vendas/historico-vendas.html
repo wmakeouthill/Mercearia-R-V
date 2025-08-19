@@ -120,7 +120,7 @@
                 </thead>
                 <tbody>
                     @for (venda of vendasFiltradas; track venda.row_id; let i = $index) {<tr class="venda-row">
-                        <td class="venda-numero">{{ vendasFiltradas.length - i }}</td>
+                        <td class="venda-numero">{{ (page-1)*pageSize + (i+1) }}</td>
                         <td class="produto-info">
                             <div class="produto-nome com-imagem">
                                 <img class="produto-thumb-inline" [src]="getImageUrl(venda.produto_imagem)" [alt]="venda.produto_nome" (error)="onImageError($event)">

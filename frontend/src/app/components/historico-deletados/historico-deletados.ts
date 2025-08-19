@@ -21,6 +21,11 @@ export class HistoricoDeletadosComponent implements OnInit {
     deletions: any[] = [];
     vendasFiltradas: any[] = [];
     expandedRows = new Set<string>();
+    // pagination
+    page = 1;
+    pageSize: 20 | 50 | 100 = 20;
+    total = 0;
+    hasNext = false;
 
     constructor(
         private readonly apiService: ApiService,
@@ -36,12 +41,13 @@ export class HistoricoDeletadosComponent implements OnInit {
     private loadDeletions(): void {
         this.loading = true;
         this.error = '';
-        this.apiService.getDeletedSales().subscribe({
-            next: (list) => {
-                this.deletions = Array.isArray(list) ? list : [];
-                logger.debug('HISTORICO_DELETADOS', 'RAW_DELETIONS', 'Payload de auditoria recebido', this.deletions);
+        this.apiService.getDeletedSalesPage(this.page - 1, this.pageSize).subscribe({
+            next: (resp: any) => {
+                const items = resp?.items || [];
+                this.deletions = items;
+                this.total = Number(resp?.total || 0);
+                this.hasNext = !!resp?.hasNext;
                 this.vendasFiltradas = this.mapDeletionsToVendas(this.deletions);
-                logger.debug('HISTORICO_DELETADOS', 'MAPPED_VENDAS', 'Vendas mapeadas a partir da auditoria', this.vendasFiltradas.slice(0, 50));
                 this.loading = false;
             },
             error: (err) => {
@@ -51,6 +57,9 @@ export class HistoricoDeletadosComponent implements OnInit {
             }
         });
     }
+
+    prevPage(): void { if (this.page > 1) { this.page--; this.loadDeletions(); } }
+    nextPage(): void { if (this.hasNext) { this.page++; this.loadDeletions(); } }
 
     private mapDeletionsToVendas(deletions: any[]): any[] {
         const rows: any[] = [];

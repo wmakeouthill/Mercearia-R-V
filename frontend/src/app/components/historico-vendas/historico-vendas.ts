@@ -45,107 +45,72 @@ export class HistoricoVendasComponent implements OnInit {
 
   ngOnInit(): void {
     logger.info('HISTORICO_VENDAS', 'INIT', 'Componente iniciado');
-    this.loadAllVendas();
+    this.loadPage(1);
+  }
+
+  // pagination (same model as Caixa)
+  page = 1;
+  pageSize: 20 | 50 | 100 = 20;
+  get total(): number { return this.vendasFiltradas.length; }
+  get totalPages(): number {
+    const totalItems = Number(this.total || 0);
+    const perPage = Number(this.pageSize || 1);
+    const pages = Math.ceil(totalItems / perPage);
+    return Math.max(1, pages || 1);
+  }
+
+  get paginationItems(): Array<number | string> {
+    const totalPages = this.totalPages;
+    const currentPage = this.page;
+    const siblings = 2;
+    const range: Array<number | string> = [];
+    if (totalPages <= 1) return [1];
+    range.push(1);
+    const leftSibling = Math.max(2, currentPage - siblings);
+    const rightSibling = Math.min(totalPages - 1, currentPage + siblings);
+    if (leftSibling > 2) range.push('…');
+    for (let i = leftSibling; i <= rightSibling; i++) range.push(i);
+    if (rightSibling < totalPages - 1) range.push('…');
+    if (totalPages > 1) range.push(totalPages);
+    return range;
+  }
+
+  goToPage(targetPage: number): void {
+    const page = Math.max(1, Math.min(this.totalPages, Math.floor(Number(targetPage) || 1)));
+    if (page === this.page) return;
+    this.page = page;
+  }
+  nextPage() { if (this.page < this.totalPages) this.goToPage(this.page + 1); }
+  prevPage() { if (this.page > 1) this.goToPage(this.page - 1); }
+  goBy(delta: number): void { this.goToPage(this.page + delta); }
+  goToFirstPage(): void { this.goToPage(1); }
+  goToLastPage(): void { this.goToPage(this.totalPages); }
+  setPageSize(n: 20 | 50 | 100) { this.pageSize = n; this.page = 1; }
+
+  get vendasPagina(): any[] {
+    const start = (this.page - 1) * Number(this.pageSize || 1);
+    return this.vendasFiltradas.slice(start, start + Number(this.pageSize || 1));
   }
 
   private loadAllVendas(): void {
+    this.loadPage(this.page);
+  }
+
+  loadPage(pageNum: number): void {
     this.loading = true;
     this.error = '';
-
-    forkJoin({
-      legado: this.apiService.getVendas().pipe(catchError(() => of([]))),
-      checkout: this.apiService.getVendasCompletas().pipe(catchError(() => of([])))
-    }).subscribe(({ legado, checkout }) => {
-      logger.info('HISTORICO_VENDAS', 'LOAD_CHECKOUT_RAW', 'Payload de checkout recebido', {
-        numOrdens: Array.isArray(checkout) ? checkout.length : 0
-      });
-      // Legacy
-      const arr = Array.isArray(legado) ? legado : [];
-      // ensure unique row id for legacy entries (avoid duplicate track keys)
-      arr.forEach((row: any, idx: number) => {
-        row._isCheckout = false;
-        row.row_id = `legacy-${row.id ?? idx}`;
-      });
-      this.vendasLegado = [...arr].sort((a, b) => {
-        const timeDiff = (parseDate(b.data_venda).getTime() - parseDate(a.data_venda).getTime());
-        if (timeDiff !== 0) return timeDiff;
-        return (b.id || 0) - (a.id || 0);
-      });
-
-      // Checkout -> uma linha por ordem (agregada) com resumo de pagamentos
-      const linhas: Venda[] = [];
-      const vendasCompletas = Array.isArray(checkout) ? checkout : [];
-      let rowCounter = 0;
-      for (const v of vendasCompletas) {
-        const data = v.data_venda;
-        const pagamentos: Array<{ metodo: MetodoPagamento; valor: number }> = (v.pagamentos || []);
-        const metodoResumo = this.buildPagamentoResumo(pagamentos);
-        const metodosSet = new Set<MetodoPagamento>();
-        for (const p of pagamentos) if (p?.metodo) metodosSet.add(p.metodo);
-        const itens = v.itens || [];
-
-        // agregar quantidade e total
-        const totalQuantidade = Array.isArray(itens) ? itens.reduce((s: number, it: any) => s + (Number(it.quantidade) || 0), 0) : 0;
-        let totalValor = (v.total_final ?? v.totalFinal ?? v.totalFinal ?? 0) as number;
-        if (!totalValor || totalValor === 0) {
-          totalValor = Array.isArray(itens) ? itens.reduce((s: number, it: any) => s + (Number(it.preco_total || it.precoTotal) || 0), 0) : 0;
-        }
-
-        const produtoNome = Array.isArray(itens) && itens.length > 0
-          ? itens.map((it: any) => it.produto_nome || it.produtoNome || '').join(', ')
-          : (`Pedido #${v.id} (${itens.length} itens)`);
-
-        const produtoImagem = Array.isArray(itens) && itens.length > 0 ? itens[0].produto_imagem : null;
-
-        const linha: Venda = {
-          id: v.id,
-          produto_id: v.id,
-          quantidade_vendida: totalQuantidade,
-          preco_total: totalValor,
-          data_venda: data,
-          metodo_pagamento: 'dinheiro',
-          produto_nome: produtoNome,
-          produto_imagem: produtoImagem,
-          pagamentos_resumo: metodoResumo,
-        } as any;
-        (linha as any).itens = itens;
-        (linha as any).metodos_multi = Array.from(metodosSet);
-        (linha as any)._isCheckout = true;
-        (linha as any).row_id = `checkout-${v.id}-${rowCounter++}`;
-        linhas.push(linha);
-
-        logger.info('HISTORICO_VENDAS', 'MAP_CHECKOUT_ORDEM', 'Ordem mapeada', {
-          ordemId: v.id,
-          itens: itens.length,
-          pagamentos: pagamentos.length,
-          resumo: metodoResumo
-        });
+    this.page = pageNum;
+    this.apiService.getVendasDetalhadas(pageNum - 1, this.pageSize).subscribe({
+      next: (resp: any) => {
+        const items = Array.isArray(resp?.items) ? resp.items : [];
+        this.vendas = items;
+        this.vendasFiltradas = items;
+        this.loading = false;
+      },
+      error: (err) => {
+        this.error = 'Erro ao carregar vendas';
+        this.loading = false;
       }
-      this.vendasCheckout = [...linhas].sort((a, b) => {
-        const timeDiff = (parseDate(b.data_venda).getTime() - parseDate(a.data_venda).getTime());
-        if (timeDiff !== 0) return timeDiff;
-        return (b.id || 0) - (a.id || 0);
-      });
-
-      // Mesclar e filtrar
-      this.mergeAndFilter();
-      this.loading = false;
-      // Debug: log first rows to inspect row_id/_isCheckout/pagamentos_resumo
-      try {
-        logger.debug('HISTORICO_VENDAS', 'POST_MERGE_SAMPLE', 'Sample vendasFiltradas', this.vendasFiltradas.slice(0, 10).map(v => ({ id: v.id, row_id: (v as any).row_id, _isCheckout: (v as any)._isCheckout, pagamentos_resumo: (v as any).pagamentos_resumo, metodo_pagamento: v.metodo_pagamento })));
-      } catch (e) {
-        console.debug('HISTORICO_VENDAS: failed to log sample', e);
-      }
-      logger.info('HISTORICO_VENDAS', 'LOAD_ALL', 'Vendas unificadas carregadas', {
-        legado: this.vendasLegado.length,
-        checkout: this.vendasCheckout.length,
-        total: (this.vendasLegado.length + this.vendasCheckout.length)
-      });
-      const multiLinhas = this.vendasCheckout.filter(v => Array.isArray((v as any).metodos_multi) && (v as any).metodos_multi.length > 1).length;
-      logger.info('HISTORICO_VENDAS', 'CHECK_MULTI', 'Resumo de vendas com múltiplos pagamentos', {
-        linhasCheckout: this.vendasCheckout.length,
-        linhasMulti: multiLinhas
-      });
     });
   }
 

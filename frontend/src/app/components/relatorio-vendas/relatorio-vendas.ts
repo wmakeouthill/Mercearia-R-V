@@ -26,6 +26,11 @@ export class RelatorioVendasComponent implements OnInit {
   private vendasLegado: Venda[] = [];
   private vendasCheckout: Venda[] = [];
   vendasFiltradas: any[] = [];
+  // pagination for detailed vendas table
+  page = 1;
+  pageSize: 20 | 50 | 100 = 20;
+  total = 0;
+  hasMore = false;
   expandedRows = new Set<string>();
   relatorioDiario: RelatorioVendas[] = [];
   relatorioMensal: RelatorioVendas[] = [];
@@ -83,6 +88,45 @@ export class RelatorioVendasComponent implements OnInit {
     this.filtroData = '';
     this.loadVendas();
     this.loadResumos();
+  }
+
+  // client autocomplete for modal
+  clientSearchTerm = '';
+  clientResults: any[] = [];
+  clientSearching = false;
+  showClientDropdown = false;
+  private hideDropdownTimer: any = null;
+
+  openClientAutocomplete(): void {
+    this.clientResults = [];
+    this.showClientDropdown = true;
+    this.clientSearching = true;
+    this.apiService.getClientes().subscribe({ next: r => { this.clientResults = r; this.clientSearching = false; }, error: () => { this.clientResults = []; this.clientSearching = false; } });
+  }
+
+  onClientSearchChange(): void {
+    const t = (this.clientSearchTerm || '').trim();
+    if (!t) { this.clientResults = []; return; }
+    this.apiService.getClientes(t).subscribe({ next: r => this.clientResults = r, error: () => this.clientResults = [] });
+  }
+
+  selectClientForModal(c: any): void {
+    this.modalCustomerName = c.nome || '';
+    this.modalCustomerEmail = c.email || '';
+    this.modalCustomerPhone = c.telefone || '';
+    this.clientResults = [];
+    this.showClientDropdown = false;
+  }
+
+  onClientNameChange(): void {
+    const t = (this.modalCustomerName || '').trim();
+    if (!t) { this.clientResults = []; this.showClientDropdown = true; return; }
+    this.apiService.getClientes(t).subscribe({ next: r => { this.clientResults = r; this.showClientDropdown = true; }, error: () => { this.clientResults = []; } });
+  }
+
+  hideClientDropdownDelayed(): void {
+    // small delay to allow click selection
+    this.hideDropdownTimer = setTimeout(() => { this.showClientDropdown = false; }, 150);
   }
 
   openEnviarModal(orderId: number): void {
@@ -564,6 +608,9 @@ export class RelatorioVendasComponent implements OnInit {
 
       this.mergeAndRecompute();
       this.loading = false;
+      // set pagination metadata: currently using vendasFiltradas total
+      this.total = this.vendasFiltradas.length;
+      this.hasMore = this.total > (this.page * this.pageSize);
       logger.info('RELATORIO_VENDAS', 'LOAD_ALL', 'Vendas unificadas carregadas', {
         legado: this.vendasLegado.length,
         checkout: this.vendasCheckout.length,

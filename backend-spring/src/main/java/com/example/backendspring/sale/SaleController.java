@@ -29,6 +29,7 @@ public class SaleController {
     private final SaleRepository saleRepository;
     private final ProductRepository productRepository;
     private final ClientRepository clientRepository;
+    private final SaleOrderRepository saleOrderRepository;
     private final SaleReportService saleReportService;
     private final SaleDeletionRepository saleDeletionRepository;
     private final ObjectMapper objectMapper;
@@ -54,6 +55,122 @@ public class SaleController {
             row.put("produto_imagem", v.getProduto().getImagem());
             return row;
         }).toList();
+    }
+
+    @GetMapping("/detalhadas")
+    @Transactional(readOnly = true)
+    public ResponseEntity<java.util.Map<String, Object>> getDetalhadas(
+            @RequestParam(value = "page", required = false, defaultValue = "0") int page,
+            @RequestParam(value = "size", required = false, defaultValue = "20") int size,
+            @RequestParam(value = "from", required = false) String from,
+            @RequestParam(value = "to", required = false) String to) {
+        try {
+            java.time.LocalDate inicio = null;
+            java.time.LocalDate fim = null;
+            try {
+                if (from != null && !from.isBlank())
+                    inicio = java.time.LocalDate.parse(from);
+                if (to != null && !to.isBlank())
+                    fim = java.time.LocalDate.parse(to);
+            } catch (Exception ignored) {
+            }
+
+            // fetch legacy sales and orders (unpaged), then merge and page in-memory to
+            // preserve unified ordering
+            java.util.List<com.example.backendspring.sale.Sale> legacy = (inicio != null && fim != null)
+                    ? saleRepository.findByPeriodo(inicio, fim)
+                    : saleRepository.findAllOrderByData();
+
+            java.util.List<com.example.backendspring.sale.SaleOrder> orders = (inicio != null && fim != null)
+                    ? saleOrderRepository.findByPeriodo(inicio, fim)
+                    : saleOrderRepository.findAllOrderByData();
+
+            java.util.List<java.util.Map<String, Object>> rows = new java.util.ArrayList<>();
+
+            for (var s : legacy) {
+                var m = new java.util.LinkedHashMap<String, Object>();
+                m.put("id", s.getId());
+                m.put("produto_id", s.getProduto() != null ? s.getProduto().getId() : null);
+                m.put("produto_nome", s.getProduto() != null ? s.getProduto().getNome() : null);
+                m.put("produto_imagem", s.getProduto() != null ? s.getProduto().getImagem() : null);
+                m.put("quantidade_vendida", s.getQuantidadeVendida());
+                m.put("preco_total", s.getPrecoTotal());
+                m.put("data_venda", s.getDataVenda());
+                m.put("itens", java.util.List.of());
+                m.put("_isCheckout", false);
+                m.put("row_id", "legacy-" + s.getId());
+                rows.add(m);
+            }
+
+            for (var o : orders) {
+                var m = new java.util.LinkedHashMap<String, Object>();
+                m.put("id", o.getId());
+                m.put("produto_id", o.getId());
+                m.put("produto_nome",
+                        o.getItens() != null && !o.getItens().isEmpty() && o.getItens().get(0).getProduto() != null
+                                ? o.getItens().get(0).getProduto().getNome()
+                                : ("Pedido #" + o.getId()));
+                m.put("produto_imagem",
+                        o.getItens() != null && !o.getItens().isEmpty() && o.getItens().get(0).getProduto() != null
+                                ? o.getItens().get(0).getProduto().getImagem()
+                                : null);
+                int qtd = 0;
+                if (o.getItens() != null)
+                    for (var it : o.getItens())
+                        qtd += (it.getQuantidade() == null ? 0 : it.getQuantidade());
+                m.put("quantidade_vendida", qtd);
+                m.put("preco_total", o.getTotalFinal());
+                m.put("data_venda", o.getDataVenda());
+                var itens = o.getItens().stream().map(it -> {
+                    var im = new java.util.LinkedHashMap<String, Object>();
+                    im.put("produto_id", it.getProduto() != null ? it.getProduto().getId() : null);
+                    im.put("produto_nome", it.getProduto() != null ? it.getProduto().getNome() : null);
+                    im.put("produto_imagem", it.getProduto() != null ? it.getProduto().getImagem() : null);
+                    im.put("quantidade", it.getQuantidade());
+                    im.put("preco_unitario", it.getPrecoUnitario());
+                    im.put("preco_total", it.getPrecoTotal());
+                    return im;
+                }).toList();
+                m.put("itens", itens);
+                m.put("_isCheckout", true);
+                m.put("row_id", "checkout-" + o.getId());
+                rows.add(m);
+            }
+
+            // sort by date desc
+            rows.sort((a, b) -> {
+                var da = (java.time.OffsetDateTime) a.get("data_venda");
+                var db = (java.time.OffsetDateTime) b.get("data_venda");
+                return db.compareTo(da);
+            });
+
+            int total = rows.size();
+            int fromIdx = Math.max(0, page * size);
+            int toIdx = Math.min(rows.size(), fromIdx + size);
+            var pageItems = rows.subList(fromIdx, toIdx);
+
+            java.util.Map<String, Object> resp = new java.util.LinkedHashMap<>();
+            resp.put("items", pageItems);
+            resp.put("total", total);
+            resp.put("hasNext", toIdx < total);
+            resp.put("page", page);
+            resp.put("size", size);
+            return ResponseEntity.ok(resp);
+        } catch (Exception e) {
+            log.error("Failed to build detailed vendas page", e);
+            try (java.io.StringWriter sw = new java.io.StringWriter();
+                    java.io.PrintWriter pw = new java.io.PrintWriter(sw)) {
+                e.printStackTrace(pw);
+                java.util.Map<String, Object> err = new java.util.LinkedHashMap<>();
+                err.put("error", "Failed to load vendas");
+                err.put("message", e.getMessage());
+                err.put("stack", sw.toString());
+                return ResponseEntity.status(500).body(err);
+            } catch (Exception ex) {
+                log.error("Failed to render exception", ex);
+                return ResponseEntity.status(500).body(java.util.Map.of("error", "Failed to load vendas"));
+            }
+        }
     }
 
     @PostMapping

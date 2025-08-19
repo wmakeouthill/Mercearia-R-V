@@ -120,11 +120,10 @@ public class CheckoutController {
                                 .build();
                         clientRepository.save(cliente);
                     }
-                    // link each sale item to cliente (persisted as Sale rows)
-                    // After save(venda) and addItemsToOrder, we'll create Sale rows linked to
-                    // cliente
-                    // Store on venda for later linking
-                    venda.setCustomerName(venda.getCustomerName());
+                    // associate the sale order with the client
+                    if (cliente != null) {
+                        venda.setCliente(cliente);
+                    }
                 }
             } catch (Exception e) {
                 // ignore non-critical client save errors

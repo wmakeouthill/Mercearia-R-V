@@ -71,6 +71,11 @@
   </div>
 
   <div *ngIf="!loading && deletions.length === 0" class="vazio">Nenhum registro de deleção encontrado.</div>
+  <div class="paginacao" *ngIf="deletions.length > 0">
+    <button (click)="prevPage()" [disabled]="page<=1">‹ Anterior</button>
+    <span>Página {{ page }}</span>
+    <button (click)="nextPage()" [disabled]="!hasNext">Próxima ›</button>
+  </div>
 </div>
 
 

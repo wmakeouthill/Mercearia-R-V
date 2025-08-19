@@ -8,6 +8,8 @@
 
   <div class="search">
     <input type="text" [(ngModel)]="search" placeholder="Pesquisar clientes..." (input)="loadClientes()" />
+    <label>De: <input type="date" [(ngModel)]="fromDate" /></label>
+    <label>Até: <input type="date" [(ngModel)]="toDate" /></label>
   </div>
 
   <div *ngIf="loading" class="loading">Carregando...</div>
@@ -20,26 +22,71 @@
       </thead>
       <tbody>
         <tr *ngFor="let c of clientes">
-          <td>{{ c.nome }}</td>
-          <td>{{ c.email }}</td>
-          <td>{{ c.telefone }}</td>
           <td>
-            <button *ngIf="true" (click)="toggleExpand(c.id)">🔽</button>
+            <span *ngIf="editingClientId !== c.id">{{ c.nome }}</span>
+            <span *ngIf="editingClientId === c.id">
+              <input [(ngModel)]="editingClient.nome" />
+            </span>
+          </td>
+          <td>
+            <span *ngIf="editingClientId !== c.id">{{ c.email }}</span>
+            <span *ngIf="editingClientId === c.id">
+              <input [(ngModel)]="editingClient.email" />
+            </span>
+          </td>
+          <td>
+            <span *ngIf="editingClientId !== c.id">{{ c.telefone }}</span>
+            <span *ngIf="editingClientId === c.id">
+              <input [(ngModel)]="editingClient.telefone" />
+            </span>
+          </td>
+          <td>
+            <div class="action-group">
+              <button class="btn-ghost" (click)="toggleExpand(c.id)">🔽</button>
+              <button class="btn-ghost" *ngIf="editingClientId !== c.id" (click)="startEditCliente(c)">Editar</button>
+              <button class="btn-danger" *ngIf="editingClientId !== c.id" (click)="deleteCliente(c.id)" title="Excluir cliente">🗑️</button>
+              <button class="btn-ghost" *ngIf="editingClientId === c.id" (click)="saveEditCliente()">Salvar</button>
+              <button class="btn-ghost" *ngIf="editingClientId === c.id" (click)="cancelEdit()">Cancelar</button>
+            </div>
           </td>
         </tr>
         <tr *ngFor="let c of clientes">
           <td colspan="4" *ngIf="expanded.has(c.id)">
             <div *ngIf="vendasPorCliente[c.id]">
               <table class="tabela-vendas-mini">
-                <thead><tr><th>#</th><th>Total</th><th>Data</th></tr></thead>
+                <thead><tr><th>#</th><th>Total</th><th>Data</th><th>Itens</th></tr></thead>
                 <tbody>
-                  <tr *ngFor="let v of vendasPorCliente[c.id]; let i = index">
-                    <td>{{ v.id }}</td>
-                    <td>R$ {{ v.preco_total }}</td>
-                    <td>{{ v.data_venda }}</td>
-                  </tr>
+                  <ng-container *ngFor="let v of vendasPorCliente[c.id]; let i = index">
+                    <tr>
+                      <td>{{ v.id }}</td>
+                      <td>R$ {{ v.preco_total?.toFixed ? v.preco_total.toFixed(2) : v.preco_total }}</td>
+                      <td>{{ v.data_venda }}</td>
+                      <td>
+                        <button (click)="v._showItems = !v._showItems">{{ v._showItems ? '▲' : '▼' }}</button>
+                      </td>
+                    </tr>
+                    <tr class="venda-itens-row" *ngIf="v._showItems">
+                      <td colspan="4">
+                        <table class="tabela-itens">
+                          <thead><tr><th>Imagem</th><th>Produto</th><th>Qtd</th><th>Preço Unit.</th><th>Subtotal</th></tr></thead>
+                          <tbody>
+                            <tr *ngFor="let it of v.itens">
+                              <td>
+                                <img *ngIf="it.produto_imagem" [src]="('/api/produtos/imagem/' + it.produto_imagem)" class="mini-img" [alt]="it.produto_nome || 'produto'" />
+                              </td>
+                              <td>{{ it.produto_nome || it.produto_nome }}</td>
+                              <td>{{ it.quantidade || it.quantidade_vendida || '-' }}</td>
+                              <td>R$ {{ it.preco_unitario ? it.preco_unitario.toFixed(2) : (it.preco_unitario) }}</td>
+                              <td>R$ {{ it.preco_total ? it.preco_total.toFixed(2) : (it.preco_total) }}</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </td>
+                    </tr>
+                  </ng-container>
                 </tbody>
               </table>
+
             </div>
             <div *ngIf="!vendasPorCliente[c.id]">Carregando vendas...</div>
           </td>

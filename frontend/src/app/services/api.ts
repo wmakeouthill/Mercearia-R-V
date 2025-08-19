@@ -276,6 +276,13 @@ export class ApiService {
     );
   }
 
+  getVendasDetalhadas(page: number = 0, size: number = 20, from?: string, to?: string): Observable<any> {
+    let url = `${this.baseUrl}/vendas/detalhadas?page=${page}&size=${size}`;
+    if (from) url += `&from=${encodeURIComponent(from)}`;
+    if (to) url += `&to=${encodeURIComponent(to)}`;
+    return this.makeRequest(() => this.http.get<any>(url), 'GET_VENDAS_DETALHADAS');
+  }
+
   private postVenda(payload: any): Observable<Venda> {
     return this.makeRequest(
       () => this.http.post<Venda>(`${this.baseUrl}/vendas`, payload),
@@ -388,6 +395,13 @@ export class ApiService {
     );
   }
 
+  getDeletedSalesPage(page: number = 0, size: number = 20): Observable<any> {
+    return this.makeRequest(
+      () => this.http.get<any>(`${this.baseUrl}/audit/sales?page=${page}&size=${size}`),
+      'GET_AUDIT_SALES_PAGE'
+    );
+  }
+
   restoreDeletedSale(deletionId: number): Observable<any> {
     return this.makeRequest(
       () => this.http.put<any>(`${this.baseUrl}/audit/sales/${deletionId}/restore`, {}),
@@ -401,8 +415,21 @@ export class ApiService {
     return this.makeRequest(() => this.http.get<any[]>(url), 'GET_CLIENTES');
   }
 
-  getClienteVendas(clienteId: number, limit: number = 5): Observable<any[]> {
-    return this.makeRequest(() => this.http.get<any[]>(`${this.baseUrl}/clientes/${clienteId}/vendas?limit=${limit}`), 'GET_CLIENTE_VENDAS');
+  getClientesPage(page: number = 0, size: number = 20, q?: string): Observable<any> {
+    let url = `${this.baseUrl}/clientes?page=${page}&size=${size}`;
+    if (q) url += `&q=${encodeURIComponent(q)}`;
+    return this.makeRequest(() => this.http.get<any>(url), 'GET_CLIENTES_PAGE');
+  }
+
+  getClienteVendas(clienteId: number, page: number = 0, size: number = 100, from?: string, to?: string): Observable<any> {
+    let url = `${this.baseUrl}/clientes/${clienteId}/vendas?page=${page}&size=${size}`;
+    if (from) url += `&from=${encodeURIComponent(from)}`;
+    if (to) url += `&to=${encodeURIComponent(to)}`;
+    return this.makeRequest(() => this.http.get<any>(url), 'GET_CLIENTE_VENDAS');
+  }
+
+  deleteCliente(id: number): Observable<any> {
+    return this.makeRequest(() => this.http.delete<any>(`${this.baseUrl}/clientes/${id}`), 'DELETE_CLIENTE');
   }
 
   createCliente(cliente: any): Observable<any> {
