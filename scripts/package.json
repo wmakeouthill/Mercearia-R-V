@@ -1,0 +1,13 @@
+{
+  "name": "render-nota-pdf",
+  "version": "1.0.0",
+  "description": "Helper to render nota HTML to PDF using Puppeteer",
+  "main": "render-nota-pdf.js",
+  "scripts": {
+    "render": "node render-nota-pdf.js"
+  },
+  "dependencies": {
+    "puppeteer": "^21.0.0",
+    "sistema-estoque": "file:.."
+  }
+}

@@ -65,6 +65,7 @@ export class RelatorioVendasComponent implements OnInit {
   previewBlobUrl: SafeResourceUrl | null = null;
   previewObjectUrl: string | null = null;
   @ViewChild('previewObject') previewObjectRef?: ElementRef<HTMLObjectElement>;
+  previewHtml: string | null = null;
 
   ngOnInit(): void {
     logger.info('RELATORIO_VENDAS', 'INIT', 'Componente iniciado');
@@ -84,6 +85,9 @@ export class RelatorioVendasComponent implements OnInit {
     this.previewBlobUrl = null;
     this.showEnviarModal = true;
 
+    // fetch HTML for preview first (more reliable in object/embed)
+    this.previewHtml = null;
+    this.apiService.getNotaHtml(orderId).subscribe({ next: (html: any) => { this.previewHtml = html as string; }, error: () => { /* ignore */ } });
     this.apiService.getNotaPdf(orderId).subscribe({
       next: (blob: any) => {
         try {

@@ -225,7 +225,7 @@
         <div class="modal-preview">
             @if (previewLoading) {<div class="preview-loading">Carregando pré-visualização...</div>}
             @if (!previewLoading) {<div class="preview-container">
-                <object #previewObject type="application/pdf" class="pdf-preview">Preview não disponível.</object>
+                @if (previewHtml) {<div class="html-preview" [innerHTML]="previewHtml"></div>} @else {<object #previewObject type="application/pdf" class="pdf-preview">Preview não disponível.</object>}
             </div>}
         </div>
         <div class="modal-actions">

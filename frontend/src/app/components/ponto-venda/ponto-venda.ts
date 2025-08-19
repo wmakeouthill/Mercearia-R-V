@@ -41,6 +41,7 @@ export class PontoVendaComponent implements OnInit, OnDestroy {
   previewLoading = false;
   previewBlobUrl: string | null = null;
   previewObjectUrl: string | null = null;
+  previewHtml: string | null = null;
   @ViewChild('previewObject') previewObjectRef?: ElementRef<HTMLObjectElement>;
 
   metodosDisponiveis: { valor: MetodoPagamento, nome: string, icone: string }[] = [

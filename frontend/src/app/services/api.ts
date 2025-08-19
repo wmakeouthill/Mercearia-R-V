@@ -312,6 +312,14 @@ export class ApiService {
     );
   }
 
+  // Obter HTML da nota (para preview mais confiável no modal)
+  getNotaHtml(orderId: number) {
+    return this.makeRequest(
+      () => this.http.get(`${this.baseUrl}/checkout/${orderId}/nota/html`, { responseType: 'text' as 'text' }),
+      'GET_NOTA_HTML'
+    );
+  }
+
   // Enviar email via servidor com anexo
   sendNotaEmail(orderId: number, payload: { to: string; subject?: string; body?: string }) {
     return this.makeRequest(
