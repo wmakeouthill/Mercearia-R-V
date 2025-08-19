@@ -28,6 +28,16 @@
                 "glob": "**/*",
                 "input": "public"
               }
+              ,
+              {
+                "glob": "pdf.worker.min.js",
+                "input": "node_modules/pdfjs-dist/build",
+                "output": "assets/pdfjs"
+              }
+            ],
+            "allowedCommonJsDependencies": [
+              "pdfjs-dist",
+              "path2d-polyfill"
             ],
             "styles": [
               "src/styles.scss"
@@ -43,8 +53,8 @@
                 },
                 {
                   "type": "anyComponentStyle",
-                  "maximumWarning": "22kB",
-                  "maximumError": "28kB"
+                  "maximumWarning": "30kB",
+                  "maximumError": "40kB"
                 }
               ],
               "outputHashing": "all",

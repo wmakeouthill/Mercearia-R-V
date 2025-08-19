@@ -643,8 +643,8 @@
 .modal {
     background: var(--white);
     border-radius: 12px;
-    padding: 18px;
-    width: 720px;
+    padding: 12px 16px;
+    width: 560px;
     max-width: calc(100% - 40px);
     box-shadow: 0 12px 40px rgba(0,0,0,0.3);
 }
@@ -657,9 +657,13 @@
     border: 1px solid rgba(0,0,0,0.08);
 }
 .preview-area { border: 1px solid rgba(0,0,0,0.06); padding: 8px; border-radius: 8px; background: #fafafa; }
-.preview-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:8px; }
+.pdf-viewer-area { display:flex; align-items:center; justify-content:center; min-height:360px; }
+.pdf-viewer-container { width:100%; max-width:420px; height:auto; overflow:auto; display:flex; align-items:center; justify-content:center; }
+.preview-actions { display:flex; gap:8px; justify-content:center; margin-top:12px; }
 .preview-actions .btn-primary { background: linear-gradient(135deg, var(--primary-blue) 0%, var(--secondary-blue) 100%); color: #fff; border: none; padding: 8px 12px; border-radius: 8px; cursor: pointer; }
 .preview-actions .btn-secondary { background: transparent; border: 1px solid rgba(0,0,0,0.08); padding: 8px 12px; border-radius: 8px; cursor: pointer; }
+.preview-actions.centered { justify-content:center; }
+canvas { display:block; max-width:100%; height:auto; }
 
 // Responsividade
 @media (max-width: 768px) {

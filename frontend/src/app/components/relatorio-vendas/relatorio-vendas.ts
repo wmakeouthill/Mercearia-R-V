@@ -10,8 +10,9 @@ import { RelatorioVendas, Venda, MetodoPagamento, RelatorioResumo } from '../../
 import { forkJoin, of } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { logger } from '../../utils/logger';
-import { PontoVendaComponent } from '../ponto-venda/ponto-venda';
+// PontoVendaComponent import removed (unused in this component)
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
+// pdfjs will be dynamically imported to avoid breaking lazy-loaded route initialization
 
 @Component({
   selector: 'app-relatorio-vendas',
@@ -65,7 +66,9 @@ export class RelatorioVendasComponent implements OnInit {
   previewBlobUrl: SafeResourceUrl | null = null;
   previewObjectUrl: string | null = null;
   @ViewChild('previewObject') previewObjectRef?: ElementRef<HTMLObjectElement>;
+  @ViewChild('pdfViewerContainer', { read: ElementRef }) pdfViewerContainer?: ElementRef<HTMLDivElement>;
   previewHtml: string | null = null;
+  objectFailed = false;
 
   ngOnInit(): void {
     logger.info('RELATORIO_VENDAS', 'INIT', 'Componente iniciado');
@@ -85,24 +88,45 @@ export class RelatorioVendasComponent implements OnInit {
     this.previewBlobUrl = null;
     this.showEnviarModal = true;
 
-    // fetch HTML for preview first (more reliable in object/embed)
+    // previewHtml not required for PDF preview; avoid calling /nota/html to reduce payload/log noise
     this.previewHtml = null;
-    this.apiService.getNotaHtml(orderId).subscribe({ next: (html: any) => { this.previewHtml = html as string; }, error: () => { /* ignore */ } });
     this.apiService.getNotaPdf(orderId).subscribe({
       next: (blob: any) => {
         try {
-          const url = URL.createObjectURL(blob as Blob);
-          this.previewObjectUrl = url;
-          this.previewBlobUrl = this.sanitizer.bypassSecurityTrustResourceUrl(url);
+          const pdfBlob = blob as Blob;
+          // debug info to help diagnose preview issues
+          console.debug('RELATORIO_VENDAS', 'PDF_PREVIEW_RECEIVED', { type: pdfBlob?.type, size: pdfBlob?.size });
 
-          // set object.data attribute safely via renderer
+          if (!pdfBlob || pdfBlob.size === 0) {
+            console.error('Preview PDF vazio (relatorio)');
+            this.previewLoading = false;
+            return;
+          }
+
+          // revoke previous url if present
+          if (this.previewObjectUrl) {
+            try { URL.revokeObjectURL(this.previewObjectUrl); } catch (e) { /* ignore */ }
+            this.previewObjectUrl = null;
+            this.previewBlobUrl = null;
+          }
+
+          const url = URL.createObjectURL(pdfBlob);
+          this.previewObjectUrl = url; // store raw blob url
+          this.previewBlobUrl = this.sanitizer.bypassSecurityTrustResourceUrl(url); // sanitized for iframe src if needed
+
+          // Render PDF directly from Blob (avoid fetching blob: URL which may be blocked by CSP)
+          try {
+            this.renderPdfJsFromBlob(pdfBlob);
+          } catch (e) {
+            console.debug('RELATORIO_VENDAS: renderPdfJsFromBlob failed scheduling', e);
+          }
+          // attempt to render preview with PDF.js (after view has had chance to mount)
           setTimeout(() => {
             try {
-              if (this.previewObjectRef && this.previewObjectRef.nativeElement) {
-                this.renderer.setAttribute(this.previewObjectRef.nativeElement, 'data', url);
-              }
-            } catch (e) { /* ignore */ }
-          }, 0);
+              // render directly from the received Blob (pdfBlob is in scope)
+              this.renderPdfJsFromBlob(pdfBlob);
+            } catch (e) { console.debug('renderPdfJs scheduling failed', e); }
+          }, 60);
         } catch (e) {
           console.error('Falha ao criar preview do PDF', e);
         }
@@ -113,6 +137,78 @@ export class RelatorioVendasComponent implements OnInit {
         this.previewLoading = false;
       }
     });
+  }
+
+  onObjectLoad(): void {
+    // object loaded successfully
+    this.objectFailed = false;
+  }
+
+  onObjectError(): void {
+    console.warn('RELATORIO_VENDAS: object failed to load PDF, falling back to iframe.');
+    this.objectFailed = true;
+  }
+
+  openPreviewInNewTab(): void {
+    if (!this.previewObjectUrl) return;
+    window.open(this.previewObjectUrl, '_blank');
+  }
+
+  downloadPreviewPdf(): void {
+    if (!this.previewObjectUrl || !this.modalOrderId) return;
+    const a = document.createElement('a');
+    a.href = this.previewObjectUrl;
+    a.download = `nota-${this.modalOrderId}.pdf`;
+    a.click();
+  }
+
+  // Render PDF with PDF.js into the modal container
+  private async renderPdfJsFromBlob(pdfBlob: Blob): Promise<void> {
+    try {
+      if (!this.pdfViewerContainer) return;
+      // Clear previous viewer
+      this.pdfViewerContainer.nativeElement.innerHTML = '';
+
+      // Convert blob to arrayBuffer without fetch to avoid blob: CSP issues
+      const arrayBuffer = await pdfBlob.arrayBuffer();
+
+      // Dynamically import PDF.js
+      const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf');
+
+      // Configure workerSrc to avoid "No GlobalWorkerOptions.workerSrc specified" error.
+      // Using unpkg CDN for the worker; for offline or locked-down environments
+      // consider copying pdf.worker.min.js into your assets and pointing workerSrc there.
+      try {
+        // Prefer local worker from assets to satisfy strict CSP
+        (pdfjsLib as any).GlobalWorkerOptions.workerSrc = '/assets/pdfjs/pdf.worker.min.js';
+      } catch (e) {
+        console.warn('Could not set pdfjs workerSrc via GlobalWorkerOptions', e);
+      }
+
+      const loadingTask = (pdfjsLib as any).getDocument({ data: arrayBuffer });
+      const pdf = await loadingTask.promise;
+
+      const page = await pdf.getPage(1);
+      const viewport = page.getViewport({ scale: 1.2 });
+
+      const canvas = document.createElement('canvas');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      this.pdfViewerContainer.nativeElement.appendChild(canvas);
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      const renderContext = { canvasContext: ctx, viewport };
+      await page.render(renderContext).promise;
+    } catch (e) {
+      console.error('PDF.js render failed', e);
+    }
+  }
+
+  onOverlayClick(event: MouseEvent): void {
+    // fecha o modal se o clique for no overlay (fora da modal)
+    if (event.target === event.currentTarget) {
+      this.closeEnviarModal();
+    }
   }
 
   closeEnviarModal(): void {

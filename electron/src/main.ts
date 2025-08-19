@@ -441,7 +441,8 @@ function createWindow(): void {
                 'Content-Security-Policy': [
                     "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: " +
                     "http://localhost:* http://127.0.0.1:* https://localhost:* https://127.0.0.1:*; " +
-                    "connect-src 'self' http://localhost:* http://127.0.0.1:* https://localhost:* https://127.0.0.1:* ws://localhost:*; " +
+                    // Allow blob: in connect-src so blob URLs created by the frontend are accessible
+                    "connect-src 'self' blob: http://localhost:* http://127.0.0.1:* https://localhost:* https://127.0.0.1:* ws://localhost:*; " +
                     "script-src 'self' 'unsafe-inline' 'unsafe-eval'; " +
                     "style-src 'self' 'unsafe-inline'; " +
                     "img-src 'self' data: blob: http://localhost:* http://127.0.0.1:*; " +

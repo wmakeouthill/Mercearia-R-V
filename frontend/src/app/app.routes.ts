@@ -37,7 +37,17 @@ export const routes: Routes = [
     },
     {
         path: 'relatorios',
-        loadComponent: () => import('./components/relatorio-vendas/relatorio-vendas').then(m => m.RelatorioVendasComponent),
+        loadComponent: async () => {
+            try {
+                const m = await import('./components/relatorio-vendas/relatorio-vendas');
+                return m.RelatorioVendasComponent;
+            } catch (e) {
+                console.error('Failed to load RelatorioVendasComponent', e);
+                // fallback to dashboard component to avoid navigation hang
+                const d = await import('./components/dashboard/dashboard');
+                return d.DashboardComponent;
+            }
+        },
         canActivate: [AuthGuard]
     },
     {

@@ -253,7 +253,7 @@
         </div>}
     </div>
 
-    @if (showEnviarModal) {<div class="modal-overlay">
+    @if (showEnviarModal) {<div class="modal-overlay" (click)="onOverlayClick($event)">
         <div class="modal enviar-nota-modal">
             <h3>Enviar comprovante</h3>
             <div class="modal-field">
@@ -272,13 +272,20 @@
                 <label for="previewIframe">Pré-visualização</label>
                 <div class="preview-area">
                     @if (previewLoading) {<div>Carregando preview...</div>} @else {<div>
-                        <object #previewObject type="application/pdf" width="100%" height="320" title="Pré-visualização">PDF não disponível.</object>
-                        <div class="preview-actions">
-                            <button class="btn-secondary" (click)="closeEnviarModal()">Fechar</button>
-                            <button class="btn-primary" (click)="sendNotaByEmailFromModal()">📧 Abrir cliente de Email (mailto)</button>
-                            <button class="btn-primary" (click)="sendNotaByWhatsappFromModal()">💬 Enviar por WhatsApp</button>
+                        <!-- PDF.js viewer container -->
+                        <div class="pdf-viewer-area">
+                            @if (previewLoading) {<div>Carregando preview...</div>} @else {<div #pdfViewerContainer class="pdf-viewer-container"></div>}
                         </div>
+
                     </div>}
+                </div>
+            </div>
+            <div class="modal-actions-below">
+                <div class="preview-actions centered">
+                    <button class="btn-secondary" (click)="closeEnviarModal()">Fechar</button>
+                    <button class="btn-primary" (click)="downloadPreviewPdf()">⬇️ Baixar PDF</button>
+                    <button class="btn-primary" (click)="sendNotaByEmailFromModal()">📧 Email</button>
+                    <button class="btn-primary" (click)="sendNotaByWhatsappFromModal()">💬 WhatsApp</button>
                 </div>
             </div>
         </div>

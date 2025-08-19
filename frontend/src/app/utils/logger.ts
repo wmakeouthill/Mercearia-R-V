@@ -39,8 +39,13 @@ class Logger {
     // Salvar no localStorage para persistência (com verificação de tamanho)
     this.saveToStorage();
 
-    // Log no console para desenvolvimento
-    console.log(`[${entry.level}] ${entry.component}: ${entry.message}`, entry.data || '');
+    // Log no console para desenvolvimento (sanitizando dados grandes)
+    try {
+      const safeData = this.sanitizeForLog(entry.data);
+      console.log(`[${entry.level}] ${entry.component}: ${entry.message}`, safeData || '');
+    } catch (e) {
+      console.log(`[${entry.level}] ${entry.component}: ${entry.message}`);
+    }
 
     // Encaminhar para arquivo via Electron (se disponível)
     if (this.ipcWriteAvailable) {
@@ -147,7 +152,7 @@ class Logger {
       component,
       action,
       message: `API Request: ${url}`,
-      data: { url, requestData: data }
+      data: { url, requestData: this.sanitizeForLog(data) }
     });
   }
 
@@ -158,8 +163,67 @@ class Logger {
       component,
       action,
       message: `API Response: ${url} - ${success ? 'SUCCESS' : 'ERROR'}`,
-      data: { url, response, success }
+      data: { url, response: this.sanitizeForLog(response), success }
     });
+  }
+
+  // Sanitize potentially large or binary data before logging to avoid huge logs
+  private sanitizeForLog(obj: any): any {
+    try {
+      if (obj === null || obj === undefined) return obj;
+
+      // If it's an Angular HttpResponse-like object, summarize key fields
+      if (typeof obj === 'object' && ('status' in obj || 'headers' in obj || 'ok' in obj)) {
+        const copy: any = {
+          status: obj.status,
+          statusText: obj.statusText,
+          url: obj.url,
+          ok: obj.ok,
+        };
+        // summarize body
+        if (obj.body instanceof Blob) {
+          copy.body = { type: 'blob', size: (obj.body as Blob).size };
+        } else if (typeof obj.body === 'string') {
+          const s = obj.body as string;
+          copy.body = s.length > 1000 ? (s.slice(0, 1000) + `... (truncated, ${s.length} chars)`) : s;
+        } else if (typeof obj.body === 'object') {
+          // shallow copy or stringify small objects
+          try {
+            const str = JSON.stringify(obj.body);
+            copy.body = str.length > 1000 ? (str.slice(0, 1000) + `... (truncated, ${str.length} chars)`) : JSON.parse(str);
+          } catch (e) {
+            copy.body = '[unserializable body]';
+          }
+        } else {
+          copy.body = obj.body;
+        }
+        return copy;
+      }
+
+      // If it's a Blob directly
+      if (obj instanceof Blob) {
+        return { type: 'blob', size: obj.size };
+      }
+
+      // Strings: truncate long HTML/PDF text
+      if (typeof obj === 'string') {
+        return obj.length > 1000 ? (obj.slice(0, 1000) + `... (truncated, ${obj.length} chars)`) : obj;
+      }
+
+      // Objects: attempt to stringify but cap size
+      if (typeof obj === 'object') {
+        try {
+          const str = JSON.stringify(obj);
+          return str.length > 1000 ? (str.slice(0, 1000) + `... (truncated, ${str.length} chars)`) : JSON.parse(str);
+        } catch (e) {
+          return '[unserializable object]';
+        }
+      }
+
+      return obj;
+    } catch (e) {
+      return '[error sanitizing log data]';
+    }
   }
 
   logApiError(component: string, action: string, url: string, error: any): void {
