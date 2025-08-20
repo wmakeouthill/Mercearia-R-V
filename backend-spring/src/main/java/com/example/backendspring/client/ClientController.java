@@ -4,17 +4,20 @@ package com.example.backendspring.client;
 import com.example.backendspring.sale.SaleRepository;
 import com.example.backendspring.sale.SaleOrderRepository;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.http.ResponseEntity;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.dao.DataIntegrityViolationException;
 
 import java.time.OffsetDateTime;
-import java.util.List;
 
 @RestController
 @RequestMapping("/api/clientes")
 @RequiredArgsConstructor
 public class ClientController {
+    private static final Logger logger = LoggerFactory.getLogger(ClientController.class);
     private final ClientRepository clientRepository;
     private final SaleRepository saleRepository;
     private final SaleOrderRepository saleOrderRepository;
@@ -51,8 +54,9 @@ public class ClientController {
     }
 
     @GetMapping("/{id}/vendas")
-    public List<java.util.Map<String, Object>> vendas(@PathVariable Long id,
-            @RequestParam(value = "limit", required = false, defaultValue = "50") int limit,
+    public ResponseEntity<java.util.Map<String, Object>> vendas(@PathVariable Long id,
+            @RequestParam(value = "page", required = false, defaultValue = "0") int page,
+            @RequestParam(value = "size", required = false, defaultValue = "50") int size,
             @RequestParam(value = "from", required = false) String from,
             @RequestParam(value = "to", required = false) String to) {
         java.time.LocalDate inicio = null;
@@ -72,20 +76,23 @@ public class ClientController {
             }
         }
 
-        java.util.List<com.example.backendspring.sale.Sale> vendasLegado;
-        java.util.List<com.example.backendspring.sale.SaleOrder> ordens;
+        java.util.List<com.example.backendspring.sale.Sale> vendasLegado = new java.util.ArrayList<>();
+        java.util.List<com.example.backendspring.sale.SaleOrder> ordens = new java.util.ArrayList<>();
 
         if (inicio != null && fim != null) {
-            // filter period then limit to 'limit'
-            var tmp = saleRepository.findByPeriodo(inicio, fim).stream()
+            // Period filter: load matching legacy sales and orders for the period
+            var tmpLegado = saleRepository.findByPeriodo(inicio, fim).stream()
                     .filter(s -> s.getCliente() != null && s.getCliente().getId() != null
                             && s.getCliente().getId().equals(id))
                     .sorted((a, b) -> b.getDataVenda().compareTo(a.getDataVenda()))
                     .toList();
-            vendasLegado = tmp.subList(0, Math.min(tmp.size(), limit));
-            ordens = saleOrderRepository.findByClienteIdAndPeriodo(id, inicio, fim, PageRequest.of(0, limit));
+            vendasLegado.addAll(tmpLegado);
+            // sale orders - use pageable variant to limit DB work
+            ordens = saleOrderRepository.findByClienteIdAndPeriodo(id, inicio, fim,
+                    PageRequest.of(0, Integer.MAX_VALUE));
         } else {
-            var pr = PageRequest.of(0, limit);
+            // No period: use pageable queries for both repositories
+            var pr = PageRequest.of(page, size);
             var pageResult = saleRepository.findByClienteIdOrderByDataVendaDesc(id, pr);
             vendasLegado = pageResult != null && pageResult.hasContent() ? pageResult.getContent()
                     : java.util.Collections.emptyList();
@@ -96,14 +103,26 @@ public class ClientController {
         vendasLegado.forEach(s -> merged.add(mapLegacySale(s)));
         ordens.forEach(o -> merged.add(mapSaleOrder(o)));
 
-        // sort by data desc and limit to requested 'limit'
+        // sort by data desc
         merged.sort((a, b) -> {
             var da = (java.time.OffsetDateTime) a.get("data_venda");
             var db = (java.time.OffsetDateTime) b.get("data_venda");
             return db.compareTo(da);
         });
 
-        return merged.stream().limit(Math.max(1, limit)).toList();
+        // pagination: compute total and slice for requested page/size
+        final int total = merged.size();
+        final int fromIndex = Math.max(0, Math.min(total, page * size));
+        final int toIndex = Math.max(fromIndex, Math.min(total, fromIndex + size));
+        final java.util.List<java.util.Map<String, Object>> pageItems = merged.subList(fromIndex, toIndex);
+
+        var resp = new java.util.LinkedHashMap<String, Object>();
+        resp.put("items", pageItems);
+        resp.put("total", total);
+        resp.put("hasNext", toIndex < total);
+        resp.put("page", page);
+        resp.put("size", size);
+        return ResponseEntity.ok(resp);
     }
 
     private java.util.Map<String, Object> mapLegacySale(com.example.backendspring.sale.Sale s) {
@@ -118,6 +137,18 @@ public class ClientController {
             m.put("produto_nome", s.getProduto().getNome());
             m.put("produto_imagem", s.getProduto().getImagem());
         }
+        // Normalize to include itens array so frontend can display products uniformly
+        var itens = new java.util.ArrayList<java.util.Map<String, Object>>();
+        var it = new java.util.LinkedHashMap<String, Object>();
+        it.put("id", null);
+        it.put("produto_id", s.getProduto() != null ? s.getProduto().getId() : null);
+        it.put("produto_nome", s.getProduto() != null ? s.getProduto().getNome() : null);
+        it.put("produto_imagem", s.getProduto() != null ? s.getProduto().getImagem() : null);
+        it.put("quantidade", s.getQuantidadeVendida());
+        it.put("preco_unitario", null);
+        it.put("preco_total", s.getPrecoTotal());
+        itens.add(it);
+        m.put("itens", itens);
         return m;
     }
 
@@ -158,8 +189,28 @@ public class ClientController {
     public ResponseEntity<java.util.Map<String, Object>> delete(@PathVariable Long id) {
         if (!clientRepository.existsById(id))
             return ResponseEntity.status(404).body(java.util.Map.of("error", "Cliente não encontrado"));
-        clientRepository.deleteById(id);
-        return ResponseEntity.ok(java.util.Map.of("message", "Cliente deletado"));
+
+        // Prevent deletion if there are related sales/orders to avoid FK constraint
+        // errors
+        try {
+            // Nullify FK on sales/orders referencing this client, then delete client
+            logger.debug("Nullifying client FK for id {}", id);
+            saleRepository.nullifyClienteById(id);
+            saleOrderRepository.nullifyClienteById(id);
+
+            clientRepository.deleteById(id);
+            logger.info("Cliente {} deletado com sucesso", id);
+            return ResponseEntity.ok(java.util.Map.of("message", "Cliente deletado"));
+        } catch (DataIntegrityViolationException dive) {
+            logger.error("DataIntegrityViolation while deleting client {}", id, dive);
+            return ResponseEntity.status(500)
+                    .body(java.util.Map.of("error", "Erro ao deletar cliente: violação de integridade referencial"));
+        } catch (Exception ex) {
+            logger.error("Unexpected error while deleting client {}", id, ex);
+            // include details to help debugging
+            return ResponseEntity.status(500)
+                    .body(java.util.Map.of("error", "Erro interno ao deletar cliente", "details", ex.getMessage()));
+        }
     }
 
     @PutMapping("/{id}")

@@ -210,14 +210,15 @@
     <div class="modal enviar-nota-modal">
         <h3>Enviar comprovante</h3>
         <div class="modal-field">
-            <label for="modalCustomerName">Nome (opcional)</label>
-            <input id="modalCustomerName" type="text" [(ngModel)]="modalCustomerName" class="input-modal" (focus)="openClientAutocomplete()">
-            <div class="client-autocomplete">
-                <input type="text" placeholder="Pesquisar clientes..." [(ngModel)]="clientSearchTerm" (input)="onClientSearchChange()" />
-                <ul *ngIf="clientResults.length > 0" class="autocomplete-list">
-                    <li *ngFor="let c of clientResults" (click)="selectClient(c)">{{ c.nome }} — {{ c.email || c.telefone }}</li>
-                </ul>
-            </div>
+            <label for="modalCustomerName">Cliente (digite para filtrar / selecione)</label>
+            <input id="modalCustomerName" type="text" [(ngModel)]="modalCustomerName" class="input-modal"
+                   (focus)="openClientAutocomplete()" (input)="onClientNameChange()" (blur)="hideClientDropdownDelayed()" autocomplete="off" />
+            <ul *ngIf="showClientDropdown && clientResults.length > 0" class="autocomplete-list" (mousedown)="$event.preventDefault()">
+                <li *ngFor="let c of clientResults" (click)="selectClient(c)">
+                    <div class="ac-item-name">{{ c.nome }}</div>
+                    <div class="ac-item-meta">{{ c.email || '—' }} · {{ c.telefone || '—' }}</div>
+                </li>
+            </ul>
         </div>
         <div class="modal-field">
             <label for="modalCustomerEmail">Email (opcional)</label>

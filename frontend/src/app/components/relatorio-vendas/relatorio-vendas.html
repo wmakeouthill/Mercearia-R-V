@@ -266,9 +266,9 @@
             <div class="modal-field" style="position:relative;">
                 <label for="modalCustomerSelect">Cliente (digite para filtrar / selecione)</label>
                 <input id="modalCustomerName" type="text" [(ngModel)]="modalCustomerName" class="input-modal"
-                       (focus)="openClientAutocomplete()" (input)="onClientNameChange()" (blur)="hideClientDropdownDelayed()" autocomplete="off" />
+                       (focus)="openClientAutocomplete()" (input)="onClientNameChange()" (blur)="hideClientDropdownDelayed()" (keydown)="onClientDropdownKeydown($event)" autocomplete="off" />
                 <ul *ngIf="showClientDropdown && clientResults.length > 0" class="autocomplete-list" (mousedown)="$event.preventDefault()">
-                    <li *ngFor="let c of clientResults" (click)="selectClientForModal(c)">
+                    <li *ngFor="let c of clientResults; let i = index" (click)="selectClientForModal(c)" [class.selected]="i === clientDropdownIndex">
                         <div class="ac-item-name">{{ c.nome }}</div>
                         <div class="ac-item-meta">{{ c.email || '—' }} · {{ c.telefone || '—' }}</div>
                     </li>

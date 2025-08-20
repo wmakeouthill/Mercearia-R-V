@@ -421,11 +421,12 @@ export class ApiService {
     return this.makeRequest(() => this.http.get<any>(url), 'GET_CLIENTES_PAGE');
   }
 
-  getClienteVendas(clienteId: number, page: number = 0, size: number = 100, from?: string, to?: string): Observable<any> {
-    let url = `${this.baseUrl}/clientes/${clienteId}/vendas?page=${page}&size=${size}`;
+  // backend expects a 'limit' parameter; this returns a list limited to that value
+  getClienteVendas(clienteId: number, limit: number = 50, from?: string, to?: string): Observable<any[]> {
+    let url = `${this.baseUrl}/clientes/${clienteId}/vendas?limit=${limit}`;
     if (from) url += `&from=${encodeURIComponent(from)}`;
     if (to) url += `&to=${encodeURIComponent(to)}`;
-    return this.makeRequest(() => this.http.get<any>(url), 'GET_CLIENTE_VENDAS');
+    return this.makeRequest(() => this.http.get<any[]>(url), 'GET_CLIENTE_VENDAS');
   }
 
   deleteCliente(id: number): Observable<any> {

@@ -2,7 +2,9 @@ package com.example.backendspring.sale;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -31,4 +33,12 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
 
     // Buscar vendas por cliente ordenadas por data (paginação suportada)
     Page<Sale> findByClienteIdOrderByDataVendaDesc(Long clienteId, Pageable pageable);
+
+    // Contador rápido para verificar existência de vendas por cliente
+    long countByClienteId(Long clienteId);
+
+    @Modifying
+    @Transactional
+    @Query("update Sale s set s.cliente = null where s.cliente.id = :clienteId")
+    void nullifyClienteById(@Param("clienteId") Long clienteId);
 }

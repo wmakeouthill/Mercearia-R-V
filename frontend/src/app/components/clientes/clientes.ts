@@ -38,19 +38,20 @@ export class ClientesComponent implements OnInit {
     loadClientes(): void {
         this.loading = true;
         this.error = '';
-        // if searching, use quick search (no pagination)
-        if (this.search && this.search.trim()) {
-            this.api.getClientes(this.search).subscribe({ next: (r) => { this.clientes = r; this.loading = false; }, error: () => { this.error = 'Erro ao carregar clientes'; this.loading = false; } });
+        // if searching, use paged search to keep response shape consistent
+        if (this.search?.trim()) {
+            this.api.getClientesPage(0, this.pageSize || 20, this.search).subscribe({ next: (r: any) => { console.debug('LOAD_CLIENTES_SEARCH_RESPONSE', r); this.clientes = r.items || r; this.total = Number(r.total || 0); this.hasNextClients = !!r.hasNext; this.loading = false; }, error: (err) => { console.error('LOAD_CLIENTES_SEARCH_ERROR', err); this.error = 'Erro ao carregar clientes'; this.loading = false; } });
             return;
         }
         // paged load
-        this.api.getClientesPage(this.page - 1 || 0, this.pageSize || 20).subscribe({
+        this.api.getClientesPage((this.page - 1) || 0, this.pageSize || 20).subscribe({
             next: (r: any) => {
+                console.debug('LOAD_CLIENTES_PAGE_RESPONSE', r);
                 this.clientes = r.items || [];
                 this.total = Number(r.total || 0);
                 this.hasNextClients = !!r.hasNext;
                 this.loading = false;
-            }, error: () => { this.error = 'Erro ao carregar clientes'; this.loading = false; }
+            }, error: (err) => { console.error('LOAD_CLIENTES_PAGE_ERROR', err); this.error = 'Erro ao carregar clientes'; this.loading = false; }
         });
     }
 
@@ -64,6 +65,44 @@ export class ClientesComponent implements OnInit {
     nextClientsPage() { if (this.hasNextClients) { this.page++; this.loadClientes(); } }
     prevClientsPage() { if (this.page > 1) { this.page--; this.loadClientes(); } }
 
+    get totalPages(): number {
+        const totalItems = Number(this.total || 0);
+        const perPage = Number(this.pageSize || 1);
+        const pages = Math.ceil(totalItems / perPage);
+        return Math.max(1, pages || 1);
+    }
+
+    get paginationItems(): Array<number | string> {
+        const totalPages = this.totalPages;
+        const currentPage = this.page;
+        const siblings = 2; // quantidade de páginas vizinhas a exibir
+
+        const range: Array<number | string> = [];
+        if (totalPages <= 1) return [1];
+
+        range.push(1);
+
+        const leftSibling = Math.max(2, currentPage - siblings);
+        const rightSibling = Math.min(totalPages - 1, currentPage + siblings);
+
+        if (leftSibling > 2) {
+            range.push('…');
+        }
+
+        for (let i = leftSibling; i <= rightSibling; i++) {
+            range.push(i);
+        }
+
+        if (rightSibling < totalPages - 1) {
+            range.push('…');
+        }
+
+        if (totalPages > 1) {
+            range.push(totalPages);
+        }
+        return range;
+    }
+
     toggleExpand(id: number): void {
         if (this.expanded.has(id)) {
             this.expanded.delete(id);
@@ -73,22 +112,42 @@ export class ClientesComponent implements OnInit {
         const page = this.vendasPage[id] ?? 0;
         const size = this.vendasSize[id] ?? 10;
         if (!this.vendasPorCliente[id]) {
+            // load first page when expanding
             this.loadVendasClientePage(id, page, size);
         }
     }
 
-    private loadVendasClientePage(id: number, page: number, size: number): void {
-        this.api.getClienteVendas(id, page, size, this.fromDate || undefined, this.toDate || undefined).subscribe({
-            next: (v: any[]) => {
-                // backend currently returns up to `size` items; we set hasMore if returned length == size
-                this.vendasPorCliente[id] = v.map((it: any) => {
+    loadVendasClientePage(id: number, page: number, size: number): void {
+        // API accepts a 'limit' param; backend doesn't support page param yet. We request (page+1)*size + 1
+        // so we can detect whether there are more items and slice the page client-side.
+        const requestedLimit = (page + 1) * size + 1;
+        this.api.getClienteVendas(id, requestedLimit, this.fromDate || undefined, this.toDate || undefined).subscribe({
+            next: (resp: any[]) => {
+                const raw = resp || [];
+                const start = page * size;
+                const pageItems = raw.slice(start, start + size);
+                this.vendasPorCliente[id] = pageItems.map((it: any) => {
                     if (it.data_venda) it.data_venda = new Date(it.data_venda).toLocaleString();
-                    if (!it.itens) it.itens = [];
+                    // normalize itens: legacy sales may not have itens array
+                    if (!it.itens || !Array.isArray(it.itens) || it.itens.length === 0) {
+                        const single = {
+                            id: null,
+                            produto_id: it.produto_id || null,
+                            produto_nome: it.produto_nome || null,
+                            produto_imagem: it.produto_imagem || null,
+                            quantidade: it.quantidade_vendida ?? it.quantidade ?? 1,
+                            preco_unitario: (it.preco_unitario ?? null),
+                            preco_total: it.preco_total ?? null
+                        };
+                        it.itens = [single];
+                    }
+                    it._showItems = it._showItems || false;
                     return it;
                 });
                 this.vendasPage[id] = page;
                 this.vendasSize[id] = size;
-                this.vendasHasMore[id] = (v && v.length === size);
+                // hasMore if raw has more than (page+1)*size items
+                this.vendasHasMore[id] = raw.length > (page + 1) * size;
             }, error: () => {
                 this.vendasPorCliente[id] = [];
                 this.vendasHasMore[id] = false;

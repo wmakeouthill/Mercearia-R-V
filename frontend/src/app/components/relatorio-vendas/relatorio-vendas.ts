@@ -96,6 +96,16 @@ export class RelatorioVendasComponent implements OnInit {
   clientSearching = false;
   showClientDropdown = false;
   private hideDropdownTimer: any = null;
+  clientDropdownIndex = -1;
+
+  onClientDropdownKeydown(event: KeyboardEvent): void {
+    const len = this.clientResults?.length || 0;
+    if (!this.showClientDropdown || len === 0) return;
+    if (event.key === 'ArrowDown') { event.preventDefault(); this.clientDropdownIndex = Math.min(len - 1, (this.clientDropdownIndex || 0) + 1); }
+    else if (event.key === 'ArrowUp') { event.preventDefault(); this.clientDropdownIndex = Math.max(0, (this.clientDropdownIndex || 0) - 1); }
+    else if (event.key === 'Enter') { event.preventDefault(); if (this.clientDropdownIndex >= 0 && this.clientDropdownIndex < len) this.selectClientForModal(this.clientResults[this.clientDropdownIndex]); }
+    else if (event.key === 'Escape') { this.showClientDropdown = false; }
+  }
 
   openClientAutocomplete(): void {
     this.clientResults = [];

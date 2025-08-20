@@ -21,78 +21,128 @@
         <tr><th>Nome</th><th>Email</th><th>Telefone</th><th>Últimas Compras</th></tr>
       </thead>
       <tbody>
-        <tr *ngFor="let c of clientes">
-          <td>
-            <span *ngIf="editingClientId !== c.id">{{ c.nome }}</span>
-            <span *ngIf="editingClientId === c.id">
-              <input [(ngModel)]="editingClient.nome" />
-            </span>
-          </td>
-          <td>
-            <span *ngIf="editingClientId !== c.id">{{ c.email }}</span>
-            <span *ngIf="editingClientId === c.id">
-              <input [(ngModel)]="editingClient.email" />
-            </span>
-          </td>
-          <td>
-            <span *ngIf="editingClientId !== c.id">{{ c.telefone }}</span>
-            <span *ngIf="editingClientId === c.id">
-              <input [(ngModel)]="editingClient.telefone" />
-            </span>
-          </td>
-          <td>
-            <div class="action-group">
-              <button class="btn-ghost" (click)="toggleExpand(c.id)">🔽</button>
-              <button class="btn-ghost" *ngIf="editingClientId !== c.id" (click)="startEditCliente(c)">Editar</button>
-              <button class="btn-danger" *ngIf="editingClientId !== c.id" (click)="deleteCliente(c.id)" title="Excluir cliente">🗑️</button>
-              <button class="btn-ghost" *ngIf="editingClientId === c.id" (click)="saveEditCliente()">Salvar</button>
-              <button class="btn-ghost" *ngIf="editingClientId === c.id" (click)="cancelEdit()">Cancelar</button>
-            </div>
-          </td>
-        </tr>
-        <tr *ngFor="let c of clientes">
-          <td colspan="4" *ngIf="expanded.has(c.id)">
-            <div *ngIf="vendasPorCliente[c.id]">
-              <table class="tabela-vendas-mini">
-                <thead><tr><th>#</th><th>Total</th><th>Data</th><th>Itens</th></tr></thead>
-                <tbody>
-                  <ng-container *ngFor="let v of vendasPorCliente[c.id]; let i = index">
-                    <tr>
-                      <td>{{ v.id }}</td>
-                      <td>R$ {{ v.preco_total?.toFixed ? v.preco_total.toFixed(2) : v.preco_total }}</td>
-                      <td>{{ v.data_venda }}</td>
-                      <td>
-                        <button (click)="v._showItems = !v._showItems">{{ v._showItems ? '▲' : '▼' }}</button>
-                      </td>
-                    </tr>
-                    <tr class="venda-itens-row" *ngIf="v._showItems">
-                      <td colspan="4">
-                        <table class="tabela-itens">
-                          <thead><tr><th>Imagem</th><th>Produto</th><th>Qtd</th><th>Preço Unit.</th><th>Subtotal</th></tr></thead>
-                          <tbody>
-                            <tr *ngFor="let it of v.itens">
-                              <td>
-                                <img *ngIf="it.produto_imagem" [src]="('/api/produtos/imagem/' + it.produto_imagem)" class="mini-img" [alt]="it.produto_nome || 'produto'" />
-                              </td>
-                              <td>{{ it.produto_nome || it.produto_nome }}</td>
-                              <td>{{ it.quantidade || it.quantidade_vendida || '-' }}</td>
-                              <td>R$ {{ it.preco_unitario ? it.preco_unitario.toFixed(2) : (it.preco_unitario) }}</td>
-                              <td>R$ {{ it.preco_total ? it.preco_total.toFixed(2) : (it.preco_total) }}</td>
-                            </tr>
-                          </tbody>
-                        </table>
-                      </td>
-                    </tr>
-                  </ng-container>
-                </tbody>
-              </table>
+        <ng-container *ngFor="let c of clientes">
+          <tr>
+            <td>
+              <span *ngIf="editingClientId !== c.id">{{ c.nome }}</span>
+              <span *ngIf="editingClientId === c.id">
+                <input [(ngModel)]="editingClient.nome" />
+              </span>
+            </td>
+            <td>
+              <span *ngIf="editingClientId !== c.id">{{ c.email }}</span>
+              <span *ngIf="editingClientId === c.id">
+                <input [(ngModel)]="editingClient.email" />
+              </span>
+            </td>
+            <td>
+              <span *ngIf="editingClientId !== c.id">{{ c.telefone }}</span>
+              <span *ngIf="editingClientId === c.id">
+                <input [(ngModel)]="editingClient.telefone" />
+              </span>
+            </td>
+            <td>
+              <div class="action-group">
+                <button class="btn-ghost" (click)="toggleExpand(c.id)">🔽</button>
+                <button class="btn-ghost" *ngIf="editingClientId !== c.id" (click)="startEditCliente(c)">Editar</button>
+                <button class="btn-danger" *ngIf="editingClientId !== c.id" (click)="deleteCliente(c.id)" title="Excluir cliente">🗑️</button>
+                <button class="btn-ghost" *ngIf="editingClientId === c.id" (click)="saveEditCliente()">Salvar</button>
+                <button class="btn-ghost" *ngIf="editingClientId === c.id" (click)="cancelEdit()">Cancelar</button>
+              </div>
+            </td>
+          </tr>
 
-            </div>
-            <div *ngIf="!vendasPorCliente[c.id]">Carregando vendas...</div>
-          </td>
-        </tr>
+          <!-- expansão da linha do cliente logo abaixo -->
+          <tr *ngIf="expanded.has(c.id)">
+            <td colspan="4">
+              <div *ngIf="vendasPorCliente[c.id]">
+                <table class="tabela-vendas-mini">
+                  <thead><tr><th>#</th><th>Total</th><th>Data</th><th>Itens</th></tr></thead>
+                  <tbody>
+                    <ng-container *ngFor="let v of vendasPorCliente[c.id]; let i = index">
+                      <tr>
+                        <td>{{ v.id }}</td>
+                        <td>R$ {{ v.preco_total?.toFixed ? v.preco_total.toFixed(2) : v.preco_total }}</td>
+                        <td>{{ v.data_venda }}</td>
+                        <td>
+                          <button (click)="v._showItems = !v._showItems">{{ v._showItems ? '▲' : '▼' }}</button>
+                        </td>
+                      </tr>
+                      <tr class="venda-itens-row" *ngIf="v._showItems">
+                        <td colspan="4">
+                          <table class="tabela-itens">
+                            <thead><tr><th>Imagem</th><th>Produto</th><th>Qtd</th><th>Preço Unit.</th><th>Subtotal</th></tr></thead>
+                            <tbody>
+                              <tr *ngFor="let it of v.itens">
+                                <td>
+                                  <img *ngIf="it.produto_imagem" [src]="('/api/produtos/imagem/' + it.produto_imagem)" class="mini-img" [alt]="it.produto_nome || 'produto'" />
+                                </td>
+                                <td>{{ it.produto_nome }}</td>
+                                <td>{{ it.quantidade || it.quantidade_vendida || '-' }}</td>
+                                <td>R$ {{ it.preco_unitario ? it.preco_unitario.toFixed(2) : (it.preco_unitario) }}</td>
+                                <td>R$ {{ it.preco_total ? it.preco_total.toFixed(2) : (it.preco_total) }}</td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </td>
+                      </tr>
+                    </ng-container>
+                  </tbody>
+                </table>
+              </div>
+              <div *ngIf="!vendasPorCliente[c.id]">Carregando vendas...</div>
+              <!-- paginação interna de vendas do cliente -->
+              <div class="paginacao" *ngIf="vendasPorCliente[c.id] && vendasPorCliente[c.id].length >= 0">
+                <div class="pagination-left">
+                  <button class="btn-page btn-ghost" (click)="prevPageCliente(c.id)" [disabled]="(vendasPage[c.id] || 0) <= 0">‹</button>
+                </div>
+                <div class="pagination-center">
+                  <span>Página {{ (vendasPage[c.id] || 0) + 1 }}</span>
+                </div>
+                <div class="pagination-right">
+                  <button class="btn-page btn-ghost" (click)="nextPageCliente(c.id)" [disabled]="!vendasHasMore[c.id]">›</button>
+                </div>
+                <div class="pagination-jump">
+                  <label>
+                    Exibir
+                    <select [(ngModel)]="vendasSize[c.id]" (change)="loadVendasClientePage(c.id, 0, vendasSize[c.id] || 10)">
+                      <option [ngValue]="10">10</option>
+                      <option [ngValue]="20">20</option>
+                      <option [ngValue]="50">50</option>
+                    </select>
+                  </label>
+                </div>
+              </div>
+            </td>
+          </tr>
+        </ng-container>
       </tbody>
     </table>
+
+    <!-- paginação principal (clientes) -->
+    <div class="paginacao" style="margin-top:12px;">
+      <div class="pagination-left">
+        <button class="btn-page btn-ghost" (click)="goToPage(1)" [disabled]="page<=1">«</button>
+        <button class="btn-page btn-ghost" (click)="prevClientsPage()" [disabled]="page<=1">‹</button>
+      </div>
+      <div class="pagination-center">
+        <span>Página {{ page }} / {{ totalPages }}</span>
+      </div>
+      <div class="pagination-right">
+        <button class="btn-page btn-ghost" (click)="nextClientsPage()" [disabled]="!hasNextClients">›</button>
+        <button class="btn-page btn-ghost" (click)="goToPage(totalPages)" [disabled]="!hasNextClients">»</button>
+      </div>
+      <div class="pagination-jump">
+        <label>
+          Exibir
+          <select [(ngModel)]="pageSize" (change)="setPageSize(pageSize)">
+            <option [ngValue]="20">20</option>
+            <option [ngValue]="50">50</option>
+            <option [ngValue]="100">100</option>
+          </select>
+        </label>
+      </div>
+    </div>
   </div>
 </div>
 

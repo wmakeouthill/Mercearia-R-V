@@ -42,6 +42,18 @@ export class PontoVendaComponent implements OnInit, OnDestroy {
   clientResults: any[] = [];
   clientSearching = false;
   private clientSearchSubject = new Subject<string>();
+  showClientDropdown = false;
+  private hideDropdownTimer: any = null;
+  clientDropdownIndex = -1;
+
+  onClientDropdownKeydown(event: KeyboardEvent): void {
+    const len = this.clientResults?.length || 0;
+    if (!this.showClientDropdown || len === 0) return;
+    if (event.key === 'ArrowDown') { event.preventDefault(); this.clientDropdownIndex = Math.min(len - 1, (this.clientDropdownIndex || 0) + 1); }
+    else if (event.key === 'ArrowUp') { event.preventDefault(); this.clientDropdownIndex = Math.max(0, (this.clientDropdownIndex || 0) - 1); }
+    else if (event.key === 'Enter') { event.preventDefault(); if (this.clientDropdownIndex >= 0 && this.clientDropdownIndex < len) this.selectClient(this.clientResults[this.clientDropdownIndex]); }
+    else if (event.key === 'Escape') { this.showClientDropdown = false; }
+  }
   // Preview do PDF
   previewLoading = false;
   previewBlobUrl: string | null = null;
@@ -164,7 +176,7 @@ export class PontoVendaComponent implements OnInit, OnDestroy {
         return;
       }
       this.clientSearching = true;
-      this.apiService.getClientes(t).subscribe({ next: r => { this.clientResults = r; this.clientSearching = false; }, error: () => { this.clientResults = []; this.clientSearching = false; } });
+      this.apiService.getClientes(t).subscribe({ next: r => { this.clientResults = r; this.clientSearching = false; this.showClientDropdown = true; }, error: () => { this.clientResults = []; this.clientSearching = false; } });
     });
   }
 
@@ -178,6 +190,17 @@ export class PontoVendaComponent implements OnInit, OnDestroy {
     this.modalCustomerPhone = c.telefone || '';
     this.clientResults = [];
     this.clientSearchTerm = '';
+    this.showClientDropdown = false;
+  }
+
+  onClientNameChange(): void {
+    const t = (this.modalCustomerName || '').trim();
+    if (!t) { this.clientResults = []; this.showClientDropdown = true; return; }
+    this.apiService.getClientes(t).subscribe({ next: r => { this.clientResults = r; this.showClientDropdown = true; }, error: () => { this.clientResults = []; } });
+  }
+
+  hideClientDropdownDelayed(): void {
+    this.hideDropdownTimer = setTimeout(() => { this.showClientDropdown = false; }, 150);
   }
 
   saveModalAsCliente(): void {
