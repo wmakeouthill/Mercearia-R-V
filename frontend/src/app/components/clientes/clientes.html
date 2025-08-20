@@ -10,7 +10,8 @@
     <input type="text" [(ngModel)]="search" placeholder="Pesquisar clientes..." (input)="loadClientes()" />
     <label>De: <input type="date" [(ngModel)]="fromDate" /></label>
     <label class="label-ate">Até: <input type="date" [(ngModel)]="toDate" /></label>
-    <button class="btn-ghost btn-filter" (click)="applyDateFilter()">Filtrar</button>
+    <button class="btn-limpar" (click)="clearFilters()">🔄 Limpar</button>
+    <button class="btn-filtrar" (click)="applyDateFilter()">🔍 Filtrar</button>
   </div>
 
   <div *ngIf="loading" class="loading">Carregando...</div>

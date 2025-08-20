@@ -35,6 +35,30 @@
 
 .btn-filter { margin-left:8px; }
 
+/* use same styles as relatorio page for filtrar/limpar */
+.btn-filtrar, .btn-limpar {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  transition: all 0.3s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  box-shadow: 0 2px 8px rgba(0, 46, 89, 0.1);
+}
+.btn-filtrar {
+  background: linear-gradient(135deg, var(--primary-blue) 0%, var(--secondary-blue) 100%);
+  color: var(--white);
+}
+.btn-filtrar:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,46,89,0.3); }
+.btn-limpar {
+  background: linear-gradient(135deg, var(--dark-gray) 0%, #5a6268 100%);
+  color: var(--white);
+}
+.btn-limpar:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(108,117,125,0.3); }
+
 /* Copiado de caixa.scss para manter consistência visual */
 .btn-voltar {
   background: linear-gradient(135deg, #DBC27D 0%, #D1B867 100%);

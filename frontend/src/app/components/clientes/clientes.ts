@@ -175,6 +175,20 @@ export class ClientesComponent implements OnInit {
         }
     }
 
+    clearFilters(): void {
+        this.search = '';
+        this.fromDate = null;
+        this.toDate = null;
+        // reload default paged list
+        this.page = 1;
+        this.loadClientes();
+        // also reload vendas for currently expanded clients so their content reflects cleared dates
+        for (const id of Array.from(this.expanded)) {
+            this.vendasPage[id] = 0;
+            this.loadVendasClientePage(id, 0, this.vendasSize[id] ?? 10);
+        }
+    }
+
     /** Load clients but keep only those that have at least one venda in the from/to period */
     loadClientesBySalePeriod(page: number = 0, size: number = 20): void {
         this.loading = true;
