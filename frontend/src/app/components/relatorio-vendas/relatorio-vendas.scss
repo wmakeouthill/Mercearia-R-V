@@ -382,13 +382,15 @@
     width: 70px;
     font-weight: 600;
     color: var(--primary-blue);
+    white-space: nowrap; /* evitar quebra de linha em rótulos como "Neste mês" */
 }
 
 .chart-bar-group {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 8px;
     width: 100%;
+    max-width: 100%; /* garantir que não extrapole o container */
 }
 
 .bar {
@@ -396,7 +398,45 @@
     border-radius: 6px;
     background: rgba(0,0,0,0.06);
     position: relative;
-    overflow: hidden;
+    overflow: visible; /* permitir que a tooltip apareça fora da barra sem ser cortada */
+    margin: 0; /* garantir espaçamento controlado pelo gap da grid */
+}
+
+/* tooltip simples usando atributo data-tooltip; aparece instantaneamente */
+.bar[data-tooltip] {
+    /* sem alteração do cursor solicitado */
+}
+.bar[data-tooltip]::before {
+    content: attr(data-tooltip);
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: linear-gradient(180deg, rgba(20,20,20,0.95), rgba(10,10,10,0.95));
+    color: #fff;
+    padding: 8px 10px;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 700;
+    line-height: 1;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: none; /* aparece instantaneamente */
+    z-index: 1200;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.35);
+}
+.bar[data-tooltip]:hover::before {
+    opacity: 1;
+}
+.bar[data-tooltip]::after {
+    /* mantém o preenchimento colorido da barra */
+    content: "";
+    position: absolute;
+    inset: 0;
+    width: calc((var(--v, 0) / var(--max, 1)) * 100%);
+    transition: width 0.4s ease;
+    border-radius: 6px; /* manter cantos arredondados do preenchimento */
 }
 
 .bar::after {

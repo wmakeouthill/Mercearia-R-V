@@ -170,16 +170,25 @@
         </div>}
 
         <!-- Gráfico simples em barras usando CSS puro -->
-        @if (resumoDia?.por_pagamento) {<div class="chart-bars">
-            <div class="chart-row">
+        @if (resumoDia?.por_pagamento || resumoMes?.por_pagamento) {<div class="chart-bars">
+            @if (resumoDia?.por_pagamento) {<div class="chart-row" [style.--max]="(resumoDia?.receita_total || 1)">
                 <div class="chart-label">Hoje</div>
                 <div class="chart-bar-group">
-                    <div class="bar dinheiro" [style.--v]="(resumoDia?.por_pagamento?.['dinheiro']||0)" title="Dinheiro"></div>
-                    <div class="bar credito" [style.--v]="(resumoDia?.por_pagamento?.['cartao_credito']||0)" title="Crédito"></div>
-                    <div class="bar debito" [style.--v]="(resumoDia?.por_pagamento?.['cartao_debito']||0)" title="Débito"></div>
-                    <div class="bar pix" [style.--v]="(resumoDia?.por_pagamento?.['pix']||0)" title="PIX"></div>
+                    <div class="bar dinheiro" [style.--v]="(resumoDia?.por_pagamento?.['dinheiro']||0)" [attr.data-tooltip]="'Dinheiro: R$ ' + ((resumoDia?.por_pagamento?.['dinheiro'] || 0) | number:'1.2-2')"></div>
+                    <div class="bar credito" [style.--v]="(resumoDia?.por_pagamento?.['cartao_credito']||0)" [attr.data-tooltip]="'Crédito: R$ ' + ((resumoDia?.por_pagamento?.['cartao_credito'] || 0) | number:'1.2-2')"></div>
+                    <div class="bar debito" [style.--v]="(resumoDia?.por_pagamento?.['cartao_debito']||0)" [attr.data-tooltip]="'Débito: R$ ' + ((resumoDia?.por_pagamento?.['cartao_debito'] || 0) | number:'1.2-2')"></div>
+                    <div class="bar pix" [style.--v]="(resumoDia?.por_pagamento?.['pix']||0)" [attr.data-tooltip]="'PIX: R$ ' + ((resumoDia?.por_pagamento?.['pix'] || 0) | number:'1.2-2')"></div>
                 </div>
-            </div>
+            </div>}
+            @if (resumoMes?.por_pagamento) {<div class="chart-row" [style.--max]="(resumoMes?.receita_total || 1)">
+                <div class="chart-label">Neste mês</div>
+                <div class="chart-bar-group">
+                    <div class="bar dinheiro" [style.--v]="(resumoMes?.por_pagamento?.['dinheiro']||0)" [attr.data-tooltip]="'Dinheiro: R$ ' + ((resumoMes?.por_pagamento?.['dinheiro'] || 0) | number:'1.2-2')"></div>
+                    <div class="bar credito" [style.--v]="(resumoMes?.por_pagamento?.['cartao_credito']||0)" [attr.data-tooltip]="'Crédito: R$ ' + ((resumoMes?.por_pagamento?.['cartao_credito'] || 0) | number:'1.2-2')"></div>
+                    <div class="bar debito" [style.--v]="(resumoMes?.por_pagamento?.['cartao_debito']||0)" [attr.data-tooltip]="'Débito: R$ ' + ((resumoMes?.por_pagamento?.['cartao_debito'] || 0) | number:'1.2-2')"></div>
+                    <div class="bar pix" [style.--v]="(resumoMes?.por_pagamento?.['pix']||0)" [attr.data-tooltip]="'PIX: R$ ' + ((resumoMes?.por_pagamento?.['pix'] || 0) | number:'1.2-2')"></div>
+                </div>
+            </div>}
         </div>}
     </div>
 

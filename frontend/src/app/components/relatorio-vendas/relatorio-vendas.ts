@@ -152,7 +152,7 @@ export class RelatorioVendasComponent implements OnInit {
   public pdfScale = 1.4;
   private pdfDoc: any = null;
   private pageObserver: IntersectionObserver | null = null;
-  private renderedPages = new Set<number>();
+  private readonly renderedPages = new Set<number>();
 
   ngOnInit(): void {
     logger.info('RELATORIO_VENDAS', 'INIT', 'Componente iniciado');
