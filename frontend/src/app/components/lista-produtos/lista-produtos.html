@@ -18,6 +18,40 @@
     </div>}
 
     @if (!loading) {<div class="produtos-content">
+        <!-- filtros em linha acima da tabela -->
+        <div class="filtros-inline" style="padding:16px 20px; display:flex; align-items:center; gap:12px;">
+            <div class="filtro-item" style="flex:1">
+                <label for="filtroNome">🔍 Nome:</label>
+                <input id="filtroNome" type="text" [(ngModel)]="filtroNome" (input)="aplicarFiltros()" placeholder="Buscar por nome..." class="input-filtro" />
+            </div>
+            <div class="filtro-item">
+                <label for="filtroNivelEstoque">📊 Nível de Estoque:</label>
+                <select id="filtroNivelEstoque" [(ngModel)]="filtroNivelEstoque" (change)="aplicarFiltros()" class="select-filtro">
+                    <option value="">Todos</option>
+                    <option value="alto">Alto</option>
+                    <option value="medio">Médio</option>
+                    <option value="baixo">Baixo</option>
+                    <option value="critico">Crítico</option>
+                </select>
+            </div>
+            <div class="legenda-filtros" style="display:flex; align-items:center; gap:8px; margin-left:12px">
+                <div class="legend-item"><span class="legend-badge alto"></span> Alto</div>
+                <div class="legend-item"><span class="legend-badge medio"></span> Médio</div>
+                <div class="legend-item"><span class="legend-badge baixo"></span> Baixo</div>
+                <div class="legend-item"><span class="legend-badge critico"></span> Crítico</div>
+            </div>
+            <div style="margin-left:auto">
+                <label class="page-size-label">Linhas:
+                    <select [(ngModel)]="pageSize" (change)="setPageSize(pageSize)" class="select-filtro page-size-select">
+                        <option [ngValue]="5">5</option>
+                        <option [ngValue]="10">10</option>
+                        <option [ngValue]="20">20</option>
+                        <option [ngValue]="30">30</option>
+                        <option [ngValue]="50">50</option>
+                    </select>
+                </label>
+            </div>
+        </div>
         <div class="table-container">
             <table class="produtos-table">
                 <thead>
@@ -32,7 +66,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                    @for (produto of produtosPagina; track produto.id; let i = $index) {<tr class="produto-row">
+                    @for (produto of produtosPagina; track produto.id; let i = $index) {<tr class="produto-row" [class.critico]="produto.quantidade_estoque < CRITICAL_THRESHOLD" [class.baixo]="produto.quantidade_estoque >= CRITICAL_THRESHOLD && produto.quantidade_estoque < LOW_THRESHOLD">
                         <td class="produto-numero">{{ (page-1)*pageSize + (i+1) }}</td>
                         <td class="produto-imagem">
                             <div class="produto-imagem-container">
@@ -44,7 +78,7 @@
                         <td class="produto-codigo">{{ produto.codigo_barras || '-' }}</td>
                         <td class="produto-preco">R$ {{ produto.preco_venda.toFixed(2) }}</td>
                         <td class="produto-estoque">
-                            <span class="estoque-badge" [class.baixo]="produto.quantidade_estoque < 10">
+                            <span class="estoque-badge">
                                 {{ produto.quantidade_estoque }}
                             </span>
                         </td>

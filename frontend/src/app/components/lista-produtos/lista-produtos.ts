@@ -17,15 +17,24 @@ import { logger } from '../../utils/logger';
 })
 export class ListaProdutosComponent implements OnInit {
   produtos: Produto[] = [];
+  produtosFiltrados: Produto[] = [];
   loading = false;
   error = '';
   isAdmin = false;
   // pagination
   page = 1;
-  pageSize: 20 | 50 | 100 = 20;
+  pageSize: 5 | 10 | 20 | 30 | 50 = 5;
   jumpPage: number | null = null;
+  // filtros
+  filtroNome = '';
+  filtroNivelEstoque: '' | 'alto' | 'medio' | 'baixo' | 'critico' = '';
 
-  get total(): number { return this.produtos.length; }
+  // thresholds (assumidos): critico <= 2, baixo < 10, medio < 30
+  readonly CRITICAL_THRESHOLD = 3;
+  readonly LOW_THRESHOLD = 10;
+  readonly MEDIUM_THRESHOLD = 30;
+
+  get total(): number { return this.produtosFiltrados.length; }
 
   get totalPages(): number {
     const totalItems = Number(this.total || 0);
@@ -62,21 +71,24 @@ export class ListaProdutosComponent implements OnInit {
   goToFirstPage(): void { this.goToPage(1); }
   goToLastPage(): void { this.goToPage(this.totalPages); }
 
-  onJumpToPage(): void { if (this.jumpPage == null) return; this.goToPage(this.jumpPage); }
+  onJumpToPage(): void {
+    if (this.jumpPage == null) return;
+    this.goToPage(this.jumpPage);
+  }
 
-  setPageSize(n: 20 | 50 | 100) { this.pageSize = n; this.page = 1; }
+  setPageSize(n: 5 | 10 | 20 | 30 | 50) { this.pageSize = n; this.page = 1; }
 
   get produtosPagina(): Produto[] {
     const start = (this.page - 1) * Number(this.pageSize || 1);
-    return this.produtos.slice(start, start + Number(this.pageSize || 1));
+    return this.produtosFiltrados.slice(start, start + Number(this.pageSize || 1));
   }
 
   onClickPage(p: number | string): void { if (typeof p === 'number') this.goToPage(p); }
 
   constructor(
-    private apiService: ApiService,
-    private authService: AuthService,
-    private imageService: ImageService,
+    private readonly apiService: ApiService,
+    private readonly authService: AuthService,
+    private readonly imageService: ImageService,
     public router: Router
   ) { }
 
@@ -93,6 +105,7 @@ export class ListaProdutosComponent implements OnInit {
     this.apiService.getProdutos().subscribe({
       next: (produtos) => {
         this.produtos = produtos;
+        this.produtosFiltrados = produtos;
         this.loading = false;
         logger.info('LISTA_PRODUTOS', 'LOAD_PRODUTOS', 'Produtos carregados', { count: produtos.length });
       },
@@ -102,6 +115,26 @@ export class ListaProdutosComponent implements OnInit {
         logger.error('LISTA_PRODUTOS', 'LOAD_PRODUTOS', 'Erro ao carregar produtos', error);
       }
     });
+  }
+
+  aplicarFiltros(): void {
+    const nome = (this.filtroNome || '').toString().trim().toLowerCase();
+    this.produtosFiltrados = this.produtos.filter(p => {
+      const nomeOk = !nome || (p.nome || '').toString().toLowerCase().includes(nome);
+      if (!nomeOk) return false;
+      if (!this.filtroNivelEstoque) return true;
+      const nivel = this.nivelEstoque(p);
+      return nivel === this.filtroNivelEstoque;
+    });
+    this.page = 1;
+  }
+
+  nivelEstoque(produto: Produto): 'critico' | 'baixo' | 'medio' | 'alto' {
+    const q = Number(produto.quantidade_estoque || 0);
+    if (q < this.CRITICAL_THRESHOLD) return 'critico';
+    if (q < this.LOW_THRESHOLD) return 'baixo';
+    if (q < this.MEDIUM_THRESHOLD) return 'medio';
+    return 'alto';
   }
 
   editProduto(id: number): void {

@@ -284,6 +284,31 @@
     }
 }
 
+/* legendas e estado condicional de linhas */
+.legend-badge {
+    display:inline-block;
+    width:14px;
+    height:14px;
+    border-radius:4px;
+    border:1px solid rgba(0,0,0,0.06);
+}
+.legend-badge.alto { background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%); }
+.legend-badge.medio { background: linear-gradient(135deg, #fff3cd 0%, #ffeeba 100%); }
+.legend-badge.baixo { background: linear-gradient(135deg, #fff3b0 0%, #ffef9a 100%); }
+.legend-badge.critico { background: linear-gradient(135deg, #ffd9cf 0%, #ffc7b9 100%); }
+
+.produto-row.baixo { background: linear-gradient(180deg, #fff9e6, #fffaf0); }
+.produto-row.critico { background: linear-gradient(180deg, #ffece6, #fff6f1); }
+
+.filtros-inline .input-filtro, .filtros-inline .select-filtro {
+    padding:8px 10px;
+    border:1px solid #ddd;
+    border-radius:8px;
+}
+
+.filtros-inline .legend-item { display:flex; align-items:center; gap:6px; color:var(--dark-gray); font-weight:600; }
+
+
 .acoes {
     display: flex;
     gap: 8px;
