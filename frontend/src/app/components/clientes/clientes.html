@@ -9,7 +9,8 @@
   <div class="search">
     <input type="text" [(ngModel)]="search" placeholder="Pesquisar clientes..." (input)="loadClientes()" />
     <label>De: <input type="date" [(ngModel)]="fromDate" /></label>
-    <label>Até: <input type="date" [(ngModel)]="toDate" /></label>
+    <label class="label-ate">Até: <input type="date" [(ngModel)]="toDate" /></label>
+    <button class="btn-ghost btn-filter" (click)="applyDateFilter()">Filtrar</button>
   </div>
 
   <div *ngIf="loading" class="loading">Carregando...</div>
@@ -41,11 +42,11 @@
                 <input [(ngModel)]="editingClient.telefone" />
               </span>
             </td>
-            <td>
+            <td class="td-actions-right">
               <div class="action-group">
-                <button class="btn-ghost" (click)="toggleExpand(c.id)">🔽</button>
                 <button class="btn-ghost" *ngIf="editingClientId !== c.id" (click)="startEditCliente(c)">Editar</button>
                 <button class="btn-danger" *ngIf="editingClientId !== c.id" (click)="deleteCliente(c.id)" title="Excluir cliente">🗑️</button>
+                <button class="btn-ghost" (click)="toggleExpand(c.id)" aria-label="Expandir/contrair"><span class="expand-icon" [class.open]="expanded.has(c.id)">🔽</span></button>
                 <button class="btn-ghost" *ngIf="editingClientId === c.id" (click)="saveEditCliente()">Salvar</button>
                 <button class="btn-ghost" *ngIf="editingClientId === c.id" (click)="cancelEdit()">Cancelar</button>
               </div>
@@ -64,8 +65,11 @@
                         <td>{{ v.id }}</td>
                         <td>R$ {{ v.preco_total?.toFixed ? v.preco_total.toFixed(2) : v.preco_total }}</td>
                         <td>{{ v.data_venda }}</td>
-                        <td>
-                          <button (click)="v._showItems = !v._showItems">{{ v._showItems ? '▲' : '▼' }}</button>
+                        <td class="td-actions-right">
+                          <div class="sale-items-cell">
+                            <span class="sale-items-count">{{ (v.itens?.length || 0) }} {{ (v.itens?.length || 0) === 1 ? 'item' : 'itens' }}</span>
+                            <button class="btn-ghost btn-expand-sale" (click)="toggleSaleItems(v)" aria-label="Expandir venda"><span class="expand-icon" [class.open]="v._showItems">🔽</span></button>
+                          </div>
                         </td>
                       </tr>
                       <tr class="venda-itens-row" *ngIf="v._showItems">

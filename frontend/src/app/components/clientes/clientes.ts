@@ -3,6 +3,8 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api';
 import { ImageService } from '../../services/image.service';
+import { forkJoin } from 'rxjs';
+import { map } from 'rxjs/operators';
 import { Router } from '@angular/router';
 
 @Component({
@@ -153,6 +155,72 @@ export class ClientesComponent implements OnInit {
                 this.vendasPorCliente[id] = [];
                 this.vendasHasMore[id] = false;
             }
+        });
+    }
+
+    /** Toggle visibility of itens for a specific venda (used by expand button inside vendas) */
+    toggleSaleItems(venda: any): void {
+        venda._showItems = !venda._showItems;
+    }
+
+    /** Apply date filter to all currently expanded clientes by reloading their vendas pages */
+    applyDateFilter(): void {
+        // Reload clients list filtered to those who have vendas in the selected period
+        this.page = 1;
+        this.loadClientesBySalePeriod(0, this.pageSize || 20);
+        // Also reload vendas for currently expanded clients (if any) to reflect new date range
+        for (const id of Array.from(this.expanded)) {
+            this.vendasPage[id] = 0;
+            this.loadVendasClientePage(id, 0, this.vendasSize[id] ?? 10);
+        }
+    }
+
+    /** Load clients but keep only those that have at least one venda in the from/to period */
+    loadClientesBySalePeriod(page: number = 0, size: number = 20): void {
+        this.loading = true;
+        this.error = '';
+        // fetch all clients (unpaged) then filter by search term and by whether they have vendas in the period
+        this.api.getClientes().subscribe({
+            next: (allClients: any[]) => {
+                let candidates = Array.isArray(allClients) ? allClients : [];
+                // apply text search filter if provided
+                const term = (this.search || '').trim().toLowerCase();
+                if (term) {
+                    candidates = candidates.filter(c => {
+                        return (c.nome || '').toLowerCase().includes(term)
+                            || (c.email || '').toLowerCase().includes(term)
+                            || (c.telefone || '').toLowerCase().includes(term);
+                    });
+                }
+
+                if (!candidates || candidates.length === 0) {
+                    this.clientes = [];
+                    this.total = 0;
+                    this.hasNextClients = false;
+                    this.loading = false;
+                    return;
+                }
+
+                // For each candidate client, check if they have at least one venda in the period (limit=1)
+                const checks = candidates.map((c: any) => this.api.getClienteVendas(c.id, 1, this.fromDate || undefined, this.toDate || undefined).pipe(map((arr: any[]) => ({ client: c, vendas: arr || [] }))));
+                forkJoin(checks).subscribe({
+                    next: (results: any[]) => {
+                        const filtered = results.filter(r => (r.vendas || []).length > 0).map(r => r.client);
+                        this.clientes = filtered;
+                        this.total = filtered.length;
+                        this.hasNextClients = false; // filtered set is final
+                        this.page = 1;
+                        this.loading = false;
+                    }, error: (err) => {
+                        console.error('LOAD_CLIENTES_PERIOD_CHECKS_ERROR', err);
+                        this.clientes = [];
+                        this.total = 0;
+                        this.hasNextClients = false;
+                        this.loading = false;
+                    }
+                });
+
+            }, error: (err) => { console.error('LOAD_CLIENTES_PERIOD_ERROR', err); this.error = 'Erro ao carregar clientes filtrados por período'; this.loading = false; }
         });
     }
 

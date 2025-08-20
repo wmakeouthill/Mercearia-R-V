@@ -5,6 +5,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ApiService } from '../../services/api';
+import { NotificationService } from '../../services/notification.service';
 import { AuthService } from '../../services/auth';
 import { CaixaService } from '../../services/caixa.service';
 import { ImageService } from '../../services/image.service';
@@ -159,7 +160,8 @@ export class PontoVendaComponent implements OnInit, OnDestroy {
     private readonly caixaService: CaixaService,
     private readonly imageService: ImageService,
     private readonly router: Router,
-    private readonly renderer: Renderer2
+    private readonly renderer: Renderer2,
+    private readonly notificationService: NotificationService
   ) { }
 
   onConfirmSend(): void {
@@ -719,6 +721,7 @@ export class PontoVendaComponent implements OnInit, OnDestroy {
     this.modernNotificationType = event.type;
     this.showModernNotification = true;
     this.modernNotificationMessage = event.message;
+    try { this.notificationService.notify({ type: event.type, message: event.message }); } catch (e) { }
     setTimeout(() => this.hideModernNotification(), 5000);
   }
 

@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
+import { NotificationService } from '../../services/notification.service';
 
 @Component({
   selector: 'app-enviar-nota-modal',
@@ -55,7 +56,8 @@ export class EnviarNotaModalComponent implements OnChanges {
   constructor(
     private readonly apiService: ApiService,
     private readonly sanitizer: DomSanitizer,
-    private readonly renderer: Renderer2
+    private readonly renderer: Renderer2,
+    private readonly notificationService: NotificationService
   ) { }
 
   onOverlayClick(event: MouseEvent): void {
@@ -236,12 +238,16 @@ export class EnviarNotaModalComponent implements OnChanges {
     if (!to || to.trim().length === 0) { this.notify.emit({ type: 'error', message: 'Informe um e-mail válido para enviar a nota.' }); return; }
     this.apiService.sendNotaEmail(orderId, { to, subject: `Comprovante - Pedido #${orderId}`, body: 'Segue a nota do seu pedido.' }).subscribe({
       next: () => {
-        this.notify.emit({ type: 'info', message: `Email enviado com sucesso para ${to}` });
+        const msg = `Email enviado com sucesso para ${to}`;
+        try { this.notify.emit({ type: 'info', message: msg }); } catch (e) { }
+        try { this.notificationService.notify({ type: 'info', message: msg }); } catch (e) { }
         this.closeModal();
       },
       error: (err) => {
         console.error('SEND_NOTA_EMAIL failed', err);
-        this.notify.emit({ type: 'error', message: err?.error?.message || 'Falha ao enviar email' });
+        const msg = err?.error?.message || 'Falha ao enviar email';
+        try { this.notify.emit({ type: 'error', message: msg }); } catch (e) { }
+        try { this.notificationService.notify({ type: 'error', message: msg }); } catch (e) { }
       }
     });
   }
