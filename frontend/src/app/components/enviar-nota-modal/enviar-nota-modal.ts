@@ -14,6 +14,7 @@ import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 export class EnviarNotaModalComponent implements OnChanges {
     @Input() orderId: number | null = null;
     @Output() close = new EventEmitter<void>();
+    @Output() notify = new EventEmitter<{ type: 'success' | 'info' | 'error', message: string }>();
 
     modalCustomerName = '';
     modalCustomerEmail = '';
@@ -199,8 +200,17 @@ export class EnviarNotaModalComponent implements OnChanges {
             this.apiService.updateOrderContact(orderId, contactPayload).subscribe({ next: () => { }, error: () => { } });
         }
         const to = this.modalCustomerEmail || '';
-        if (!to || to.trim().length === 0) { alert('Informe um e-mail válido para enviar a nota.'); return; }
-        this.apiService.sendNotaEmail(orderId, { to, subject: `Comprovante - Pedido #${orderId}`, body: 'Segue a nota do seu pedido.' }).subscribe({ next: () => { alert('Email enviado com sucesso.'); this.closeModal(); }, error: (err) => { console.error('SEND_NOTA_EMAIL failed', err); alert(err?.error?.message || 'Falha ao enviar email'); } });
+        if (!to || to.trim().length === 0) { this.notify.emit({ type: 'error', message: 'Informe um e-mail válido para enviar a nota.' }); return; }
+        this.apiService.sendNotaEmail(orderId, { to, subject: `Comprovante - Pedido #${orderId}`, body: 'Segue a nota do seu pedido.' }).subscribe({
+            next: () => {
+                this.notify.emit({ type: 'info', message: `Email enviado com sucesso para ${to}` });
+                this.closeModal();
+            },
+            error: (err) => {
+                console.error('SEND_NOTA_EMAIL failed', err);
+                this.notify.emit({ type: 'error', message: err?.error?.message || 'Falha ao enviar email' });
+            }
+        });
     }
 
     sendNotaByWhatsappFromModal(): void {
@@ -215,6 +225,7 @@ export class EnviarNotaModalComponent implements OnChanges {
         const msg = `Segue a nota do seu último pedido na nossa loja: ${pdfUrl}`;
         const waUrl = `https://web.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(msg)}`;
         try { const api = (window as any).electronAPI; if (api && typeof api.openExternal === 'function') { api.openExternal(waUrl).catch(() => { window.open(waUrl, '_blank'); }); } else { window.open(waUrl, '_blank'); } } catch (e) { window.open(waUrl, '_blank'); }
+        this.notify.emit({ type: 'info', message: `WhatsApp enviado com sucesso para ${this.modalCustomerPhone || 'cliente'}` });
         this.closeModal();
     }
 

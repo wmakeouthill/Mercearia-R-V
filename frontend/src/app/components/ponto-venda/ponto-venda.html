@@ -15,9 +15,9 @@
     </div>}
 
     <!-- Notificação Moderna -->
-    @if (showModernNotification) {<div class="modern-notification" [class.show]="showModernNotification">
+    @if (showModernNotification) {<div class="modern-notification" [class.show]="showModernNotification" [class.info]="modernNotificationType==='info'" [class.error]="modernNotificationType==='error'">
         <div class="notification-content">
-            <div class="notification-icon">✅</div>
+            <div class="notification-icon">{{ modernNotificationType === 'info' ? 'ℹ️' : (modernNotificationType === 'error' ? '❌' : '✅') }}</div>
             <div class="notification-text">{{ modernNotificationMessage }}</div>
             <button class="notification-close" (click)="hideModernNotification()">×</button>
         </div>
@@ -206,5 +206,5 @@
     </div>
 </div>
 
-@if (showEnviarModal) {<app-enviar-nota-modal [orderId]="modalOrderId" (close)="closeEnviarModal()"></app-enviar-nota-modal>}
+@if (showEnviarModal) {<app-enviar-nota-modal [orderId]="modalOrderId" (close)="closeEnviarModal()" (notify)="handleModalNotify($event)"></app-enviar-nota-modal>}
 @if (showConfirmModal) {<app-confirm-modal [title]="'Venda finalizada'" [message]="confirmMessage" (confirm)="onConfirmSend()" (cancel)="onCancelSend()"></app-confirm-modal>}

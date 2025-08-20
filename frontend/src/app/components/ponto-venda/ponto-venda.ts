@@ -33,6 +33,7 @@ export class PontoVendaComponent implements OnInit, OnDestroy {
   sucesso = '';
   showModernNotification = false;
   modernNotificationMessage = '';
+  modernNotificationType: 'success' | 'info' | 'error' = 'success';
   // Modal para envio de nota (usaremos componente compartilhado)
   showEnviarModal = false;
   modalOrderId: number | null = null;
@@ -711,6 +712,14 @@ export class PontoVendaComponent implements OnInit, OnDestroy {
       try { URL.revokeObjectURL(this.previewBlobUrl); } catch (e) { /* ignore */ }
       this.previewBlobUrl = null;
     }
+  }
+
+  // handler para notificações emitidas pelo modal de envio de nota
+  handleModalNotify(event: { type: 'success' | 'info' | 'error', message: string }) {
+    this.modernNotificationType = event.type;
+    this.showModernNotification = true;
+    this.modernNotificationMessage = event.message;
+    setTimeout(() => this.hideModernNotification(), 5000);
   }
 
   sendNotaByEmail(): void {
