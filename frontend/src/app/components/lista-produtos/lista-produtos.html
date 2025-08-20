@@ -34,7 +34,8 @@
                     <option value="critico">Crítico</option>
                 </select>
             </div>
-            <div class="legenda-filtros" style="display:flex; align-items:center; gap:8px; margin-left:12px">
+            <div class="legenda-filtros" style="display:flex; align-items:center; gap:8px; margin-left:12px"
+                 [attr.data-tooltip]="'Alto: >= ' + MEDIUM_THRESHOLD + ' • Médio: ' + LOW_THRESHOLD + ' - ' + (MEDIUM_THRESHOLD - 1) + ' • Baixo: ' + CRITICAL_THRESHOLD + ' - ' + (LOW_THRESHOLD - 1) + ' • Crítico: < ' + CRITICAL_THRESHOLD">
                 <div class="legend-item"><span class="legend-badge alto"></span> Alto</div>
                 <div class="legend-item"><span class="legend-badge medio"></span> Médio</div>
                 <div class="legend-item"><span class="legend-badge baixo"></span> Baixo</div>

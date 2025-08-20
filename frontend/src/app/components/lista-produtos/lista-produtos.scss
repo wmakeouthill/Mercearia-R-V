@@ -132,7 +132,8 @@
     background: var(--white);
     border-radius: 16px;
     box-shadow: 0 6px 24px rgba(0, 46, 89, 0.1);
-    overflow: hidden;
+    /* permitir tooltips saírem do container */
+    overflow: visible;
     border: 2px solid rgba(219, 194, 125, 0.2);
 }
 
@@ -307,6 +308,31 @@
 }
 
 .filtros-inline .legend-item { display:flex; align-items:center; gap:6px; color:var(--dark-gray); font-weight:600; }
+
+/* tooltip instantâneo para legenda */
+.legenda-filtros[data-tooltip] {
+    position: relative;
+}
+.legenda-filtros[data-tooltip]::before {
+    content: attr(data-tooltip);
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(20,20,20,0.95);
+    color: #fff;
+    padding: 8px 10px;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: none; /* aparece instantaneamente */
+    z-index: 1200;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.35);
+}
+.legenda-filtros[data-tooltip]:hover::before { opacity: 1; }
 
 
 .acoes {
