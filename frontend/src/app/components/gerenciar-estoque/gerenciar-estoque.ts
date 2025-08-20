@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ApiService } from '../../services/api';
 import { AuthService } from '../../services/auth';
+import { ImageService } from '../../services/image.service';
 import { Produto } from '../../models';
 import { logger } from '../../utils/logger';
 
@@ -21,22 +22,40 @@ import { logger } from '../../utils/logger';
       </div>
 
       <div class="content">
-        <div class="search-section">
-          <input
-            type="text"
-            [(ngModel)]="searchTerm"
-            (input)="filterProdutos()"
-            placeholder="Buscar produtos..."
-            class="search-input"
-          >
+        <!-- search + pageSize aligned -->
+        <div class="search-and-controls" style="display:flex; align-items:center; gap:12px; margin-bottom:12px;">
+          <div style="flex:1">
+            <input
+              type="text"
+              [(ngModel)]="searchTerm"
+              (input)="filterProdutos()"
+              placeholder="Buscar produtos..."
+              class="search-input"
+            >
+          </div>
+          <div class="header-actions">
+            <label class="page-size-label">Qtd produtos:
+              <select [(ngModel)]="pageSize" (change)="setPageSize(pageSize)" class="select-filtro page-size-select">
+                <option [ngValue]="6">6</option>
+                <option [ngValue]="12">12</option>
+                <option [ngValue]="18">18</option>
+                <option [ngValue]="24">24</option>
+              </select>
+            </label>
+          </div>
         </div>
 
         @if (!loading) {<div class="produtos-grid">
-          @for (produto of produtosFiltrados; track produto.id) {<div class="produto-card">
-            <div class="produto-info">
-              <h3>{{ produto.nome }}</h3>
-              <p class="codigo">Código: {{ produto.codigo_barras || 'N/A' }}</p>
-              <p class="preco">Preço: R$ {{ produto.preco_venda.toFixed(2) }}</p>
+          @for (produto of produtosPagina; track produto.id) {<div class="produto-card">
+            <div class="produto-content" style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
+              <div class="produto-info" style="flex:1;">
+                <h3>{{ produto.nome }}</h3>
+                <p class="codigo">Código: {{ produto.codigo_barras || 'N/A' }}</p>
+                <p class="preco">Preço: R$ {{ produto.preco_venda.toFixed(2) }}</p>
+              </div>
+              <div class="produto-imagem" style="width:80px; height:80px; display:flex; align-items:center; justify-content:center;">
+                <img [src]="getImageUrl(produto.imagem)" [alt]="produto.nome" class="produto-card-thumb" (error)="onImageError($event)" />
+              </div>
             </div>
 
             <div class="estoque-section">
@@ -67,6 +86,34 @@ import { logger } from '../../utils/logger';
           </div>}
         </div>}
 
+        <!-- paginação abaixo dos cards (mesmo padrão do lista-produtos) -->
+        @if (totalPages >= 1) {<div class="paginacao">
+           <div class="pagination-left">
+             <button class="btn-page btn-ghost" (click)="goToFirstPage()" [disabled]="page<=1" title="Primeira">«</button>
+             <button class="btn-page btn-ghost" (click)="goBy(-10)" [disabled]="page<=1" title="-10">«10</button>
+             <button class="btn-page btn-ghost" (click)="goBy(-5)" [disabled]="page<=1" title="-5">«5</button>
+             <button class="btn-page btn-ghost" (click)="prevPage()" [disabled]="page<=1" title="Anterior">‹</button>
+           </div>
+           <div class="pagination-center">
+             @for (p of paginationItems; track $index) {
+               @if (p === '…') {<span class="ellipsis">…</span>} @else {<button class="btn-page" [class.active]="p === page" (click)="onClickPage(p)">{{ p }}</button>}
+             }
+           </div>
+           <div class="pagination-right">
+             <button class="btn-page btn-ghost" (click)="nextPage()" [disabled]="page>=totalPages" title="Próxima">›</button>
+             <button class="btn-page btn-ghost" (click)="goBy(5)" [disabled]="page>=totalPages" title="+5">5»</button>
+             <button class="btn-page btn-ghost" (click)="goBy(10)" [disabled]="page>=totalPages" title="+10">10»</button>
+             <button class="btn-page btn-ghost" (click)="goToLastPage()" [disabled]="page>=totalPages" title="Última">»</button>
+           </div>
+           <div class="pagination-jump">
+             <label>
+               Ir para
+               <input type="number" min="1" [max]="totalPages" [(ngModel)]="jumpPage" (keyup.enter)="onJumpToPage()" />
+             </label>
+             <button class="btn-go" (click)="onJumpToPage()">Ir</button>
+           </div>
+        </div>}
+
         @if (loading) {<div class="loading">Carregando produtos...</div>}
 
         @if (produtosFiltrados.length === 0 && !loading) {<div class="no-produtos">
@@ -84,8 +131,20 @@ import { logger } from '../../utils/logger';
           <span class="stat-value">{{ getProdutosEmEstoque() }}</span>
         </div>
         <div class="stat-card">
-          <h4>Estoque Baixo</h4>
+          <h4>Alto</h4>
+          <span class="stat-value">{{ getProdutosEstoqueAlto() }}</span>
+        </div>
+        <div class="stat-card">
+          <h4>Médio</h4>
+          <span class="stat-value">{{ getProdutosEstoqueMedio() }}</span>
+        </div>
+        <div class="stat-card">
+          <h4>Baixo</h4>
           <span class="stat-value warning">{{ getProdutosEstoqueBaixo() }}</span>
+        </div>
+        <div class="stat-card">
+          <h4>Crítico</h4>
+          <span class="stat-value danger">{{ getProdutosEstoqueCritico() }}</span>
         </div>
         <div class="stat-card">
           <h4>Sem Estoque</h4>
@@ -169,6 +228,75 @@ import { logger } from '../../utils/logger';
       background: white;
       box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
+
+    /* controlar tamanho das imagens nos cards */
+    .produto-imagem {
+      width: 80px;
+      height: 80px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      border-radius: 8px;
+      background: #f8f9fa;
+      flex-shrink: 0;
+    }
+
+    .produto-card-thumb {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .page-size-label { display: inline-flex; align-items: center; gap: 8px; }
+
+    /* Paginação - reaproveitar estilo do lista-produtos para consistência visual */
+    .paginacao {
+        display: grid;
+        grid-template-columns: auto 1fr auto auto;
+        gap: 8px 12px;
+        padding: 12px 16px;
+        align-items: center;
+        justify-content: space-between;
+    }
+    .paginacao .pagination-left, .paginacao .pagination-right {
+        display: inline-flex;
+        gap: 6px;
+        align-items: center;
+    }
+    .paginacao .pagination-center {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        justify-content: center;
+        flex-wrap: wrap;
+    }
+    .paginacao .pagination-jump {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        justify-self: end;
+    }
+    .paginacao .btn-page {
+        min-width: 36px;
+        height: 36px;
+        padding: 0 10px;
+        border-radius: 8px;
+        border: 2px solid var(--medium-gray);
+        background: var(--white);
+        color: var(--primary-blue);
+        font-weight: 700;
+        cursor: pointer;
+    }
+    .paginacao .btn-page.active {
+        background: var(--primary-blue);
+        color: var(--white);
+        border-color: var(--primary-blue);
+    }
+    .paginacao .btn-page:disabled { opacity: .5; cursor: not-allowed; }
+    .paginacao .ellipsis { padding: 0 8px; color: var(--primary-blue); opacity: .7; }
+    .paginacao .btn-go { background: var(--primary-blue); color: var(--white); border: none; border-radius: 8px; padding: 8px 12px; font-weight: 700; cursor: pointer; }
 
     .produto-info h3 {
       margin: 0 0 10px 0;
@@ -307,10 +435,19 @@ export class GerenciarEstoqueComponent implements OnInit {
   searchTerm = '';
   loading = false;
   error = '';
+  // pagination
+  page = 1;
+  pageSize: 6 | 12 | 18 | 24 = 6;
+  jumpPage: number | null = null;
+  // thresholds
+  readonly CRITICAL_THRESHOLD = 3;
+  readonly LOW_THRESHOLD = 10;
+  readonly MEDIUM_THRESHOLD = 30;
 
   constructor(
     private readonly apiService: ApiService,
     private readonly authService: AuthService,
+    private readonly imageService: ImageService,
     private readonly router: Router
   ) { }
 
@@ -318,6 +455,59 @@ export class GerenciarEstoqueComponent implements OnInit {
     logger.info('GERENCIAR_ESTOQUE', 'INIT', 'Componente iniciado');
     this.loadProdutos();
   }
+
+  get total(): number { return this.produtosFiltrados.length; }
+
+  get totalPages(): number {
+    const totalItems = Number(this.total || 0);
+    const perPage = Number(this.pageSize || 1);
+    const pages = Math.ceil(totalItems / perPage);
+    return Math.max(1, pages || 1);
+  }
+
+  get produtosPagina(): Produto[] {
+    const start = (this.page - 1) * Number(this.pageSize || 1);
+    return this.produtosFiltrados.slice(start, start + Number(this.pageSize || 1));
+  }
+
+  get paginationItems(): Array<number | string> {
+    const totalPages = this.totalPages;
+    const currentPage = this.page;
+    const siblings = 2;
+    const range: Array<number | string> = [];
+    if (totalPages <= 1) return [1];
+    range.push(1);
+    const leftSibling = Math.max(2, currentPage - siblings);
+    const rightSibling = Math.min(totalPages - 1, currentPage + siblings);
+    if (leftSibling > 2) range.push('…');
+    for (let i = leftSibling; i <= rightSibling; i++) range.push(i);
+    if (rightSibling < totalPages - 1) range.push('…');
+    if (totalPages > 1) range.push(totalPages);
+    return range;
+  }
+
+  onClickPage(p: number | string): void { if (typeof p === 'number') this.goToPage(p); }
+
+  goToPage(targetPage: number): void {
+    const page = Math.max(1, Math.min(this.totalPages, Math.floor(Number(targetPage) || 1)));
+    if (page === this.page) return;
+    this.page = page;
+  }
+
+  nextPage() { if (this.page < this.totalPages) this.goToPage(this.page + 1); }
+  prevPage() { if (this.page > 1) this.goToPage(this.page - 1); }
+  goBy(delta: number): void { this.goToPage(this.page + delta); }
+  goToFirstPage(): void { this.goToPage(1); }
+  goToLastPage(): void { this.goToPage(this.totalPages); }
+
+  onJumpToPage(): void {
+    if (this.jumpPage == null) {
+      return;
+    }
+    this.goToPage(this.jumpPage);
+  }
+
+  setPageSize(n: 6 | 12 | 18 | 24) { this.pageSize = n; this.page = 1; }
 
   loadProdutos(): void {
     this.loading = true;
@@ -381,15 +571,53 @@ export class GerenciarEstoqueComponent implements OnInit {
     return this.produtos.filter(p => p.quantidade_estoque > 0).length;
   }
 
+  getProdutosEstoqueAlto(): number {
+    return this.produtos.filter(p => (p.quantidade_estoque || 0) >= this.MEDIUM_THRESHOLD).length;
+  }
+
+  getProdutosEstoqueMedio(): number {
+    return this.produtos.filter(p => {
+      const q = Number(p.quantidade_estoque || 0);
+      return q >= this.LOW_THRESHOLD && q < this.MEDIUM_THRESHOLD;
+    }).length;
+  }
+
   getProdutosEstoqueBaixo(): number {
-    return this.produtos.filter(p => p.quantidade_estoque > 0 && p.quantidade_estoque < 10).length;
+    return this.produtos.filter(p => {
+      const q = Number(p.quantidade_estoque || 0);
+      return q > 0 && q < this.LOW_THRESHOLD;
+    }).length;
   }
 
   getProdutosSemEstoque(): number {
     return this.produtos.filter(p => p.quantidade_estoque === 0).length;
   }
 
+  getProdutosEstoqueCritico(): number {
+    return this.produtos.filter(p => Number(p.quantidade_estoque || 0) < this.CRITICAL_THRESHOLD).length;
+  }
+
   voltarAoDashboard(): void {
     this.router.navigate(['/dashboard']);
+  }
+
+  getImageUrl(imageName: string | null | undefined): string {
+    return this.imageService.getImageUrl(imageName);
+  }
+
+  onImageError(event: any): void {
+    event.target.style.display = 'none';
+    const container = event.target.parentElement;
+    if (container) {
+      const placeholder = container.querySelector('.produto-sem-imagem');
+      if (placeholder) {
+        placeholder.style.display = 'flex';
+      } else {
+        const newPlaceholder = document.createElement('div');
+        newPlaceholder.className = 'produto-sem-imagem';
+        newPlaceholder.textContent = '📷';
+        container.appendChild(newPlaceholder);
+      }
+    }
   }
 }
