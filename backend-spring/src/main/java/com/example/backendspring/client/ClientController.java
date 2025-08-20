@@ -9,6 +9,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.http.ResponseEntity;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.dao.DataIntegrityViolationException;
 
 import java.time.OffsetDateTime;
@@ -54,6 +55,7 @@ public class ClientController {
     }
 
     @GetMapping("/{id}/vendas")
+    @Transactional(readOnly = true)
     public ResponseEntity<Object> vendas(@PathVariable Long id,
             @RequestParam(value = "page", required = false, defaultValue = "0") int page,
             @RequestParam(value = "size", required = false, defaultValue = "50") int size,
