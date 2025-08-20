@@ -547,6 +547,18 @@
     }
 }
 
+/* também aplicar o mesmo estilo ao header do bloco de relatório (diário/mensal) */
+.relatorio-content .header-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+.relatorio-content .header-actions { display: flex; align-items: center; gap: 8px; }
+.relatorio-content .page-size-label { font-weight: 600; color: var(--primary-blue); font-size: 0.9rem; display: inline-flex; align-items: center; gap: 8px; }
+.relatorio-content .page-size-select { padding: 6px 8px; border-radius: 8px; border: 2px solid var(--medium-gray); background: var(--white); font-weight: 700; color: var(--primary-blue); height: 36px; min-width: 64px; }
+
 .vendas-tabela {
     overflow-x: auto;
 }

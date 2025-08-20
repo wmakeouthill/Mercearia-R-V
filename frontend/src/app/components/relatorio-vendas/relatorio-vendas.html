@@ -51,7 +51,7 @@
                 <div class="filtros-grupo">
                     <div class="filtro-item">
                         <label for="periodo">Período:</label>
-                        <select id="periodo" [(ngModel)]="filtroPeriodo" class="select-filtro">
+                        <select id="periodo" [(ngModel)]="filtroPeriodo" (change)="aplicarFiltros()" class="select-filtro">
                             <option value="dia">Diário</option>
                             <option value="mes">Mensal</option>
                         </select>
@@ -95,7 +95,22 @@
 
     <!-- Relatório Detalhado -->
     <div class="relatorio-content">
-        <h2>Relatório {{ filtroPeriodo === 'dia' ? 'Diário' : 'Mensal' }}</h2>
+        <div class="header-top">
+            <div class="header-left">
+                <h2>Relatório {{ filtroPeriodo === 'dia' ? 'Diário' : 'Mensal' }}</h2>
+            </div>
+            <div class="header-actions">
+                <label class="page-size-label">Linhas:
+                    <select [(ngModel)]="relatorioPageSize" (change)="relatorioSetPageSize(relatorioPageSize)" class="select-filtro page-size-select">
+                        <option [ngValue]="5">5</option>
+                        <option [ngValue]="10">10</option>
+                        <option [ngValue]="20">20</option>
+                        <option [ngValue]="30">30</option>
+                        <option [ngValue]="50">50</option>
+                    </select>
+                </label>
+            </div>
+        </div>
 
         @if (loading) {<div class="loading">
             Carregando relatório...
@@ -115,7 +130,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                    @for (item of (filtroPeriodo === 'dia' ? diarioVendasPagina : relatorioMensal); track item.data) {<tr>
+                    @for (item of relatorioVendasPagina; track item.data) {<tr>
                         <td>{{ formatarData(item.data) }}</td>
                         <td>{{ item.total_vendas }}</td>
                         <td>{{ item.quantidade_vendida }}</td>
@@ -125,31 +140,31 @@
                 </tbody>
             </table>
 
-            <!-- Paginação do relatório diário: apenas quando período for 'dia' -->
-            @if (filtroPeriodo === 'dia' && diarioTotalPages > 1) {<div class="paginacao">
+            <!-- Paginação do relatório (diário ou mensal) - forçada a aparecer mesmo com 1 página -->
+            @if (relatorioTotalPages >= 1) {<div class="paginacao">
                <div class="pagination-left">
-                 <button class="btn-page btn-ghost" (click)="diarioGoToFirstPage()" [disabled]="diarioPage<=1" title="Primeira">«</button>
-                 <button class="btn-page btn-ghost" (click)="diarioGoBy(-10)" [disabled]="diarioPage<=1" title="-10">«10</button>
-                 <button class="btn-page btn-ghost" (click)="diarioGoBy(-5)" [disabled]="diarioPage<=1" title="-5">«5</button>
-                 <button class="btn-page btn-ghost" (click)="diarioPrevPage()" [disabled]="diarioPage<=1" title="Anterior">‹</button>
+                 <button class="btn-page btn-ghost" (click)="relatorioGoToFirstPage()" [disabled]="relatorioPage<=1" title="Primeira">«</button>
+                 <button class="btn-page btn-ghost" (click)="relatorioGoBy(-10)" [disabled]="relatorioPage<=1" title="-10">«10</button>
+                 <button class="btn-page btn-ghost" (click)="relatorioGoBy(-5)" [disabled]="relatorioPage<=1" title="-5">«5</button>
+                 <button class="btn-page btn-ghost" (click)="relatorioPrevPage()" [disabled]="relatorioPage<=1" title="Anterior">‹</button>
                </div>
                <div class="pagination-center">
-                 @for (p of diarioPaginationItems; track $index) {
-                   @if (p === '…') {<span class="ellipsis">…</span>} @else {<button class="btn-page" [class.active]="p === diarioPage" (click)="diarioOnClickPage(p)">{{ p }}</button>}
+                 @for (p of relatorioPaginationItems; track $index) {
+                   @if (p === '…') {<span class="ellipsis">…</span>} @else {<button class="btn-page" [class.active]="p === relatorioPage" (click)="relatorioOnClickPage(p)">{{ p }}</button>}
                  }
                </div>
                <div class="pagination-right">
-                 <button class="btn-page btn-ghost" (click)="diarioNextPage()" [disabled]="diarioPage>=diarioTotalPages" title="Próxima">›</button>
-                 <button class="btn-page btn-ghost" (click)="diarioGoBy(5)" [disabled]="diarioPage>=diarioTotalPages" title="+5">5»</button>
-                 <button class="btn-page btn-ghost" (click)="diarioGoBy(10)" [disabled]="diarioPage>=diarioTotalPages" title="+10">10»</button>
-                 <button class="btn-page btn-ghost" (click)="diarioGoToLastPage()" [disabled]="diarioPage>=diarioTotalPages" title="Última">»</button>
+                 <button class="btn-page btn-ghost" (click)="relatorioNextPage()" [disabled]="relatorioPage>=relatorioTotalPages" title="Próxima">›</button>
+                 <button class="btn-page btn-ghost" (click)="relatorioGoBy(5)" [disabled]="relatorioPage>=relatorioTotalPages" title="+5">5»</button>
+                 <button class="btn-page btn-ghost" (click)="relatorioGoBy(10)" [disabled]="relatorioPage>=relatorioTotalPages" title="+10">10»</button>
+                 <button class="btn-page btn-ghost" (click)="relatorioGoToLastPage()" [disabled]="relatorioPage>=relatorioTotalPages" title="Última">»</button>
                </div>
                <div class="pagination-jump">
                  <label>
                    Ir para
-                   <input type="number" min="1" [max]="diarioTotalPages" [(ngModel)]="diarioJumpPage" (keyup.enter)="diarioOnJumpToPage()" />
+                   <input type="number" min="1" [max]="relatorioTotalPages" [(ngModel)]="relatorioJumpPage" (keyup.enter)="relatorioOnJumpToPage()" />
                  </label>
-                 <button class="btn-go" (click)="diarioOnJumpToPage()">Ir</button>
+                 <button class="btn-go" (click)="relatorioOnJumpToPage()">Ir</button>
                </div>
             </div>}
         </div>}
@@ -302,7 +317,7 @@
                 </tbody>
             </table>
         </div>}
-        <div class="paginacao" *ngIf="vendasFiltradas.length > 0">
+        <div class="paginacao">
             <div class="pagination-left">
                 <button class="btn-page btn-ghost" (click)="goToFirstPage()" [disabled]="page<=1" title="Primeira">«</button>
                 <button class="btn-page btn-ghost" (click)="goBy(-10)" [disabled]="page<=1" title="-10">«10</button>
