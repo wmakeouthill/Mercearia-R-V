@@ -1,0 +1,8 @@
+.modal-overlay{
+  position: fixed; left:0; top:0; right:0; bottom:0; display:flex; align-items:center; justify-content:center; background: rgba(0,0,0,0.45); z-index:10000;
+}
+.modal.confirm-modal{ background: var(--card-bg,#fff); padding: 16px; border-radius:8px; width:320px; box-shadow: 0 8px 24px rgba(0,0,0,0.2);}
+.confirm-modal .message{ margin:12px 0; }
+.confirm-modal .actions{ display:flex; justify-content:flex-end; gap:8px; }
+
+

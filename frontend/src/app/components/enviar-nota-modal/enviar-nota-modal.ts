@@ -1,0 +1,268 @@
+import { Component, Input, Output, EventEmitter, OnChanges, SimpleChanges, ElementRef, ViewChild, Renderer2 } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { ApiService } from '../../services/api';
+import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
+
+@Component({
+    selector: 'app-enviar-nota-modal',
+    standalone: true,
+    imports: [CommonModule, FormsModule],
+    templateUrl: './enviar-nota-modal.html',
+    styleUrls: ['./enviar-nota-modal.scss']
+})
+export class EnviarNotaModalComponent implements OnChanges {
+    @Input() orderId: number | null = null;
+    @Output() close = new EventEmitter<void>();
+
+    modalCustomerName = '';
+    modalCustomerEmail = '';
+    modalCustomerPhone = '';
+    previewLoading = false;
+    previewBlobUrl: SafeResourceUrl | null = null;
+    previewObjectUrl: string | null = null;
+    previewHtml: string | null = null;
+    objectFailed = false;
+    @ViewChild('pdfViewerContainer', { read: ElementRef }) pdfViewerContainer?: ElementRef<HTMLDivElement>;
+
+    // client autocomplete
+    clientSearchTerm = '';
+    clientResults: any[] = [];
+    clientSearching = false;
+    showClientDropdown = false;
+    private hideDropdownTimer: any = null;
+    clientDropdownIndex = -1;
+
+    onClientDropdownKeydown(event: KeyboardEvent): void {
+        const len = this.clientResults?.length || 0;
+        if (!this.showClientDropdown || len === 0) return;
+        if (event.key === 'ArrowDown') { event.preventDefault(); this.clientDropdownIndex = Math.min(len - 1, (this.clientDropdownIndex || 0) + 1); }
+        else if (event.key === 'ArrowUp') { event.preventDefault(); this.clientDropdownIndex = Math.max(0, (this.clientDropdownIndex || 0) - 1); }
+        else if (event.key === 'Enter') { event.preventDefault(); if (this.clientDropdownIndex >= 0 && this.clientDropdownIndex < len) this.selectClientForModal(this.clientResults[this.clientDropdownIndex]); }
+        else if (event.key === 'Escape') { this.showClientDropdown = false; }
+    }
+
+    // PDF.js state
+    public pdfScale = 1.4;
+    private pdfArrayBuffer: ArrayBuffer | null = null;
+    private pdfDoc: any = null;
+    private pageObserver: IntersectionObserver | null = null;
+    private renderedPages = new Set<number>();
+
+    constructor(
+        private readonly apiService: ApiService,
+        private readonly sanitizer: DomSanitizer,
+        private readonly renderer: Renderer2
+    ) { }
+
+    ngOnChanges(changes: SimpleChanges): void {
+        if (changes['orderId']) {
+            const id = changes['orderId'].currentValue as number | null;
+            if (id) {
+                this.open(id);
+            } else {
+                this.reset();
+            }
+        }
+    }
+
+    open(orderId: number): void {
+        this.modalCustomerName = '';
+        this.modalCustomerEmail = '';
+        this.modalCustomerPhone = '';
+        this.previewLoading = true;
+        this.previewBlobUrl = null;
+        this.previewObjectUrl = null;
+        this.previewHtml = null;
+        this.objectFailed = false;
+
+        this.apiService.getNotaPdf(orderId).subscribe({
+            next: async (blob: any) => {
+                try {
+                    const pdfBlob = blob as Blob;
+                    if (!pdfBlob || pdfBlob.size === 0) {
+                        this.previewLoading = false;
+                        return;
+                    }
+                    if (this.previewObjectUrl) {
+                        try { URL.revokeObjectURL(this.previewObjectUrl); } catch (e) { }
+                        this.previewObjectUrl = null;
+                        this.previewBlobUrl = null;
+                    }
+                    const url = URL.createObjectURL(pdfBlob);
+                    this.previewObjectUrl = url;
+                    this.previewBlobUrl = this.sanitizer.bypassSecurityTrustResourceUrl(url);
+                    this.renderPdfJsFromBlob(pdfBlob).catch(e => console.debug('ENVIAR_NOTA render failed', e));
+                    setTimeout(() => { try { this.renderPdfJsFromBlob(pdfBlob); } catch (e) { } }, 60);
+                } catch (e) {
+                    console.error('Falha ao criar preview do PDF', e);
+                }
+                this.previewLoading = false;
+            },
+            error: (err) => { console.error('Erro ao obter PDF para preview', err); this.previewLoading = false; }
+        });
+    }
+
+    reset(): void {
+        this.modalCustomerName = '';
+        this.modalCustomerEmail = '';
+        this.modalCustomerPhone = '';
+        this.previewLoading = false;
+        this.previewBlobUrl = null;
+        this.previewObjectUrl = null;
+        this.previewHtml = null;
+        this.objectFailed = false;
+        this.pdfArrayBuffer = null;
+        this.pdfDoc = null;
+        this.renderedPages.clear();
+    }
+
+    closeModal(): void {
+        this.close.emit();
+        if (this.previewObjectUrl) {
+            try { URL.revokeObjectURL(this.previewObjectUrl); } catch (e) { }
+            this.previewObjectUrl = null;
+        }
+        this.previewBlobUrl = null;
+    }
+
+    // client autocomplete
+    openClientAutocomplete(): void {
+        this.clientResults = [];
+        this.showClientDropdown = true;
+        this.clientSearching = true;
+        this.apiService.getClientes().subscribe({ next: r => { this.clientResults = r; this.clientSearching = false; }, error: () => { this.clientResults = []; this.clientSearching = false; } });
+    }
+
+    onClientSearchChange(): void {
+        const t = (this.clientSearchTerm || '').trim();
+        if (!t) { this.clientResults = []; return; }
+        this.apiService.getClientes(t).subscribe({ next: r => this.clientResults = r, error: () => this.clientResults = [] });
+    }
+
+    selectClientForModal(c: any): void {
+        this.modalCustomerName = c.nome || '';
+        this.modalCustomerEmail = c.email || '';
+        this.modalCustomerPhone = c.telefone || '';
+        this.clientResults = [];
+        this.showClientDropdown = false;
+    }
+
+    onClientNameChange(): void {
+        const t = (this.modalCustomerName || '').trim();
+        if (!t) { this.clientResults = []; this.showClientDropdown = true; return; }
+        this.apiService.getClientes(t).subscribe({ next: r => { this.clientResults = r; this.showClientDropdown = true; }, error: () => { this.clientResults = []; } });
+    }
+
+    hideClientDropdownDelayed(): void {
+        this.hideDropdownTimer = setTimeout(() => { this.showClientDropdown = false; }, 150);
+    }
+
+    downloadPreviewPdf(): void {
+        if (!this.previewObjectUrl || !this.orderId) return;
+        const a = document.createElement('a');
+        a.href = this.previewObjectUrl;
+        a.download = `nota-${this.orderId}.pdf`;
+        a.click();
+    }
+
+    printPdf(): void {
+        if (!this.previewObjectUrl) return;
+        const iframe = document.createElement('iframe');
+        iframe.style.position = 'fixed'; iframe.style.right = '0'; iframe.style.bottom = '0'; iframe.style.width = '0'; iframe.style.height = '0';
+        iframe.src = this.previewObjectUrl as string;
+        document.body.appendChild(iframe);
+        iframe.onload = () => { try { iframe.contentWindow?.focus(); iframe.contentWindow?.print(); } catch (e) { console.error('Failed to print PDF', e); } finally { setTimeout(() => { document.body.removeChild(iframe); }, 500); } };
+    }
+
+    sendNotaByEmailFromModal(): void {
+        if (!this.orderId) return;
+        const orderId = this.orderId;
+        const contactPayload: any = {};
+        if (this.modalCustomerName) contactPayload.customerName = this.modalCustomerName;
+        if (this.modalCustomerEmail) contactPayload.customerEmail = this.modalCustomerEmail;
+        if (this.modalCustomerPhone) contactPayload.customerPhone = this.modalCustomerPhone;
+        if (Object.keys(contactPayload).length > 0) {
+            this.apiService.updateOrderContact(orderId, contactPayload).subscribe({ next: () => { }, error: () => { } });
+        }
+        const to = this.modalCustomerEmail || '';
+        if (!to || to.trim().length === 0) { alert('Informe um e-mail válido para enviar a nota.'); return; }
+        this.apiService.sendNotaEmail(orderId, { to, subject: `Comprovante - Pedido #${orderId}`, body: 'Segue a nota do seu pedido.' }).subscribe({ next: () => { alert('Email enviado com sucesso.'); this.closeModal(); }, error: (err) => { console.error('SEND_NOTA_EMAIL failed', err); alert(err?.error?.message || 'Falha ao enviar email'); } });
+    }
+
+    sendNotaByWhatsappFromModal(): void {
+        if (!this.orderId) return; const orderId = this.orderId;
+        const contactPayload: any = {};
+        if (this.modalCustomerName) contactPayload.customerName = this.modalCustomerName;
+        if (this.modalCustomerEmail) contactPayload.customerEmail = this.modalCustomerEmail;
+        if (this.modalCustomerPhone) contactPayload.customerPhone = this.modalCustomerPhone;
+        if (Object.keys(contactPayload).length > 0) { this.apiService.updateOrderContact(orderId, contactPayload).subscribe({ next: () => { }, error: () => { } }); }
+        let phone = (this.modalCustomerPhone || '').replace(/\D/g, ''); if (!phone) { this.closeModal(); return; } if (!phone.startsWith('55')) { if (phone.length <= 11) phone = '55' + phone; }
+        const pdfUrl = this.apiService.getNotaPdfUrl(orderId);
+        const msg = `Segue a nota do seu último pedido na nossa loja: ${pdfUrl}`;
+        const waUrl = `https://web.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(msg)}`;
+        try { const api = (window as any).electronAPI; if (api && typeof api.openExternal === 'function') { api.openExternal(waUrl).catch(() => { window.open(waUrl, '_blank'); }); } else { window.open(waUrl, '_blank'); } } catch (e) { window.open(waUrl, '_blank'); }
+        this.closeModal();
+    }
+
+    zoomIn(): void { this.pdfScale = Math.min(this.pdfScale + 0.2, 3); this.reRenderPdf(); }
+    zoomOut(): void { this.pdfScale = Math.max(this.pdfScale - 0.2, 0.6); this.reRenderPdf(); }
+    async fitWidth(): Promise<void> {
+        if (!this.pdfViewerContainer) return; const containerWidth = this.pdfViewerContainer.nativeElement.clientWidth || 420; const firstCanvas = this.pdfViewerContainer.nativeElement.querySelector('.pdf-page-canvas') as HTMLCanvasElement | null; if (!firstCanvas) return; const intrinsic = firstCanvas.width || (firstCanvas.getBoundingClientRect().width || containerWidth); const newScale = Math.max(0.6, Math.min(3, containerWidth / intrinsic * this.pdfScale)); this.pdfScale = Number(newScale.toFixed(2)); await this.reRenderPdf();
+    }
+
+    private async reRenderPdf(): Promise<void> {
+        try {
+            if (!this.pdfViewerContainer) return;
+            if (!this.pdfDoc) {
+                if (!this.pdfArrayBuffer) return;
+                const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf');
+                (pdfjsLib as any).GlobalWorkerOptions.workerSrc = '/assets/pdfjs/pdf.worker.min.js';
+                const loadingTask = (pdfjsLib as any).getDocument({ data: this.pdfArrayBuffer });
+                this.pdfDoc = await loadingTask.promise;
+            }
+            this.cleanupObserverAndSlots();
+            this.pdfViewerContainer.nativeElement.innerHTML = '';
+            this.renderedPages.clear();
+            if (this.pdfDoc.numPages === 1) { await this.renderSinglePage(1); return; }
+            this.setupPlaceholders(this.pdfDoc.numPages);
+        } catch (e) { console.error('reRenderPdf failed', e); }
+    }
+
+    private async renderPdfJsFromBlob(pdfBlob: Blob): Promise<void> {
+        try {
+            if (!this.pdfViewerContainer) return;
+            this.cleanupObserverAndSlots();
+            this.pdfViewerContainer.nativeElement.innerHTML = '';
+            const arrayBuffer = await pdfBlob.arrayBuffer();
+            const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf');
+            try { (pdfjsLib as any).GlobalWorkerOptions.workerSrc = '/assets/pdfjs/pdf.worker.min.js'; } catch (e) { }
+            const loadingTask = (pdfjsLib as any).getDocument({ data: arrayBuffer });
+            const pdf = await loadingTask.promise;
+            this.pdfArrayBuffer = arrayBuffer; this.pdfDoc = pdf; this.renderedPages.clear();
+            if (pdf.numPages === 1) { await this.renderSinglePage(1); return; }
+            this.setupPlaceholders(pdf.numPages);
+        } catch (e) { console.error('PDF.js render failed', e); }
+    }
+
+    private async renderSinglePage(pageNum: number): Promise<void> {
+        if (!this.pdfDoc || !this.pdfViewerContainer) return; if (this.renderedPages.has(pageNum)) return; try { const page = await this.pdfDoc.getPage(pageNum); const viewport = page.getViewport({ scale: this.pdfScale }); const canvas = document.createElement('canvas'); canvas.width = viewport.width; canvas.height = viewport.height; canvas.className = 'pdf-page-canvas'; const ctx = canvas.getContext('2d'); if (!ctx) return; await page.render({ canvasContext: ctx, viewport }).promise; this.pdfViewerContainer.nativeElement.appendChild(canvas); this.renderedPages.add(pageNum); } catch (e) { console.error('renderSinglePage failed', e); }
+    }
+
+    private setupPlaceholders(numPages: number): void {
+        if (!this.pdfViewerContainer) return; const container = this.pdfViewerContainer.nativeElement; const options: IntersectionObserverInit = { root: container, rootMargin: '400px', threshold: 0.1 };
+        this.pageObserver = new IntersectionObserver((entries) => { entries.forEach(ent => { if (ent.isIntersecting) { const slot = ent.target as HTMLElement; const pageAttr = slot.getAttribute('data-page'); if (!pageAttr) return; const pageNum = Number(pageAttr); this.renderPageIfNeeded(pageNum).catch(e => console.error('renderPageIfNeeded failed', e)); } }); }, options);
+        for (let p = 1; p <= numPages; p++) { const slot = document.createElement('div'); slot.className = 'pdf-page-slot'; slot.setAttribute('data-page', String(p)); slot.style.minHeight = '360px'; slot.style.display = 'flex'; slot.style.alignItems = 'center'; slot.style.justifyContent = 'center'; slot.style.marginBottom = '12px'; slot.innerHTML = `<div class="page-loading">Carregando página ${p}...</div>`; container.appendChild(slot); if (this.pageObserver) this.pageObserver.observe(slot); }
+    }
+
+    private async renderPageIfNeeded(pageNum: number): Promise<void> {
+        if (!this.pdfDoc || !this.pdfViewerContainer) return; if (this.renderedPages.has(pageNum)) return; try { const page = await this.pdfDoc.getPage(pageNum); const viewport = page.getViewport({ scale: this.pdfScale }); const canvas = document.createElement('canvas'); canvas.width = viewport.width; canvas.height = viewport.height; canvas.className = 'pdf-page-canvas'; const ctx = canvas.getContext('2d'); if (!ctx) return; await page.render({ canvasContext: ctx, viewport }).promise; const container = this.pdfViewerContainer.nativeElement; const slot = container.querySelector(`.pdf-page-slot[data-page="${pageNum}"]`); if (slot && slot.parentElement) { slot.parentElement.replaceChild(canvas, slot); } this.renderedPages.add(pageNum); } catch (e) { console.error('renderPage failed', e); }
+    }
+
+    private cleanupObserverAndSlots(): void {
+        try { if (this.pageObserver) { this.pageObserver.disconnect(); this.pageObserver = null; } } catch (e) { }
+        this.renderedPages.clear();
+    }
+}
+
+

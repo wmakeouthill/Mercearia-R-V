@@ -1,0 +1,29 @@
+.modal-overlay {
+  position: fixed;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+.modal.enviar-nota-modal {
+  background: var(--card-bg, #fff);
+  border-radius: 12px;
+  width: min(880px, 96%);
+  max-height: 90vh;
+  overflow: auto;
+  padding: 18px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+}
+.modal-field { margin-bottom: 12px; }
+.input-modal { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #ccc; }
+.pdf-viewer-container { width: 100%; min-height: 240px; }
+.modal-actions-below { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.preview-actions.centered { display:flex; gap:8px; justify-content:center; }
+.pdf-tools.centered { display:flex; gap:8px; justify-content:center; align-items:center; margin-top:8px; }
+
+

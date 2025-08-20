@@ -12,12 +12,13 @@ import { catchError } from 'rxjs/operators';
 import { logger } from '../../utils/logger';
 // PontoVendaComponent import removed (unused in this component)
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
+import { EnviarNotaModalComponent } from '../enviar-nota-modal/enviar-nota-modal';
 // pdfjs will be dynamically imported to avoid breaking lazy-loaded route initialization
 
 @Component({
   selector: 'app-relatorio-vendas',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, EnviarNotaModalComponent],
   templateUrl: './relatorio-vendas.html',
   styleUrl: './relatorio-vendas.scss'
 })
@@ -61,20 +62,21 @@ export class RelatorioVendasComponent implements OnInit {
     private readonly renderer: Renderer2
   ) { }
 
-  // Modal reuse from PontoVendaComponent logic: show preview modal
+  // Using shared modal component
   showEnviarModal = false;
   modalOrderId: number | null = null;
+  // Compatibility properties used by legacy modal-related methods
   modalCustomerName = '';
   modalCustomerEmail = '';
   modalCustomerPhone = '';
   previewLoading = false;
   previewBlobUrl: SafeResourceUrl | null = null;
   previewObjectUrl: string | null = null;
-  @ViewChild('previewObject') previewObjectRef?: ElementRef<HTMLObjectElement>;
-  @ViewChild('pdfViewerContainer', { read: ElementRef }) pdfViewerContainer?: ElementRef<HTMLDivElement>;
   previewHtml: string | null = null;
   objectFailed = false;
-  // PDF.js state
+  @ViewChild('previewObject') previewObjectRef?: ElementRef<HTMLObjectElement>;
+  @ViewChild('pdfViewerContainer', { read: ElementRef }) pdfViewerContainer?: ElementRef<HTMLDivElement>;
+  // PDF.js state (compat)
   private pdfArrayBuffer: ArrayBuffer | null = null;
   public pdfScale = 1.4;
   private pdfDoc: any = null;

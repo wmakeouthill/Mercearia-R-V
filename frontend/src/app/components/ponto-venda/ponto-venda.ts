@@ -1,4 +1,6 @@
 import { Component, OnInit, OnDestroy, HostListener, ElementRef, Renderer2, ViewChild } from '@angular/core';
+import { EnviarNotaModalComponent } from '../enviar-nota-modal/enviar-nota-modal';
+import { ConfirmModalComponent } from '../confirm-modal/confirm-modal';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -13,7 +15,7 @@ import { logger } from '../../utils/logger';
 @Component({
   selector: 'app-ponto-venda',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, EnviarNotaModalComponent, ConfirmModalComponent],
   templateUrl: './ponto-venda.html',
   styleUrl: './ponto-venda.scss'
 })
@@ -31,12 +33,16 @@ export class PontoVendaComponent implements OnInit, OnDestroy {
   sucesso = '';
   showModernNotification = false;
   modernNotificationMessage = '';
-  // Modal para envio de nota
+  // Modal para envio de nota (usaremos componente compartilhado)
   showEnviarModal = false;
   modalOrderId: number | null = null;
   modalCustomerName = '';
   modalCustomerEmail = '';
   modalCustomerPhone = '';
+  // confirmation modal state
+  showConfirmModal = false;
+  pendingOrderId: number | null = null;
+  confirmMessage = '';
   // Cliente autocomplete
   clientSearchTerm = '';
   clientResults: any[] = [];
@@ -154,6 +160,19 @@ export class PontoVendaComponent implements OnInit, OnDestroy {
     private readonly router: Router,
     private readonly renderer: Renderer2
   ) { }
+
+  onConfirmSend(): void {
+    this.showConfirmModal = false;
+    if (this.pendingOrderId) {
+      this.openEnviarModal(this.pendingOrderId);
+      this.pendingOrderId = null;
+    }
+  }
+
+  onCancelSend(): void {
+    this.showConfirmModal = false;
+    this.pendingOrderId = null;
+  }
 
   ngOnInit(): void {
     logger.info('PONTO_VENDA', 'INIT', 'Componente iniciado');
@@ -508,12 +527,21 @@ export class PontoVendaComponent implements OnInit, OnDestroy {
           this.pagamentos = [];
           this.loading = false;
           setTimeout(() => this.loadProdutos(), 500);
+          // Mostrar notificação de venda finalizada e perguntar ao usuário se deseja enviar a nota
+          this.showModernNotification = true;
+          this.modernNotificationMessage = `Venda finalizada com sucesso! Total: R$ ${totalVenda.toFixed(2)}`;
+          setTimeout(() => this.hideModernNotification(), 5000);
+
           if (orderId) {
-            this.openEnviarModal(orderId);
-          } else {
-            this.showModernNotification = true;
-            this.modernNotificationMessage = `Venda finalizada com sucesso! Total: R$ ${totalVenda.toFixed(2)}`;
-            setTimeout(() => this.hideModernNotification(), 5000);
+            // Perguntar ao usuário se deseja enviar a nota; se confirmar, abrir o modal de envio
+            // Usamos um confirm simples aqui para manter o fluxo leve; o modal de envio permite
+            // escolher envio por WhatsApp ou email, conforme já implementado em openEnviarModal
+            // abrir modal de confirmação customizado
+            setTimeout(() => {
+              this.pendingOrderId = orderId;
+              this.confirmMessage = `Venda finalizada com sucesso! Total: R$ ${totalVenda.toFixed(2)}. Deseja enviar a nota por WhatsApp ou Email para o cliente?`;
+              this.showConfirmModal = true;
+            }, 200);
           }
         },
         error: (error: any) => {
