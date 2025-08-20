@@ -105,15 +105,32 @@ public class CheckoutController {
             try {
                 if (req.getCustomerEmail() != null || req.getCustomerPhone() != null) {
                     com.example.backendspring.client.Client cliente = null;
-                    if (req.getCustomerEmail() != null) {
-                        cliente = clientRepository.findByEmail(req.getCustomerEmail()).orElse(null);
+                    if (req.getCustomerEmail() != null && !req.getCustomerEmail().isBlank()) {
+                        String emailNorm = req.getCustomerEmail().trim().toLowerCase();
+                        try {
+                            cliente = clientRepository.findByEmailIgnoreCase(emailNorm).orElse(null);
+                        } catch (Exception e) {
+                            cliente = clientRepository.findByEmail(req.getCustomerEmail()).orElse(null);
+                        }
                     }
-                    if (cliente == null && req.getCustomerPhone() != null) {
+                    if (cliente == null && req.getCustomerPhone() != null && !req.getCustomerPhone().isBlank()) {
                         cliente = clientRepository.findByTelefone(req.getCustomerPhone()).orElse(null);
                     }
                     if (cliente == null) {
+                        // prefer provided name, fallback to email local-part, then to placeholder
+                        String nameToUse = null;
+                        if (req.getCustomerName() != null && !req.getCustomerName().isBlank()) {
+                            nameToUse = req.getCustomerName().trim();
+                        } else if (req.getCustomerEmail() != null && req.getCustomerEmail().contains("@")) {
+                            nameToUse = req.getCustomerEmail().split("@")[0];
+                        } else if (req.getCustomerPhone() != null && !req.getCustomerPhone().isBlank()) {
+                            nameToUse = req.getCustomerPhone();
+                        } else {
+                            nameToUse = "Cliente";
+                        }
+                        String uniqueName = generateUniqueClientName(nameToUse);
                         cliente = com.example.backendspring.client.Client.builder()
-                                .nome(req.getCustomerName() != null ? req.getCustomerName() : "Cliente")
+                                .nome(uniqueName)
                                 .email(req.getCustomerEmail())
                                 .telefone(req.getCustomerPhone())
                                 .createdAt(java.time.OffsetDateTime.now())
@@ -159,28 +176,70 @@ public class CheckoutController {
         if (payload.containsKey("customerPhone"))
             venda.setCustomerPhone(payload.get("customerPhone"));
 
-        // Try to find or create client and associate
+        // Try to find or create client and associate (avoid creating placeholder named
+        // "Cliente")
         try {
             com.example.backendspring.client.Client cliente = null;
             String email = venda.getCustomerEmail();
             String phone = venda.getCustomerPhone();
+
+            // lookup by email (case-insensitive) then phone
             if (email != null && !email.isBlank()) {
-                cliente = this.clientRepository.findByEmail(email).orElse(null);
+                try {
+                    cliente = this.clientRepository.findByEmailIgnoreCase(email.trim().toLowerCase()).orElse(null);
+                } catch (Exception ex) {
+                    cliente = this.clientRepository.findByEmail(email).orElse(null);
+                }
             }
             if (cliente == null && phone != null && !phone.isBlank()) {
                 cliente = this.clientRepository.findByTelefone(phone).orElse(null);
             }
-            if (cliente == null) {
-                cliente = com.example.backendspring.client.Client.builder()
-                        .nome(venda.getCustomerName() != null ? venda.getCustomerName() : "Cliente")
-                        .email(email)
-                        .telefone(phone)
-                        .createdAt(java.time.OffsetDateTime.now())
-                        .build();
-                this.clientRepository.save(cliente);
-            }
+
             if (cliente != null) {
+                // Update existing client with any new info provided (including replacing
+                // generic name)
+                boolean changed = false;
+                String providedName = venda.getCustomerName();
+                if (providedName != null && !providedName.isBlank()) {
+                    if (cliente.getNome() == null || cliente.getNome().isBlank()
+                            || cliente.getNome().equalsIgnoreCase("Cliente")) {
+                        cliente.setNome(providedName.trim());
+                        changed = true;
+                    }
+                }
+                if (email != null && !email.isBlank() && (cliente.getEmail() == null || cliente.getEmail().isBlank())) {
+                    cliente.setEmail(email.trim());
+                    changed = true;
+                }
+                if (phone != null && !phone.isBlank()
+                        && (cliente.getTelefone() == null || cliente.getTelefone().isBlank())) {
+                    cliente.setTelefone(phone.trim());
+                    changed = true;
+                }
+                if (changed)
+                    this.clientRepository.save(cliente);
                 venda.setCliente(cliente);
+            } else {
+                // create new client only if we have some identifying info (name/email/phone)
+                String baseName = null;
+                if (venda.getCustomerName() != null && !venda.getCustomerName().isBlank()) {
+                    baseName = venda.getCustomerName().trim();
+                } else if (email != null && email.contains("@")) {
+                    baseName = email.split("@")[0];
+                } else if (phone != null && !phone.isBlank()) {
+                    baseName = phone.trim();
+                }
+                if (baseName != null) {
+                    String uniqueName = generateUniqueClientName(baseName);
+                    cliente = com.example.backendspring.client.Client.builder()
+                            .nome(uniqueName)
+                            .email(email)
+                            .telefone(phone)
+                            .createdAt(java.time.OffsetDateTime.now())
+                            .build();
+                    this.clientRepository.save(cliente);
+                    venda.setCliente(cliente);
+                }
             }
         } catch (Exception e) {
             // ignore client creation/link errors
@@ -416,6 +475,25 @@ public class CheckoutController {
         if (venda.getCustomerPhone() != null)
             resp.put("customer_phone", venda.getCustomerPhone());
         return resp;
+    }
+
+    // generate a name unique among clients by appending (2), (3), ... if needed
+    private String generateUniqueClientName(String base) {
+        String candidate = base;
+        int suffix = 1;
+        while (true) {
+            boolean exists;
+            try {
+                exists = clientRepository.existsByNomeIgnoreCase(candidate);
+            } catch (Exception e) {
+                // fallback: assume not exists to avoid infinite loops
+                exists = false;
+            }
+            if (!exists)
+                return candidate;
+            suffix++;
+            candidate = base + " (" + suffix + ")";
+        }
     }
 
     @Data

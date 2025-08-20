@@ -54,11 +54,12 @@ public class ClientController {
     }
 
     @GetMapping("/{id}/vendas")
-    public ResponseEntity<java.util.Map<String, Object>> vendas(@PathVariable Long id,
+    public ResponseEntity<Object> vendas(@PathVariable Long id,
             @RequestParam(value = "page", required = false, defaultValue = "0") int page,
             @RequestParam(value = "size", required = false, defaultValue = "50") int size,
             @RequestParam(value = "from", required = false) String from,
-            @RequestParam(value = "to", required = false) String to) {
+            @RequestParam(value = "to", required = false) String to,
+            @RequestParam(value = "limit", required = false) Integer limit) {
         java.time.LocalDate inicio = null;
         java.time.LocalDate fim = null;
         if (from != null && !from.isBlank()) {
@@ -109,6 +110,12 @@ public class ClientController {
             var db = (java.time.OffsetDateTime) b.get("data_venda");
             return db.compareTo(da);
         });
+        // if a 'limit' param was provided, return a plain list limited to that value
+        // (used by frontend)
+        if (limit != null) {
+            int upto = Math.max(0, Math.min(limit, merged.size()));
+            return ResponseEntity.ok(merged.subList(0, upto));
+        }
 
         // pagination: compute total and slice for requested page/size
         final int total = merged.size();
