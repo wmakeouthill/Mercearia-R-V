@@ -28,7 +28,7 @@
                         <th class="col-codigo">Código de Barras</th>
                         <th class="col-preco">Preço de Venda</th>
                         <th class="col-estoque">Estoque</th>
-                        <th class="col-acoes">Ações</th>
+                        <th class="col-acoes" colspan="3">Ações</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -48,18 +48,14 @@
                                 {{ produto.quantidade_estoque }}
                             </span>
                         </td>
-                        <td class="acoes">
-                            <button (click)="editProduto(produto.id!)" class="btn-edit" title="Editar">
-                                ✏️
-                            </button>
-                            @if (isAdmin) {<button (click)="deleteProduto(produto.id!)" class="btn-delete"
-                                title="Excluir">
-                                🗑️
-                            </button>}
-                            @if (isAdmin) {<button (click)="updateEstoque(produto.id!, produto.quantidade_estoque + 1)"
-                                class="btn-add" title="Adicionar ao estoque">
-                                ➕
-                            </button>}
+                        <td class="acoes-col acoes-left">
+                            <button (click)="editProduto(produto.id!)" class="btn-edit" title="Editar">✏️</button>
+                        </td>
+                        <td class="acoes-col acoes-center">
+                            @if (isAdmin) {<button (click)="deleteProduto(produto.id!)" class="btn-delete" title="Excluir">🗑️</button>}
+                        </td>
+                        <td class="acoes-col acoes-right">
+                            @if (isAdmin) {<button (click)="updateEstoque(produto.id!, produto.quantidade_estoque + 1)" class="btn-add" title="Adicionar ao estoque">➕</button>}
                         </td>
                     </tr>}
                 </tbody>

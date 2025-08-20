@@ -115,7 +115,7 @@
                         <th class="col-metodo">Pagamentos</th>
                         <th class="col-total">Total</th>
                         <th class="col-data">Data/Hora</th>
-                        <th class="col-acoes">Ações</th>
+                        <th class="col-acoes" colspan="2">Ações</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -137,15 +137,14 @@
                         <td class="venda-data">
                             <span class="data-hora-inline">{{ formatarData(venda.data_venda) }}</span>
                         </td>
-                        <td class="acoes">
+                        <td class="acoes-col acoes-left">
+                            <button type="button" (click)="onDeleteClick($event, venda.id!)" class="btn-excluir" [disabled]="!authService.isAdmin()" [attr.title]="!authService.isAdmin() ? 'Somente administradores podem excluir vendas' : 'Excluir venda'">🗑️</button>
+                        </td>
+                        <td class="acoes-col acoes-right">
                             <button *ngIf="venda.itens && venda.itens.length > 1" type="button" (click)="toggleExpand(venda.row_id)" class="btn-expand" [class.rotated]="expandedRows.has(venda.row_id)" [attr.aria-expanded]="expandedRows.has(venda.row_id)" title="Expandir venda">🔽</button>
-                            <button type="button" (click)="onDeleteClick($event, venda.id!)" class="btn-excluir"
-                                    [disabled]="!authService.isAdmin()" [attr.title]="!authService.isAdmin() ? 'Somente administradores podem excluir vendas' : 'Excluir venda'">
-                                🗑️
-                            </button>
                         </td>
                     </tr>
-                    <tr *ngIf="venda.itens && expandedRows.has(venda.row_id)" class="venda-itens-row"><td colspan="7">
+                    <tr *ngIf="venda.itens && expandedRows.has(venda.row_id)" class="venda-itens-row"><td colspan="8">
                         <div class="itens-lista">
                             <table class="itens-tabela">
                                 <thead><tr><th>Produto</th><th>Qtd</th><th>Preço unit.</th><th>Preço total</th></tr></thead>

@@ -523,6 +523,9 @@
         &.col-acoes {
             text-align: center;
         }
+
+        /* alinhar padding do header da coluna Ações com as células */
+        &.col-acoes { padding: 10px 6px; }
     }
 
     td {
@@ -531,6 +534,15 @@
         vertical-align: middle;
         font-size: 0.85rem;
         word-wrap: break-word;
+    }
+
+    /* garantir que a célula da última coluna (.acoes) use flex e padding consistente */
+    td.acoes {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 8px 6px;
+        box-sizing: border-box;
     }
 
     tr:hover {
@@ -601,7 +613,7 @@
         gap: 8px;
         justify-content: center; /* centraliza ações dentro da célula para parecer parte da tabela */
         align-items: center;
-        padding: 8px 10px;
+        padding: 0; /* padding do td já aplica espaçamento */
         height: 100%;
         box-sizing: border-box;
     }
@@ -616,6 +628,12 @@
         padding: 6px 8px;
         vertical-align: middle;
     }
+
+    /* estilos para as duas colunas de ações quando usamos colspan no header */
+    td.acoes-col { padding: 0; vertical-align: middle; }
+    .acoes-col .btn-enviar, .acoes-col .btn-excluir, .acoes-col .btn-expand { margin: 0; }
+    .acoes-left { text-align: right; padding-right: 6px; }
+    .acoes-right { text-align: left; padding-left: 6px; }
 }
 
 .vendas-vazias {
