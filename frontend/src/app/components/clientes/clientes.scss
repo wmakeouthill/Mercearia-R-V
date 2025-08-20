@@ -2,9 +2,22 @@
 .clientes-header { display:flex; justify-content:space-between; align-items:center; }
 .search { margin: 12px 0; }
 .tabela-clientes { width:100%; border-collapse: collapse; }
-.tabela-clientes th, .tabela-clientes td { padding:8px; border-bottom:1px solid #eee; }
+.tabela-clientes th, .tabela-clientes td { padding:8px; border-bottom:1px solid #eee; vertical-align: middle; }
 .tabela-vendas-mini { width:100%; border-collapse: collapse; margin-top:8px; }
-.tabela-vendas-mini th, .tabela-vendas-mini td { padding:6px; border-bottom:1px solid #f5f5f5; }
+.tabela-vendas-mini th, .tabela-vendas-mini td { padding:6px; border-bottom:1px solid #f5f5f5; vertical-align: middle; }
+
+/* product thumbnail inside cliente vendas: keep small and centered */
+.mini-img {
+  width: 36px;
+  height: 36px;
+  object-fit: cover;
+  border-radius: 6px;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.prod-cell { display:flex; align-items:center; gap:8px; }
+.prod-cell .prod-name { display:inline-block; vertical-align:middle; }
 
 .action-group { display:flex; gap:8px; align-items:center; }
 .btn-ghost { background: transparent; border: 1px solid #ddd; padding:6px 8px; border-radius:8px; cursor:pointer; }

@@ -2,6 +2,7 @@ import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api';
+import { ImageService } from '../../services/image.service';
 import { Router } from '@angular/router';
 
 @Component({
@@ -29,7 +30,7 @@ export class ClientesComponent implements OnInit {
     editingClientId: number | null = null;
     editingClient: any = null;
 
-    constructor(private readonly api: ApiService, private readonly router: Router) { }
+    constructor(private readonly api: ApiService, private readonly router: Router, public readonly imageService: ImageService) { }
 
     ngOnInit(): void {
         this.loadClientes();

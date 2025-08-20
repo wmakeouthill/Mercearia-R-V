@@ -6,15 +6,18 @@
       <div class="form-block" style="width:100%; max-width:520px;">
         <div class="form-row">
           <label for="modalCustomerName" class="row-label"><span class="label-emoji">👤</span>Cliente:</label>
-          <div class="input-wrap"><input id="modalCustomerName" type="text" [(ngModel)]="modalCustomerName" class="input-modal" placeholder="Cliente da Silva"
-                 (focus)="openClientAutocomplete()" (input)="onClientNameChange()" (blur)="hideClientDropdownDelayed()" (keydown)="onClientDropdownKeydown($event)" autocomplete="off" /></div>
+          <div class="input-wrap" (click)="$event.stopPropagation()">
+            <input #clientInput id="modalCustomerName" type="text" [(ngModel)]="modalCustomerName" class="input-modal" placeholder="Cliente da Silva"
+                 (focus)="openClientAutocomplete()" (input)="onClientNameChange()" (blur)="hideClientDropdownDelayed()" (keydown)="onClientDropdownKeydown($event)" autocomplete="off" />
+            <button type="button" class="input-caret" (click)="toggleClientDropdown($event)" title="Abrir lista de clientes">▾</button>
+            <ul #clientDropdown *ngIf="showClientDropdown && clientResults.length > 0" class="autocomplete-list" (mousedown)="$event.preventDefault()">
+              <li *ngFor="let c of clientResults; let i = index" (click)="selectClientForModal(c)" [class.selected]="i === clientDropdownIndex">
+                <div class="ac-item-name">{{ c.nome }}</div>
+                <div class="ac-item-meta">{{ c.email || '—' }} · {{ c.telefone || '—' }}</div>
+              </li>
+            </ul>
+          </div>
         </div>
-        <ul *ngIf="showClientDropdown && clientResults.length > 0" class="autocomplete-list" (mousedown)="$event.preventDefault()">
-          <li *ngFor="let c of clientResults; let i = index" (click)="selectClientForModal(c)" [class.selected]="i === clientDropdownIndex">
-            <div class="ac-item-name">{{ c.nome }}</div>
-            <div class="ac-item-meta">{{ c.email || '—' }} · {{ c.telefone || '—' }}</div>
-          </li>
-        </ul>
 
         <div class="form-row">
           <label for="modalCustomerEmail" class="row-label"><span class="label-emoji">📧</span>Email:</label>

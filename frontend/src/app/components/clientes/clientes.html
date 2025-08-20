@@ -71,13 +71,15 @@
                       <tr class="venda-itens-row" *ngIf="v._showItems">
                         <td colspan="4">
                           <table class="tabela-itens">
-                            <thead><tr><th>Imagem</th><th>Produto</th><th>Qtd</th><th>Preço Unit.</th><th>Subtotal</th></tr></thead>
+                            <thead><tr><th>Produto</th><th>Qtd</th><th>Preço Unit.</th><th>Subtotal</th></tr></thead>
                             <tbody>
                               <tr *ngFor="let it of v.itens">
                                 <td>
-                                  <img *ngIf="it.produto_imagem" [src]="('/api/produtos/imagem/' + it.produto_imagem)" class="mini-img" [alt]="it.produto_nome || 'produto'" />
+                                  <div class="prod-cell">
+                                    <img [src]="imageService.getImageUrl(it.produto_imagem)" class="mini-img" [alt]="it.produto_nome || 'produto'" (error)="imageService.handleImageError($event)" />
+                                    <span class="prod-name">{{ it.produto_nome }}</span>
+                                  </div>
                                 </td>
-                                <td>{{ it.produto_nome }}</td>
                                 <td>{{ it.quantidade || it.quantidade_vendida || '-' }}</td>
                                 <td>R$ {{ it.preco_unitario ? it.preco_unitario.toFixed(2) : (it.preco_unitario) }}</td>
                                 <td>R$ {{ it.preco_total ? it.preco_total.toFixed(2) : (it.preco_total) }}</td>

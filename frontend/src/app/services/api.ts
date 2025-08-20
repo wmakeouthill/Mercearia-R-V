@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Observable, BehaviorSubject, throwError, of, timer } from 'rxjs';
-import { tap, catchError, timeout, mergeMap } from 'rxjs/operators';
+import { tap, catchError, timeout, mergeMap, map } from 'rxjs/operators';
 import { Produto, Venda, RelatorioVendas, CheckoutRequest, VendaCompletaResponse, RelatorioResumo } from '../models';
 import { logger } from '../utils/logger';
 import { environment } from '../../environments/environment';
@@ -412,7 +412,19 @@ export class ApiService {
   // CLIENTES
   getClientes(q?: string): Observable<any[]> {
     const url = q ? `${this.baseUrl}/clientes?q=${encodeURIComponent(q)}` : `${this.baseUrl}/clientes`;
-    return this.makeRequest(() => this.http.get<any[]>(url), 'GET_CLIENTES');
+    return this.makeRequest(() => this.http.get<any>(url), 'GET_CLIENTES').pipe(
+      map((resp: any) => {
+        // Backend may return either an array or an object with { items, ... }
+        if (!resp) return [];
+        if (Array.isArray(resp)) return resp;
+        if (resp.items && Array.isArray(resp.items)) return resp.items;
+        // fallback: try to coerce object values to array
+        if (typeof resp === 'object') {
+          return Object.values(resp).flat().filter((v: any) => v && typeof v === 'object');
+        }
+        return [];
+      })
+    );
   }
 
   getClientesPage(page: number = 0, size: number = 20, q?: string): Observable<any> {

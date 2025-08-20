@@ -37,6 +37,10 @@
 
 /* Ensure inputs take available width inside centered block */
 .form-block .input-modal { width: 360px; max-width: calc(100% - 32px); }
+.input-wrap { position: relative; width: 100%; box-sizing: border-box; }
+.input-wrap .input-modal { width: 100%; padding: 8px 36px 8px 8px; border-radius: 6px; box-sizing: border-box; }
+.input-wrap .input-caret { position: absolute; right: 35px; top: 50%; transform: translateY(-50%); background: transparent; border: none; font-size: 1rem; cursor: pointer; padding: 6px 8px; z-index: 3; }
+.input-wrap .input-caret:focus { outline: none; box-shadow: 0 0 0 1px rgba(0,123,255,0.12); }
 .form-row { display:flex; gap:12px; align-items:center; width:100%; }
 .row-label { width:140px; text-align:left; font-weight:600; display:flex; align-items:center; gap:8px; }
 .input-modal { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #ccc; }
@@ -53,13 +57,28 @@
 .pdf-tools.centered button { padding: 6px 8px; }
 .modal-field { margin-bottom: 8px; }
 .input-modal { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #ccc; }
-.autocomplete-list { position: absolute; z-index: 10001; background: #fff; border: 1px solid #ddd; width: calc(100% - 2px); max-height: 220px; overflow:auto; border-radius:6px; margin-top:4px; box-shadow:0 6px 18px rgba(0,0,0,0.08); }
-.autocomplete-list li { padding:8px; cursor:pointer; }
-.autocomplete-list li.selected { background:#f1f5f9; }
+.input-wrap { overflow: visible; }
+.autocomplete-list { position: absolute; z-index: 10002; background: #fff; border: 1px solid #ddd; top: calc(100% + 6px); width: auto; box-sizing: border-box; max-height: 220px; overflow:auto; border-radius:6px; box-shadow:0 6px 18px rgba(0,0,0,0.08); margin:0; padding:0; overflow-x:hidden; }
+.autocomplete-list li { padding:8px; cursor:pointer; list-style:none; }
+.autocomplete-list li:hover, .autocomplete-list li.selected { background:#f1f5f9; }
 .pdf-viewer-container { width: 100%; min-height: 200px; border-radius:6px; overflow:hidden; background:#f7f7f7; display:flex; align-items:center; justify-content:center; }
 .pdf-tools.centered { display:flex; gap:8px; align-items:center; justify-content:center; }
 .preview-actions.centered { display:flex; gap:8px; justify-content:center; margin-top:6px; }
 .preview-loading{ padding:24px; }
+
+
+/* Responsive tweaks */
+@media (max-width: 600px) {
+  .modal.enviar-nota-modal { width: calc(100% - 24px); max-height: 94vh; padding: 10px; }
+  .form-block .input-modal { width: 100%; max-width: 100%; }
+  .autocomplete-list { max-height: 180px; font-size: 0.95rem; }
+}
+
+@media (max-width: 420px) {
+  .row-label { display: none; }
+  .form-row { gap: 8px; }
+  .autocomplete-list { max-height: 160px; }
+}
 
 
 
