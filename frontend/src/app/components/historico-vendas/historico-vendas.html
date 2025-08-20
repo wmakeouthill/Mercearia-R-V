@@ -119,7 +119,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                    @for (venda of vendasFiltradas; track venda.row_id; let i = $index) {<tr class="venda-row">
+                    @for (venda of vendasPagina; track venda.row_id; let i = $index) {<tr class="venda-row">
                         <td class="venda-numero">{{ (page-1)*pageSize + (i+1) }}</td>
                         <td class="produto-info">
                             <div class="produto-nome com-imagem">
@@ -164,6 +164,32 @@
                     </td></tr>}
                 </tbody>
             </table>
+        </div>
+        <div class="paginacao">
+           <div class="pagination-left">
+             <button class="btn-page btn-ghost" (click)="goToFirstPage()" [disabled]="page<=1" title="Primeira">«</button>
+             <button class="btn-page btn-ghost" (click)="goBy(-10)" [disabled]="page<=1" title="-10">«10</button>
+             <button class="btn-page btn-ghost" (click)="goBy(-5)" [disabled]="page<=1" title="-5">«5</button>
+             <button class="btn-page btn-ghost" (click)="prevPage()" [disabled]="page<=1" title="Anterior">‹</button>
+           </div>
+           <div class="pagination-center">
+             @for (p of paginationItems; track $index) {
+               @if (p === '…') {<span class="ellipsis">…</span>} @else {<button class="btn-page" [class.active]="p === page" (click)="onClickPage(p)">{{ p }}</button>}
+             }
+           </div>
+           <div class="pagination-right">
+             <button class="btn-page btn-ghost" (click)="nextPage()" [disabled]="page>=totalPages" title="Próxima">›</button>
+             <button class="btn-page btn-ghost" (click)="goBy(5)" [disabled]="page>=totalPages" title="+5">5»</button>
+             <button class="btn-page btn-ghost" (click)="goBy(10)" [disabled]="page>=totalPages" title="+10">10»</button>
+             <button class="btn-page btn-ghost" (click)="goToLastPage()" [disabled]="page>=totalPages" title="Última">»</button>
+           </div>
+           <div class="pagination-jump">
+             <label>
+               Ir para
+               <input type="number" min="1" [max]="totalPages" [(ngModel)]="jumpPage" (keyup.enter)="onJumpToPage()" />
+             </label>
+             <button class="btn-go" (click)="onJumpToPage()">Ir</button>
+           </div>
         </div>}
 
         @if (!loading && vendasFiltradas.length === 0) {<div class="vendas-vazias">

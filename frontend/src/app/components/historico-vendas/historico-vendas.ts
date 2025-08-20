@@ -51,6 +51,7 @@ export class HistoricoVendasComponent implements OnInit {
   // pagination (same model as Caixa)
   page = 1;
   pageSize: 20 | 50 | 100 = 20;
+  jumpPage: number | null = null;
   get total(): number { return this.vendasFiltradas.length; }
   get totalPages(): number {
     const totalItems = Number(this.total || 0);
@@ -86,6 +87,15 @@ export class HistoricoVendasComponent implements OnInit {
   goToFirstPage(): void { this.goToPage(1); }
   goToLastPage(): void { this.goToPage(this.totalPages); }
   setPageSize(n: 20 | 50 | 100) { this.pageSize = n; this.page = 1; }
+
+  onJumpToPage(): void {
+    if (this.jumpPage == null) return;
+    this.goToPage(this.jumpPage);
+  }
+
+  onClickPage(p: number | string): void {
+    if (typeof p === 'number') this.goToPage(p);
+  }
 
   get vendasPagina(): any[] {
     const start = (this.page - 1) * Number(this.pageSize || 1);
@@ -180,6 +190,7 @@ export class HistoricoVendasComponent implements OnInit {
       if (timeDiff !== 0) return timeDiff;
       return (b.id || 0) - (a.id || 0);
     });
+    this.page = 1;
   }
 
   limparFiltros(): void {

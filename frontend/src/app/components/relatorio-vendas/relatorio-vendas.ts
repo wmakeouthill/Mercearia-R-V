@@ -32,6 +32,77 @@ export class RelatorioVendasComponent implements OnInit {
   pageSize: 20 | 50 | 100 = 20;
   total = 0;
   hasMore = false;
+  jumpPage: number | null = null;
+
+  get totalPages(): number {
+    const totalItems = Number(this.total || 0);
+    const perPage = Number(this.pageSize || 1);
+    const pages = Math.ceil(totalItems / perPage);
+    return Math.max(1, pages || 1);
+  }
+
+  get paginationItems(): Array<number | string> {
+    const totalPages = this.totalPages;
+    const currentPage = this.page;
+    const siblings = 2; // quantidade de páginas vizinhas a exibir
+
+    const range: Array<number | string> = [];
+    if (totalPages <= 1) return [1];
+
+    range.push(1);
+
+    const leftSibling = Math.max(2, currentPage - siblings);
+    const rightSibling = Math.min(totalPages - 1, currentPage + siblings);
+
+    if (leftSibling > 2) {
+      range.push('…');
+    }
+
+    for (let i = leftSibling; i <= rightSibling; i++) {
+      range.push(i);
+    }
+
+    if (rightSibling < totalPages - 1) {
+      range.push('…');
+    }
+
+    if (totalPages > 1) {
+      range.push(totalPages);
+    }
+    return range;
+  }
+
+  goToPage(targetPage: number): void {
+    const page = Math.max(1, Math.min(this.totalPages, Math.floor(Number(targetPage) || 1)));
+    if (page === this.page) return;
+    this.page = page;
+    // update vendasFiltradas pagination state if needed
+  }
+
+  nextPage() { if (this.page < this.totalPages) this.goToPage(this.page + 1); }
+  prevPage() { if (this.page > 1) this.goToPage(this.page - 1); }
+  goBy(delta: number): void { this.goToPage(this.page + delta); }
+  goToFirstPage(): void { this.goToPage(1); }
+  goToLastPage(): void { this.goToPage(this.totalPages); }
+
+  onJumpToPage(): void {
+    if (this.jumpPage == null) return;
+    this.goToPage(this.jumpPage);
+  }
+
+  setPageSize(n: 20 | 50 | 100) {
+    this.pageSize = n;
+    this.page = 1;
+  }
+
+  get vendasPagina(): any[] {
+    const start = (this.page - 1) * Number(this.pageSize || 1);
+    return this.vendasFiltradas.slice(start, start + Number(this.pageSize || 1));
+  }
+
+  onClickPage(p: number | string): void {
+    if (typeof p === 'number') this.goToPage(p);
+  }
   expandedRows = new Set<string>();
   relatorioDiario: RelatorioVendas[] = [];
   relatorioMensal: RelatorioVendas[] = [];
@@ -771,6 +842,8 @@ export class RelatorioVendasComponent implements OnInit {
     this.vendasFiltradas = this.computeVendasFiltradas();
     this.calcularEstatisticas(this.vendasFiltradas);
     this.gerarRelatorios(this.vendasFiltradas);
+    this.total = this.vendasFiltradas.length;
+    this.page = 1;
     logger.info('RELATORIO_VENDAS', 'APLICAR_FILTROS', 'Filtros aplicados', {
       periodo: this.filtroPeriodo,
       data: this.filtroData,
