@@ -1,53 +1,58 @@
-<div class="modal-overlay" (click)="$event.stopPropagation()">
-  <div class="modal enviar-nota-modal">
+<div class="modal-overlay" (click)="onOverlayClick($event)">
+    <div class="modal enviar-nota-modal compact" (click)="$event.stopPropagation()">
     <h3>Enviar comprovante</h3>
-    <div class="modal-field" style="position:relative;">
-      <label for="modalCustomerSelect">Cliente (digite para filtrar / selecione)</label>
-      <input id="modalCustomerName" type="text" [(ngModel)]="modalCustomerName" class="input-modal"
-             (focus)="openClientAutocomplete()" (input)="onClientNameChange()" (blur)="hideClientDropdownDelayed()" (keydown)="onClientDropdownKeydown($event)" autocomplete="off" />
-      <ul *ngIf="showClientDropdown && clientResults.length > 0" class="autocomplete-list" (mousedown)="$event.preventDefault()">
-        <li *ngFor="let c of clientResults; let i = index" (click)="selectClientForModal(c)" [class.selected]="i === clientDropdownIndex">
-          <div class="ac-item-name">{{ c.nome }}</div>
-          <div class="ac-item-meta">{{ c.email || '—' }} · {{ c.telefone || '—' }}</div>
-        </li>
-      </ul>
-    </div>
-    <div class="modal-field">
-      <label for="modalCustomerEmail">Email (opcional)</label>
-      <input id="modalCustomerEmail" type="email" [(ngModel)]="modalCustomerEmail" class="input-modal">
-    </div>
-    <div class="modal-field">
-      <label for="modalCustomerPhone">Telefone (opcional)</label>
-      <input id="modalCustomerPhone" type="text" [(ngModel)]="modalCustomerPhone" class="input-modal" placeholder="Ex: 5511999998888">
-    </div>
 
-    <div class="modal-preview">
-      <div class="preview-area">
-        <div *ngIf="previewLoading">Carregando preview...</div>
-        <div *ngIf="!previewLoading">
-          <div class="pdf-viewer-area">
+    <div class="modal-body column">
+      <div class="form-block" style="width:100%; max-width:520px;">
+        <div class="form-row">
+          <label for="modalCustomerName" class="row-label"><span class="label-emoji">👤</span>Cliente:</label>
+          <div class="input-wrap"><input id="modalCustomerName" type="text" [(ngModel)]="modalCustomerName" class="input-modal" placeholder="Cliente da Silva"
+                 (focus)="openClientAutocomplete()" (input)="onClientNameChange()" (blur)="hideClientDropdownDelayed()" (keydown)="onClientDropdownKeydown($event)" autocomplete="off" /></div>
+        </div>
+        <ul *ngIf="showClientDropdown && clientResults.length > 0" class="autocomplete-list" (mousedown)="$event.preventDefault()">
+          <li *ngFor="let c of clientResults; let i = index" (click)="selectClientForModal(c)" [class.selected]="i === clientDropdownIndex">
+            <div class="ac-item-name">{{ c.nome }}</div>
+            <div class="ac-item-meta">{{ c.email || '—' }} · {{ c.telefone || '—' }}</div>
+          </li>
+        </ul>
+
+        <div class="form-row">
+          <label for="modalCustomerEmail" class="row-label"><span class="label-emoji">📧</span>Email:</label>
+          <div class="input-wrap"><input id="modalCustomerEmail" type="email" [(ngModel)]="modalCustomerEmail" class="input-modal" placeholder="Ex: Email@gmail.com (opcional)"></div>
+        </div>
+
+        <div class="form-row">
+          <label for="modalCustomerPhone" class="row-label"><span class="label-emoji">📱</span>Telefone:</label>
+          <div class="input-wrap"><input id="modalCustomerPhone" type="text" [(ngModel)]="modalCustomerPhone" class="input-modal" placeholder="Ex: 5521993945195 (opcional)"></div>
+        </div>
+      </div>
+
+      <div class="preview-block" style="width:100%; max-width:720px; display:flex; flex-direction:column; align-items:center; gap:8px;">
+        <div class="preview-note">É obrigatório algum dos meios cadastrados para realizar o envio.</div>
+        <div class="preview-area" style="width:100%; display:flex; justify-content:center;">
+          <div *ngIf="previewLoading" class="preview-loading">Carregando preview...</div>
+          <div *ngIf="!previewLoading">
             <div #pdfViewerContainer class="pdf-viewer-container"></div>
           </div>
         </div>
-      </div>
-    </div>
 
-    <div class="modal-actions-below">
-      <div class="preview-actions centered">
-        <button class="btn-secondary" (click)="closeModal()">Fechar</button>
-        <button class="btn-primary" (click)="downloadPreviewPdf()">⬇️ Baixar PDF</button>
-        <button class="btn-primary" (click)="sendNotaByEmailFromModal()">📧 Email</button>
-        <button class="btn-primary" (click)="sendNotaByWhatsappFromModal()">💬 WhatsApp</button>
-      </div>
-      <div class="pdf-tools centered">
-        <button class="btn-secondary" (click)="zoomOut()">➖</button>
-        <button class="btn-secondary" (click)="fitWidth()">↔️ Ajustar largura</button>
-        <span class="scale-label">{{ pdfScale | number:'1.1-1' }}x</span>
-        <button class="btn-secondary" (click)="zoomIn()">➕</button>
-        <button class="btn-secondary" (click)="printPdf()">🖨️ Imprimir</button>
+        <div class="pdf-tools centered">
+          <button class="btn-secondary" (click)="zoomOut()">➖</button>
+          <button class="btn-secondary" (click)="fitWidth()">↔️ Ajustar largura</button>
+          <span class="scale-label">{{ pdfScale | number:'1.1-1' }}x</span>
+          <button class="btn-secondary" (click)="zoomIn()">➕</button>
+          <button class="btn-secondary" (click)="printPdf()">🖨️</button>
+        </div>
+
+        <div class="preview-actions centered">
+          <button class="btn-secondary btn-small" (click)="closeModal()">Fechar</button>
+          <button class="btn-primary btn-small" (click)="downloadPreviewPdf()">⬇️ Baixar</button>
+          <button class="btn-primary btn-small" (click)="sendNotaByEmailFromModal()">📧 Email</button>
+          <button class="btn-primary btn-small" (click)="sendNotaByWhatsappFromModal()">💬 WhatsApp</button>
+        </div>
       </div>
     </div>
-  </div>
+    </div>
 </div>
 
 

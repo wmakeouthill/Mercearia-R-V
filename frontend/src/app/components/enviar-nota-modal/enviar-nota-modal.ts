@@ -55,6 +55,13 @@ export class EnviarNotaModalComponent implements OnChanges {
         private readonly renderer: Renderer2
     ) { }
 
+    onOverlayClick(event: MouseEvent): void {
+        // fecha quando clica fora do modal
+        if (event.target === event.currentTarget) {
+            this.closeModal();
+        }
+    }
+
     ngOnChanges(changes: SimpleChanges): void {
         if (changes['orderId']) {
             const id = changes['orderId'].currentValue as number | null;
@@ -115,6 +122,12 @@ export class EnviarNotaModalComponent implements OnChanges {
         this.pdfArrayBuffer = null;
         this.pdfDoc = null;
         this.renderedPages.clear();
+    }
+
+    saveModalAsCliente(): void {
+        const payload: any = { nome: this.modalCustomerName, email: this.modalCustomerEmail, telefone: this.modalCustomerPhone };
+        if (!payload.nome) { alert('Nome é obrigatório para salvar cliente'); return; }
+        this.apiService.createCliente(payload).subscribe({ next: () => { this.previewLoading = false; alert('Cliente criado com sucesso'); }, error: (e) => { console.error(e); alert('Erro ao criar cliente'); } });
     }
 
     closeModal(): void {

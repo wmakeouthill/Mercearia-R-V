@@ -16,14 +16,50 @@
   width: min(880px, 96%);
   max-height: 90vh;
   overflow: auto;
-  padding: 18px;
+  padding: 14px;
   box-shadow: 0 10px 30px rgba(0,0,0,0.2);
 }
-.modal-field { margin-bottom: 12px; }
+.modal.enviar-nota-modal.compact { padding: 12px; }
+.modal-body.column { display:flex; flex-direction:column; gap:12px; align-items:center; justify-content:center; }
+.form-block { display:flex; flex-direction:column; gap:8px; align-items:center; max-width:560px; }
+.row-fields { display:flex; gap:8px; width:100%; }
+.column-fields { display:flex; flex-direction:column; gap:8px; width:100%; }
+.preview-block { display:flex; flex-direction:column; align-items:center; gap:8px; }
+
+/* Ensure form and preview are centered inside modal */
+.form-block, .preview-block, .preview-area { margin-left: auto; margin-right: auto; }
+.form-block { width: 100%; box-sizing: border-box; }
+.row-fields > .modal-field { box-sizing: border-box; }
+
+/* Make buttons and tools full width and centered */
+.pdf-tools.centered, .preview-actions.centered { width: 100%; display:flex; justify-content:center; align-items:center; }
+.preview-actions.centered button, .pdf-tools.centered button { margin: 0 6px; }
+
+/* Ensure inputs take available width inside centered block */
+.form-block .input-modal { width: 360px; max-width: calc(100% - 32px); }
+.form-row { display:flex; gap:12px; align-items:center; width:100%; }
+.row-label { width:140px; text-align:left; font-weight:600; display:flex; align-items:center; gap:8px; }
 .input-modal { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #ccc; }
-.pdf-viewer-container { width: 100%; min-height: 240px; }
-.modal-actions-below { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
-.preview-actions.centered { display:flex; gap:8px; justify-content:center; }
-.pdf-tools.centered { display:flex; gap:8px; justify-content:center; align-items:center; margin-top:8px; }
+.input-label { font-weight:600; margin-bottom:6px; }
+.label-emoji { margin-right:8px; font-size:1.05rem; vertical-align:middle; }
+.label-text { vertical-align:middle; }
+
+/* shrink modal width to be more compact */
+.modal.enviar-nota-modal { width: min(640px, 92%); }
+.modal.enviar-nota-modal.compact { max-width: 640px; }
+
+/* small button style */
+.btn-small { padding: 6px 10px; font-size: 0.9rem; border-radius: 6px; }
+.pdf-tools.centered button { padding: 6px 8px; }
+.modal-field { margin-bottom: 8px; }
+.input-modal { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #ccc; }
+.autocomplete-list { position: absolute; z-index: 10001; background: #fff; border: 1px solid #ddd; width: calc(100% - 2px); max-height: 220px; overflow:auto; border-radius:6px; margin-top:4px; box-shadow:0 6px 18px rgba(0,0,0,0.08); }
+.autocomplete-list li { padding:8px; cursor:pointer; }
+.autocomplete-list li.selected { background:#f1f5f9; }
+.pdf-viewer-container { width: 100%; min-height: 200px; border-radius:6px; overflow:hidden; background:#f7f7f7; display:flex; align-items:center; justify-content:center; }
+.pdf-tools.centered { display:flex; gap:8px; align-items:center; justify-content:center; }
+.preview-actions.centered { display:flex; gap:8px; justify-content:center; margin-top:6px; }
+.preview-loading{ padding:24px; }
+
 
 
