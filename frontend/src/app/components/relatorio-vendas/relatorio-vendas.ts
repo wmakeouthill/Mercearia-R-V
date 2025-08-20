@@ -29,7 +29,7 @@ export class RelatorioVendasComponent implements OnInit {
   vendasFiltradas: any[] = [];
   // pagination for detailed vendas table
   page = 1;
-  pageSize: 20 | 50 | 100 = 20;
+  pageSize: 10 | 20 | 30 | 40 | 50 = 10;
   total = 0;
   hasMore = false;
   jumpPage: number | null = null;
@@ -90,8 +90,11 @@ export class RelatorioVendasComponent implements OnInit {
     this.goToPage(this.jumpPage);
   }
 
-  setPageSize(n: 20 | 50 | 100) {
-    this.pageSize = n;
+  setPageSize(n: number) {
+    const v = Number(n || 0);
+    const allowed = [10, 20, 30, 40, 50];
+    if (!allowed.includes(v)) return;
+    this.pageSize = v as 10 | 20 | 30 | 40 | 50;
     this.page = 1;
   }
 
@@ -102,6 +105,61 @@ export class RelatorioVendasComponent implements OnInit {
 
   onClickPage(p: number | string): void {
     if (typeof p === 'number') this.goToPage(p);
+  }
+  // pagination for relatorio diario (separate from detailed vendas pagination)
+  diarioPage = 1;
+  diarioPageSize = 12;
+  diarioJumpPage: number | null = null;
+
+  get diarioTotal(): number { return Array.isArray(this.relatorioDiario) ? this.relatorioDiario.length : 0; }
+
+  get diarioTotalPages(): number {
+    const totalItems = Number(this.diarioTotal || 0);
+    const perPage = Number(this.diarioPageSize || 1);
+    const pages = Math.ceil(totalItems / perPage);
+    return Math.max(1, pages || 1);
+  }
+
+  get diarioPaginationItems(): Array<number | string> {
+    const totalPages = this.diarioTotalPages;
+    const currentPage = this.diarioPage;
+    const siblings = 2;
+    const range: Array<number | string> = [];
+    if (totalPages <= 1) return [1];
+    range.push(1);
+    const leftSibling = Math.max(2, currentPage - siblings);
+    const rightSibling = Math.min(totalPages - 1, currentPage + siblings);
+    if (leftSibling > 2) range.push('…');
+    for (let i = leftSibling; i <= rightSibling; i++) range.push(i);
+    if (rightSibling < totalPages - 1) range.push('…');
+    if (totalPages > 1) range.push(totalPages);
+    return range;
+  }
+
+  diarioGoToPage(targetPage: number): void {
+    const page = Math.max(1, Math.min(this.diarioTotalPages, Math.floor(Number(targetPage) || 1)));
+    if (page === this.diarioPage) return;
+    this.diarioPage = page;
+  }
+
+  diarioNextPage() { if (this.diarioPage < this.diarioTotalPages) this.diarioGoToPage(this.diarioPage + 1); }
+  diarioPrevPage() { if (this.diarioPage > 1) this.diarioGoToPage(this.diarioPage - 1); }
+  diarioGoBy(delta: number): void { this.diarioGoToPage(this.diarioPage + delta); }
+  diarioGoToFirstPage(): void { this.diarioGoToPage(1); }
+  diarioGoToLastPage(): void { this.diarioGoToPage(this.diarioTotalPages); }
+
+  diarioOnJumpToPage(): void {
+    if (this.diarioJumpPage == null) return;
+    this.diarioGoToPage(this.diarioJumpPage);
+  }
+
+  get diarioVendasPagina(): any[] {
+    const start = (this.diarioPage - 1) * Number(this.diarioPageSize || 1);
+    return (this.relatorioDiario || []).slice(start, start + Number(this.diarioPageSize || 1));
+  }
+
+  diarioOnClickPage(p: number | string): void {
+    if (typeof p === 'number') this.diarioGoToPage(p);
   }
   expandedRows = new Set<string>();
   relatorioDiario: RelatorioVendas[] = [];
@@ -859,6 +917,9 @@ export class RelatorioVendasComponent implements OnInit {
     this.vendasFiltradas = this.computeVendasFiltradas();
     this.calcularEstatisticas(this.vendasFiltradas);
     this.gerarRelatorios(this.vendasFiltradas);
+    // reset page and pageSize to default (10) when clearing filters
+    this.page = 1;
+    this.setPageSize(10);
   }
 
   exportarRelatorio(): void {
