@@ -1,0 +1,81 @@
+.sessoes-caixa-container {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 16px;
+}
+.header { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px }
+.erro { color: #dc2626; }
+
+.tabela-wrapper {
+  width: 100%;
+  overflow-x: auto; /* permitir scroll horizontal sem vazar */
+  box-sizing: border-box;
+  padding: 0 12px; /* alinhar com o bloco branco */
+}
+
+/* permitir que a tabela encolha/expanda dentro do bloco branco, usar colunas flexíveis */
+.tabela-wrapper > .tabela-cabecalho,
+.tabela-wrapper > .item {
+  width: 100%;
+}
+
+.sessoes-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.sessoes-table thead th {
+  background: rgba(0, 46, 89, 0.03);
+  color: var(--primary-blue);
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 12px;
+  padding: 8px 12px;
+  border-bottom: 2px solid var(--light-gray);
+  white-space: nowrap;
+}
+
+.sessoes-table tbody td {
+  padding: 8px 12px;
+  border-bottom: 1px solid #f3f4f6;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sessoes-table col:nth-child(1) { width: 60px; }
+.sessoes-table col:nth-child(2) { width: 80px; }
+.sessoes-table col:nth-child(3) { min-width: 160px; }
+.sessoes-table col:nth-child(4) { min-width: 160px; }
+.sessoes-table col:nth-child(5) { min-width: 140px; }
+.sessoes-table col:nth-child(6) { min-width: 140px; }
+.sessoes-table col:nth-child(7) { width: 110px; }
+.sessoes-table col:nth-child(8) { width: 110px; }
+.sessoes-table col:nth-child(9) { width: 110px; }
+
+.sessoes-table td.center, .sessoes-table th.center { text-align: center; }
+.sessoes-table td.right, .sessoes-table th.right { text-align: right; }
+
+.tabela-cabecalho { font-weight: 700; border-bottom: 1px solid #e5e7eb; padding: 8px 0; }
+.tabela-cabecalho .th { white-space: nowrap; }
+.tabela-cabecalho .th, .item .col { white-space: nowrap; padding: 6px; overflow: hidden; text-overflow: ellipsis; }
+.item { padding: 8px 0; border-bottom: 1px solid #f3f4f6; }
+.item .col { text-align: left; }
+
+.col:nth-child(1), .th:nth-child(1) { text-align: center; }
+.col:nth-child(2), .th:nth-child(2) { text-align: center; }
+.col:nth-child(3), .th:nth-child(3) { text-align: left; }
+.col:nth-child(4), .th:nth-child(4) { text-align: left; }
+.col:nth-child(5), .th:nth-child(5) { text-align: left; }
+.col:nth-child(6), .th:nth-child(6) { text-align: left; }
+.col:nth-child(7), .th:nth-child(7) { text-align: center; } /* saldo inicial */
+.col:nth-child(8), .th:nth-child(8) { text-align: center; } /* saldo contado */
+.col:nth-child(9), .th:nth-child(9) { text-align: center; } /* variacao */
+
+/* botão voltar não quebra linha */
+.acoes-topo .btn-voltar { white-space: nowrap; }
+
+.paginacao { margin-top: 12px; display:flex; justify-content:space-between; align-items:center; gap:8px }
+.pagination-left, .pagination-right { display:flex; gap:6px; }
+
+

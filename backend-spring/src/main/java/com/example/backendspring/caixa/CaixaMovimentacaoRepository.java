@@ -19,4 +19,7 @@ public interface CaixaMovimentacaoRepository extends JpaRepository<CaixaMoviment
 
     @Query(value = "SELECT * FROM caixa_movimentacoes ORDER BY data_movimento DESC", nativeQuery = true)
     List<CaixaMovimentacao> findAllOrderByData();
+
+    @Query(value = "SELECT * FROM caixa_movimentacoes WHERE caixa_status_id IS NULL AND DATE(data_movimento) = :dia ORDER BY data_movimento DESC", nativeQuery = true)
+    List<CaixaMovimentacao> findByDiaUnassigned(@Param("dia") LocalDate dia);
 }

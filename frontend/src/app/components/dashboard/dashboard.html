@@ -223,5 +223,38 @@
                 </div>
             </div>}
         </div>
+
+        <!-- Modal de Abrir Caixa -->
+        @if (abrirModal) {<div class="modal-overlay" (click)="cancelarAbrir()">
+            <div class="modal" (click)="$event.stopPropagation()">
+                <h3>Abrir Caixa</h3>
+                <div class="modal-body">
+                    <label>Saldo inicial</label>
+                    <input type="number" step="0.01" [(ngModel)]="abrirSaldoInput" />
+                </div>
+                <div class="modal-actions">
+                    <button (click)="confirmarAbrir()" class="confirm-btn">Confirmar</button>
+                    <button (click)="cancelarAbrir()" class="cancel-btn">Cancelar</button>
+                </div>
+            </div>
+        </div>}
+
+        <!-- Modal de Fechar Caixa -->
+        @if (fecharModal) {<div class="modal-overlay" (click)="fecharModal = false">
+            <div class="modal" (click)="$event.stopPropagation()">
+                <h3>Fechar Caixa</h3>
+                <div class="modal-body">
+                    <label>Saldo contado</label>
+                    <input type="number" step="0.01" [(ngModel)]="fecharSaldoInput" />
+                    <label>Observações (opcional)</label>
+                    <textarea [(ngModel)]="fecharObservacoes"></textarea>
+                </div>
+                <div class="modal-actions">
+                    <button (click)="confirmarFecharModal()" class="confirm-btn">Confirmar</button>
+                    <button (click)="fecharModal = false" class="cancel-btn">Cancelar</button>
+                </div>
+            </div>
+        </div>}
+
     </main>
 </div>

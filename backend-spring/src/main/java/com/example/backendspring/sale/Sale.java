@@ -37,4 +37,9 @@ public class Sale {
     @ManyToOne(optional = true)
     @JoinColumn(name = "cliente_id")
     private Client cliente;
+
+    // Operador que registrou a venda (opcional)
+    @ManyToOne(optional = true)
+    @JoinColumn(name = "operador_id")
+    private com.example.backendspring.user.User operador;
 }

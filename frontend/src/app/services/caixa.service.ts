@@ -88,6 +88,15 @@ export class CaixaService {
     return this.makeRequest('LISTAR_MOVIMENTACOES', () => this.http.get<any>(url));
   }
 
+  listarSessoes(params: { page?: number; size?: number } = {}): Observable<{ items: any[]; total: number; hasNext: boolean; page: number; size: number }> {
+    const queryParams: string[] = [];
+    if (params.page != null) queryParams.push(`page=${params.page}`);
+    if (params.size != null) queryParams.push(`size=${params.size}`);
+    const query = queryParams.length ? `?${queryParams.join('&')}` : '';
+    const url = `${this.baseUrl}/caixa/sessoes${query}`;
+    return this.makeRequest('LISTAR_SESSOES', () => this.http.get<any>(url));
+  }
+
   adicionarMovimentacao(mov: { tipo: 'entrada' | 'retirada'; valor: number; descricao?: string }): Observable<{ message: string }> {
     return this.makeRequest('ADICIONAR_MOVIMENTACAO', () => this.http.post<{ message: string }>(`${this.baseUrl}/caixa/movimentacoes`, mov)).pipe(
       tap(() => {
@@ -104,9 +113,10 @@ export class CaixaService {
   /**
    * Abre o caixa
    */
-  abrirCaixa(): Observable<{ message: string }> {
+  abrirCaixa(payload: { saldo_inicial: number; terminal_id?: string }): Observable<{ message: string }> {
+    // Abrir caixa agora aceita saldoInicial e terminalId no corpo
     return this.makeRequest('ABRIR_CAIXA',
-      () => this.http.post<{ message: string }>(`${this.baseUrl}/caixa/abrir`, {})
+      () => this.http.post<{ message: string }>(`${this.baseUrl}/caixa/abrir`, { saldo_inicial: payload.saldo_inicial, terminal_id: payload.terminal_id })
     ).pipe(
       tap(() => {
         this.loadStatusCaixa(); // Recarregar status após abrir
@@ -118,9 +128,10 @@ export class CaixaService {
   /**
    * Fecha o caixa
    */
-  fecharCaixa(): Observable<{ message: string }> {
+  fecharCaixa(payload: { saldo_contado: number; observacoes?: string }): Observable<{ message: string }> {
     return this.makeRequest('FECHAR_CAIXA',
-      () => this.http.post<{ message: string }>(`${this.baseUrl}/caixa/fechar`, {})
+      // backend espera campo camelCase 'saldoContado' no corpo (FecharRequest.saldoContado)
+      () => this.http.post<{ message: string }>(`${this.baseUrl}/caixa/fechar`, { saldoContado: payload.saldo_contado, observacoes: payload.observacoes })
     ).pipe(
       tap(() => {
         this.loadStatusCaixa(); // Recarregar status após fechar
@@ -177,7 +188,7 @@ export class CaixaService {
 
     // Se chegou na hora de abrir e está fechado
     if (horaAtual === horaAbertura && !status.aberto) {
-      this.abrirCaixa().subscribe({
+      this.abrirCaixa({ saldo_inicial: status?.saldo_inicial ?? 0 }).subscribe({
         next: () => {
           logger.info('CAIXA_SERVICE', 'ABERTURA_AUTOMATICA', 'Caixa aberto automaticamente');
         },
@@ -189,7 +200,7 @@ export class CaixaService {
 
     // Se chegou na hora de fechar e está aberto
     if (horaAtual === horaFechamento && status.aberto) {
-      this.fecharCaixa().subscribe({
+      this.fecharCaixa({ saldo_contado: status?.saldo_esperado ?? 0 }).subscribe({
         next: () => {
           logger.info('CAIXA_SERVICE', 'FECHAMENTO_AUTOMATICO', 'Caixa fechado automaticamente');
         },

@@ -134,4 +134,11 @@ export interface StatusCaixa {
     atualizado_em?: string;
     aberto_por_username?: string;
     fechado_por_username?: string;
+    // campos de sessão/conciliacao
+    saldo_inicial?: number;
+    saldo_esperado?: number;
+    saldo_contado?: number;
+    variacao?: number;
+    terminal_id?: string;
+    observacoes_fechamento?: string;
 }

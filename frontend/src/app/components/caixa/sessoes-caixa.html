@@ -1,0 +1,74 @@
+<div class="caixa-container">
+  <div class="top-bar">
+    <div class="form-mov">
+      <h3>Registro de Sessões</h3>
+      <div class="acoes-form"></div>
+    </div>
+    <div class="acoes-topo">
+      <button class="btn-voltar btn-voltar-compact" (click)="voltar()">←&nbsp;Voltar ao Dashboard</button>
+    </div>
+  </div>
+
+  <div class="lista">
+    <h3>Sessões</h3>
+    <div *ngIf="loading">Carregando...</div>
+    <div *ngIf="error" class="erro">{{ error }}</div>
+    <div *ngIf="items && items.length">
+      <div class="tabela-wrapper">
+        <table class="sessoes-table">
+          <colgroup>
+            <col style="width:5%" />
+            <col style="width:5%" />
+            <col style="width:22%" />
+            <col style="width:15%" />
+            <col style="width:15%" />
+            <col style="width:15%" />
+            <col style="width:10%" />
+            <col style="width:7.5%" />
+            <col style="width:5.5%" />
+          </colgroup>
+          <thead>
+            <tr>
+              <th class="center">ID</th>
+              <th class="center">Aberto</th>
+              <th>Abertura</th>
+              <th>Usuário (Abertura)</th>
+              <th>Fechamento</th>
+              <th>Usuário (Fechamento)</th>
+              <th class="right">Saldo Inicial</th>
+              <th class="right">Saldo Contado</th>
+              <th class="right">Variação</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let it of items">
+              <td class="center">{{ it.id }}</td>
+              <td class="center">{{ it.aberto ? 'Sim' : 'Não' }}</td>
+              <td>{{ it.data_abertura | date:'dd/MM/yyyy HH:mm' }}</td>
+              <td>{{ it.aberto_por || '-' }}</td>
+              <td>{{ it.data_fechamento ? (it.data_fechamento | date:'dd/MM/yyyy HH:mm') : '-' }}</td>
+              <td>{{ it.fechado_por || '-' }}</td>
+              <td class="right">R$ {{ it.saldo_inicial | number:'1.2-2' }}</td>
+              <td class="right">R$ {{ it.saldo_contado | number:'1.2-2' }}</td>
+              <td class="right">R$ {{ it.variacao | number:'1.2-2' }}</td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="paginacao">
+          <div class="pagination-left">
+            <button class="btn-page btn-ghost" (click)="loadPage(1)" [disabled]="page<=1">«</button>
+            <button class="btn-page btn-ghost" (click)="loadPage(page<=1 ? 1 : page-1)" [disabled]="page<=1">‹</button>
+          </div>
+          <div class="pagination-center">Página {{ page }}</div>
+          <div class="pagination-right">
+            <button class="btn-page btn-ghost" (click)="loadPage(page+1)" [disabled]="page>=lastPage">›</button>
+            <button class="btn-page btn-ghost" (click)="loadPage(lastPage)" [disabled]="page>=lastPage">»</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div *ngIf="!items || items.length===0">Nenhuma sessão encontrada</div>
+  </div>
+</div>
+
+

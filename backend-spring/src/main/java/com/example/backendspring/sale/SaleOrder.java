@@ -48,6 +48,11 @@ public class SaleOrder {
     @JoinColumn(name = "cliente_id")
     private com.example.backendspring.client.Client cliente;
 
+    // Usuario/operador que realizou a venda (opcional)
+    @ManyToOne(optional = true)
+    @JoinColumn(name = "operador_id")
+    private com.example.backendspring.user.User operador;
+
     @OneToMany(mappedBy = "venda", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<SaleItem> itens = new ArrayList<>();
@@ -55,4 +60,9 @@ public class SaleOrder {
     @OneToMany(mappedBy = "venda", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<SalePayment> pagamentos = new ArrayList<>();
+
+    // Vinculo opcional à sessao/estado do caixa em que a venda foi registrada
+    @ManyToOne(optional = true)
+    @JoinColumn(name = "caixa_status_id")
+    private com.example.backendspring.caixa.CaixaStatus caixaStatus;
 }

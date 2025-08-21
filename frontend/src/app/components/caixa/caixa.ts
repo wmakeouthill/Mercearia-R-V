@@ -48,7 +48,7 @@ export class CaixaComponent implements OnInit {
   constructor(
     private readonly api: ApiService,
     private readonly caixaService: CaixaService,
-    private readonly router: Router,
+    public readonly router: Router,
   ) { }
 
   ngOnInit(): void {
@@ -58,6 +58,8 @@ export class CaixaComponent implements OnInit {
   voltarAoDashboard(): void {
     this.router.navigate(['/dashboard']);
   }
+
+  // modais de abrir/fechar removidos: operadores usam botões em outros pontos (ex: dashboard/ponto-venda)
 
   onChangeData(): void { this.page = 1; this.loadResumoEMovimentacoes(); }
   onChangeMes(): void { this.page = 1; this.loadResumoEMovimentacoes(); }
@@ -98,7 +100,12 @@ export class CaixaComponent implements OnInit {
         this.resumoVendasDia = resumoVendas;
         this.resumo = resumoMovs as any;
         const payload = movimentacoes as any;
-        const lista = payload?.items || [];
+        let lista = payload?.items || [];
+        // garantir que o campo usuario seja preenchido com operador quando disponível
+        lista = lista.map((m: any) => ({
+          ...m,
+          usuario: m.usuario || (m.operador ? (m.operador.username || m.operador) : null)
+        }));
         // Consolidar vendas multi (que vêm uma linha por método do backend) em uma única linha por venda
         this.movimentacoes = this.consolidarVendasMulti(lista);
         this.hasMore = !!payload?.hasNext;
@@ -405,7 +412,7 @@ export class CaixaComponent implements OnInit {
           breakdownStr = item.descricao.substring(lastSep + 3).trim();
         }
         const badgesRaw = breakdownStr.split('|').map((s: string) => s.trim()).filter(Boolean);
-        const copia = { ...item, valor: valorTotal, metodo_pagamento: 'multi', pagamentos_badges: badgesRaw };
+        const copia = { ...item, valor: valorTotal, metodo_pagamento: 'multi', pagamentos_badges: badgesRaw, usuario: item.usuario || (item.operador ? item.operador.username : null) };
         resultado.push(copia);
       } else {
         resultado.push(item);

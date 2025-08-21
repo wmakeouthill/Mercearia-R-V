@@ -191,6 +191,46 @@ public class CaixaController {
         }
     }
 
+    @GetMapping("/sessoes")
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    public ResponseEntity<java.util.Map<String, Object>> listarSessoes(
+            @RequestParam(value = "page", required = false) Integer page,
+            @RequestParam(value = "size", required = false) Integer size) {
+        try {
+            int pageNum = (page == null || page < 1) ? 1 : page;
+            int pageSize = (size == null || size < 1) ? 20 : size;
+            var pageable = org.springframework.data.domain.PageRequest.of(pageNum - 1, pageSize,
+                    org.springframework.data.domain.Sort.by("id").descending());
+            var pg = caixaStatusRepository.findAll(pageable);
+            var items = pg.getContent().stream().map(cs -> {
+                java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
+                m.put("id", cs.getId());
+                m.put("aberto", Boolean.TRUE.equals(cs.getAberto()));
+                m.put("aberto_por", cs.getAbertoPor() != null ? cs.getAbertoPor().getUsername() : null);
+                m.put("fechado_por", cs.getFechadoPor() != null ? cs.getFechadoPor().getUsername() : null);
+                m.put("data_abertura", cs.getDataAbertura());
+                m.put("data_fechamento", cs.getDataFechamento());
+                m.put("saldo_inicial", cs.getSaldoInicial());
+                m.put("saldo_esperado", cs.getSaldoEsperado());
+                m.put("saldo_contado", cs.getSaldoContado());
+                m.put("variacao", cs.getVariacao());
+                m.put("terminal_id", cs.getTerminalId());
+                m.put("observacoes", cs.getObservacoesFechamento());
+                return m;
+            }).toList();
+            java.util.Map<String, Object> body = new java.util.LinkedHashMap<>();
+            body.put("items", items);
+            body.put("total", pg.getTotalElements());
+            body.put("hasNext", pg.hasNext());
+            body.put("page", pageNum);
+            body.put("size", pageSize);
+            return ResponseEntity.ok(body);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(java.util.Map.of("items", java.util.List.of(), "total", 0,
+                    "hasNext", false, "page", 1, "size", 20));
+        }
+    }
+
     private java.util.List<java.util.Map<String, Object>> buildManualMovRows(java.time.LocalDate dia,
             java.time.LocalDate inicio, java.time.LocalDate fim) {
         java.util.List<CaixaMovimentacao> base;
@@ -207,7 +247,18 @@ public class CaixaController {
             row.put("tipo", m.getTipo());
             row.put(KEY_VALOR, m.getValor());
             row.put(KEY_DESCRICAO, m.getDescricao());
-            row.put(KEY_USUARIO, m.getUsuario() != null ? m.getUsuario().getUsername() : null);
+            // Priorizar operador (quando mov gerada por venda), senão usuario da
+            // movimentação
+            String usuarioNome = null;
+            try {
+                if (m.getOperador() != null)
+                    usuarioNome = m.getOperador().getUsername();
+            } catch (Exception ignored) {
+            }
+            if (usuarioNome == null && m.getUsuario() != null) {
+                usuarioNome = m.getUsuario().getUsername();
+            }
+            row.put(KEY_USUARIO, usuarioNome);
             row.put(KEY_DATA_MOVIMENTO, m.getDataMovimento());
             return row;
         }).toList();
@@ -233,7 +284,17 @@ public class CaixaController {
                     " x" + v.getQuantidadeVendida() + " (" + v.getMetodoPagamento() + ")");
             row.put("produto_nome", v.getProduto() != null ? v.getProduto().getNome() : null);
             row.put(KEY_METODO_PAGAMENTO, v.getMetodoPagamento());
-            row.put(KEY_USUARIO, null);
+            // tentar mostrar operador/usuário associado à venda
+            // mostrar operador se presente
+            try {
+                if (v.getOperador() != null) {
+                    row.put(KEY_USUARIO, v.getOperador().getUsername());
+                } else {
+                    row.put(KEY_USUARIO, null);
+                }
+            } catch (Exception e) {
+                row.put(KEY_USUARIO, null);
+            }
             row.put(KEY_DATA_MOVIMENTO, v.getDataVenda());
             return row;
         }).toList();
@@ -277,7 +338,8 @@ public class CaixaController {
             row.put("produto_nome",
                     vo.getItens().isEmpty() ? null : vo.getItens().get(0).getProduto().getNome());
             row.put(KEY_METODO_PAGAMENTO, pg.getMetodo());
-            row.put(KEY_USUARIO, null);
+            // operador da venda (se disponível)
+            row.put(KEY_USUARIO, vo.getOperador() != null ? vo.getOperador().getUsername() : null);
             row.put(KEY_DATA_MOVIMENTO, vo.getDataVenda());
             return row;
         })).toList();
@@ -343,16 +405,33 @@ public class CaixaController {
                 return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, "Valor deve ser maior que zero"));
             }
 
+            // Se o caixa estiver fechado, apenas administradores (role == 'admin') podem
+            // registrar
+            var statusAtual = caixaStatusRepository.findTopByOrderByIdDesc().orElse(null);
+            if (statusAtual == null || !Boolean.TRUE.equals(statusAtual.getAberto())) {
+                var u = userRepository.findById(userId).orElse(null);
+                if (u == null || u.getRole() == null || !u.getRole().equals("admin")) {
+                    return ResponseEntity.status(403)
+                            .body(Map.of(KEY_ERROR, "Caixa fechado. Operação restrita ao administrador."));
+                }
+            }
+
             var agora = java.time.OffsetDateTime.now();
-            CaixaMovimentacao mov = CaixaMovimentacao.builder()
+            // associar à sessão atual do caixa, se existir
+            var statusAtualLocal = caixaStatusRepository.findTopByOrderByIdDesc().orElse(null);
+            CaixaMovimentacao.CaixaMovimentacaoBuilder movBuilder = CaixaMovimentacao.builder()
                     .tipo(tipo)
                     .valor(req.getValor())
                     .descricao(req.getDescricao())
                     .usuario(userRepository.findById(userId).orElse(null))
                     .dataMovimento(agora)
                     .criadoEm(agora)
-                    .atualizadoEm(agora)
-                    .build();
+                    .atualizadoEm(agora);
+            if (statusAtualLocal != null)
+                movBuilder.caixaStatus(statusAtualLocal);
+            if (req.getMotivo() != null)
+                movBuilder.motivo(req.getMotivo());
+            CaixaMovimentacao mov = movBuilder.build();
             movimentacaoRepository.save(mov);
             return ResponseEntity.ok(Map.of(KEY_MESSAGE, "Movimentação registrada com sucesso"));
         } catch (Exception e) {
@@ -363,49 +442,168 @@ public class CaixaController {
 
     @PostMapping("/abrir")
     @Transactional
-    public ResponseEntity<Map<String, Object>> abrir(@RequestAttribute(name = "userId", required = false) Long userId) {
+    public ResponseEntity<Map<String, Object>> abrir(@RequestAttribute(name = "userId", required = false) Long userId,
+            @RequestBody(required = false) java.util.Map<String, Object> payload) {
         if (userId == null)
             return ResponseEntity.status(401).body(Map.of(KEY_ERROR, MSG_NAO_AUTENTICADO));
-        var statusOpt = caixaStatusRepository.findTopByOrderByIdDesc();
-        if (statusOpt.isPresent() && Boolean.TRUE.equals(statusOpt.get().getAberto())) {
+
+        // apenas usuários que podem controlar caixa (operador) ou admin podem abrir
+        var opener = userRepository.findById(userId).orElse(null);
+        if (opener == null || (!Boolean.TRUE.equals(opener.getPodeControlarCaixa())
+                && (opener.getRole() == null || !opener.getRole().equals("admin")))) {
+            return ResponseEntity.status(403).body(Map.of(KEY_ERROR, "Permissão negada para abrir o caixa"));
+        }
+
+        // Verificar se já existe sessão aberta no banco (fonte da verdade)
+        var abertoOpt = caixaStatusRepository.findTopByAbertoTrueOrderByIdDesc();
+        if (abertoOpt.isPresent()) {
             return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, "Caixa já está aberto"));
         }
         var agora = OffsetDateTime.now();
-        CaixaStatus status = statusOpt.orElseGet(CaixaStatus::new);
+        // Sempre criar um novo registro de sessão ao abrir o caixa para não
+        // sobrescrever
+        // sessões anteriores. Copiar apenas configurações relevantes (horários) se
+        // existirem.
+        CaixaStatus status = new CaixaStatus();
+        var lastOpt = caixaStatusRepository.findTopByOrderByIdDesc();
+        if (lastOpt.isPresent()) {
+            var prev = lastOpt.get();
+            status.setHorarioAberturaObrigatorio(prev.getHorarioAberturaObrigatorio());
+            status.setHorarioFechamentoObrigatorio(prev.getHorarioFechamentoObrigatorio());
+        }
         status.setAberto(true);
-        status.setAbertoPor(userRepository.findById(userId).orElse(null));
+        status.setAbertoPor(opener);
         status.setDataAbertura(agora);
         status.setFechadoPor(null);
         status.setDataFechamento(null);
         status.setAtualizadoEm(agora);
-        if (status.getId() == null)
-            status.setCriadoEm(agora);
-        caixaStatusRepository.save(status);
-        return ResponseEntity.ok(Map.of(KEY_MESSAGE, "Caixa aberto com sucesso"));
+        status.setCriadoEm(agora);
+
+        // Ler payload JSON e exigir saldo_inicial
+        if (payload == null || !payload.containsKey("saldo_inicial") || payload.get("saldo_inicial") == null) {
+            return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, "saldo_inicial é obrigatório ao abrir o caixa"));
+        }
+        try {
+            Object v = payload.get("saldo_inicial");
+            if (v instanceof Number)
+                status.setSaldoInicial(((Number) v).doubleValue());
+            else
+                status.setSaldoInicial(Double.parseDouble(v.toString()));
+            if (payload.containsKey("terminal_id") && payload.get("terminal_id") != null) {
+                status.setTerminalId(payload.get("terminal_id").toString());
+            }
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, "saldo_inicial inválido"));
+        }
+
+        try {
+            caixaStatusRepository.save(status);
+        } catch (org.springframework.orm.ObjectOptimisticLockingFailureException e) {
+            return ResponseEntity.status(409)
+                    .body(Map.of(KEY_ERROR, "Conflito ao atualizar sessão do caixa. Tente novamente."));
+        }
+        // retornar status completo para o frontend atualizar de forma consistente
+        java.util.Map<String, Object> resp = new java.util.LinkedHashMap<>();
+        resp.put("id", status.getId());
+        resp.put("aberto", Boolean.TRUE.equals(status.getAberto()));
+        resp.put("data_abertura", status.getDataAbertura());
+        resp.put("aberto_por", status.getAbertoPor() != null ? status.getAbertoPor().getId() : null);
+        resp.put("aberto_por_username", status.getAbertoPor() != null ? status.getAbertoPor().getUsername() : null);
+        resp.put("saldo_inicial", status.getSaldoInicial());
+        resp.put("terminal_id", status.getTerminalId());
+        return ResponseEntity.ok(resp);
     }
 
     @PostMapping("/fechar")
     @Transactional
     public ResponseEntity<Map<String, Object>> fechar(
-            @RequestAttribute(name = "userId", required = false) Long userId) {
+            @RequestAttribute(name = "userId", required = false) Long userId,
+            @RequestBody(required = false) FecharRequest body) {
         if (userId == null)
             return ResponseEntity.status(401).body(Map.of(KEY_ERROR, MSG_NAO_AUTENTICADO));
-        var status = caixaStatusRepository.findTopByOrderByIdDesc().orElse(null);
-        if (status == null || !Boolean.TRUE.equals(status.getAberto())) {
-            return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, "Caixa já está fechado"));
+        // verificar permissões: apenas operador autorizado (podeControlarCaixa) ou
+        // admin podem fechar
+        var closer = userRepository.findById(userId).orElse(null);
+        if (closer == null || (!Boolean.TRUE.equals(closer.getPodeControlarCaixa())
+                && (closer.getRole() == null || !closer.getRole().equals("admin")))) {
+            return ResponseEntity.status(403).body(Map.of(KEY_ERROR, "Permissão negada para fechar o caixa"));
+        }
+
+        // localizar sessão a ser fechada: preferir sessionId fornecido, caso contrário
+        // buscar a sessão aberta mais recente. Usar métodos com lock pessimista.
+        CaixaStatus status = null;
+        if (body != null && body.getSessionId() != null) {
+            status = caixaStatusRepository.findByIdForUpdate(body.getSessionId()).orElse(null);
+            if (status == null) {
+                return ResponseEntity.status(404).body(Map.of(KEY_ERROR, "Sessão não encontrada"));
+            }
+            if (!Boolean.TRUE.equals(status.getAberto())) {
+                return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, "Sessão já está fechada"));
+            }
+        } else {
+            status = caixaStatusRepository.findTopByAbertoTrueOrderByIdDesc().orElse(null);
+            if (status == null || !Boolean.TRUE.equals(status.getAberto())) {
+                return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, "Caixa já está fechado"));
+            }
         }
         var agora = OffsetDateTime.now();
+
+        // calcular saldo esperado: vendas do periodo + entradas - retiradas
+        try {
+            // para simplicidade, calcular saldo esperado como saldo do dia atual
+            var hoje = agora.toLocalDate();
+            Double saldoMov = movimentacaoRepository.saldoDoDia(hoje);
+            double vendas = 0.0;
+            try {
+                // somaReceitaByDia retorna double
+                vendas = saleRepository.somaReceitaByDia(hoje);
+            } catch (Exception ignored) {
+            }
+            double esperado = (saldoMov != null ? saldoMov : 0.0) + vendas;
+            status.setSaldoEsperado(esperado);
+        } catch (Exception ignored) {
+        }
+
+        // validar body com saldoContado
+        if (body == null || body.getSaldoContado() == null) {
+            return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, "saldo_contado é obrigatório ao fechar o caixa"));
+        }
+        status.setSaldoContado(body.getSaldoContado());
+        if (status.getSaldoEsperado() != null) {
+            status.setVariacao(status.getSaldoContado() - status.getSaldoEsperado());
+        }
+        if (body.getObservacoes() != null)
+            status.setObservacoesFechamento(body.getObservacoes());
+
         status.setAberto(false);
         status.setFechadoPor(userRepository.findById(userId).orElse(null));
         status.setDataFechamento(agora);
         status.setAtualizadoEm(agora);
         caixaStatusRepository.save(status);
-        return ResponseEntity.ok(Map.of(KEY_MESSAGE, "Caixa fechado com sucesso"));
+        java.util.Map<String, Object> resp = new java.util.LinkedHashMap<>();
+        resp.put("id", status.getId());
+        resp.put("aberto", Boolean.TRUE.equals(status.getAberto()));
+        resp.put("data_fechamento", status.getDataFechamento());
+        resp.put("fechado_por", status.getFechadoPor() != null ? status.getFechadoPor().getId() : null);
+        resp.put("fechado_por_username", status.getFechadoPor() != null ? status.getFechadoPor().getUsername() : null);
+        resp.put("saldo_esperado", status.getSaldoEsperado());
+        resp.put("saldo_contado", status.getSaldoContado());
+        resp.put("variacao", status.getVariacao());
+        resp.put("observacoes", status.getObservacoesFechamento());
+        return ResponseEntity.ok(resp);
     }
 
     @PutMapping("/horarios")
     @Transactional
-    public ResponseEntity<Map<String, Object>> configurar(@RequestBody HorariosRequest req) {
+    public ResponseEntity<Map<String, Object>> configurar(
+            @RequestAttribute(name = "userId", required = false) Long userId,
+            @RequestBody HorariosRequest req) {
+        if (userId == null)
+            return ResponseEntity.status(401).body(Map.of(KEY_ERROR, MSG_NAO_AUTENTICADO));
+        var u = userRepository.findById(userId).orElse(null);
+        if (u == null || u.getRole() == null || !u.getRole().equals("admin")) {
+            return ResponseEntity.status(403).body(Map.of(KEY_ERROR, "Permissão negada"));
+        }
         var statusOpt = caixaStatusRepository.findTopByOrderByIdDesc();
         var agora = OffsetDateTime.now();
         CaixaStatus status = statusOpt.orElseGet(CaixaStatus::new);
@@ -424,10 +622,18 @@ public class CaixaController {
         private String horarioFechamentoObrigatorio;
     }
 
+    @Data
+    public static class FecharRequest {
+        private Double saldoContado;
+        private Long sessionId; // opcional: fechar sessão específica
+        private String observacoes;
+    }
+
     @lombok.Data
     public static class MovimentacaoRequest {
         private String tipo; // entrada | retirada
         private Double valor;
         private String descricao;
+        private String motivo;
     }
 }

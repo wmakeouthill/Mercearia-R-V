@@ -192,3 +192,154 @@ databaseChangeLog:
             constraintName: fk_venda_cabecalho_clientes
             referencedTableName: clientes
             referencedColumnNames: id
+
+  - changeSet:
+      id: 009-add-caixa-fields-and-fks
+      author: system
+      preConditions:
+        - onFail: MARK_RAN
+      changes:
+        - addColumn:
+            tableName: status_caixa
+            columns:
+              - column:
+                  name: saldo_inicial
+                  type: DOUBLE PRECISION
+              - column:
+                  name: saldo_esperado
+                  type: DOUBLE PRECISION
+              - column:
+                  name: saldo_contado
+                  type: DOUBLE PRECISION
+              - column:
+                  name: variacao
+                  type: DOUBLE PRECISION
+              - column:
+                  name: terminal_id
+                  type: VARCHAR(100)
+              - column:
+                  name: observacoes_fechamento
+                  type: TEXT
+
+        - addColumn:
+            tableName: caixa_movimentacoes
+            columns:
+              - column:
+                  name: caixa_status_id
+                  type: BIGINT
+              - column:
+                  name: motivo
+                  type: VARCHAR(255)
+              - column:
+                  name: aprovado_por
+                  type: BIGINT
+
+        - addColumn:
+            tableName: venda_cabecalho
+            columns:
+              - column:
+                  name: caixa_status_id
+                  type: BIGINT
+
+        - addColumn:
+            tableName: venda_pagamentos
+            columns:
+              - column:
+                  name: caixa_status_id
+                  type: BIGINT
+
+        - addForeignKeyConstraint:
+            baseTableName: caixa_movimentacoes
+            baseColumnNames: caixa_status_id
+            constraintName: fk_caixa_movimentacoes_status_caixa
+            referencedTableName: status_caixa
+            referencedColumnNames: id
+
+        - addForeignKeyConstraint:
+            baseTableName: caixa_movimentacoes
+            baseColumnNames: aprovado_por
+            constraintName: fk_caixa_movimentacoes_aprovado_por_usuarios
+            referencedTableName: usuarios
+            referencedColumnNames: id
+
+        - addForeignKeyConstraint:
+            baseTableName: venda_cabecalho
+            baseColumnNames: caixa_status_id
+            constraintName: fk_venda_cabecalho_status_caixa
+            referencedTableName: status_caixa
+            referencedColumnNames: id
+
+        - addForeignKeyConstraint:
+            baseTableName: venda_pagamentos
+            baseColumnNames: caixa_status_id
+            constraintName: fk_venda_pagamentos_status_caixa
+            referencedTableName: status_caixa
+            referencedColumnNames: id
+
+  - changeSet:
+      id: 010-add-caixa-unique-index-and-version
+      author: system
+      preConditions:
+        - onFail: MARK_RAN
+      changes:
+        - sql:
+            sql: "ALTER TABLE status_caixa ADD COLUMN IF NOT EXISTS version BIGINT;"
+        - sql:
+            sql: "CREATE UNIQUE INDEX IF NOT EXISTS ux_status_caixa_terminal_aberto ON status_caixa (terminal_id) WHERE aberto = true;"
+
+  - changeSet:
+      id: 011-add-operador-to-venda_cabecalho
+      author: system
+      preConditions:
+        - onFail: MARK_RAN
+      changes:
+        - addColumn:
+            tableName: venda_cabecalho
+            columns:
+              - column:
+                  name: operador_id
+                  type: BIGINT
+        - addForeignKeyConstraint:
+            baseTableName: venda_cabecalho
+            baseColumnNames: operador_id
+            constraintName: fk_venda_cabecalho_operador_usuarios
+            referencedTableName: usuarios
+            referencedColumnNames: id
+
+  - changeSet:
+      id: 012-add-operador-to-caixa_movimentacoes
+      author: system
+      preConditions:
+        - onFail: MARK_RAN
+      changes:
+        - addColumn:
+            tableName: caixa_movimentacoes
+            columns:
+              - column:
+                  name: operador_id
+                  type: BIGINT
+        - addForeignKeyConstraint:
+            baseTableName: caixa_movimentacoes
+            baseColumnNames: operador_id
+            constraintName: fk_caixa_movimentacoes_operador_usuarios
+            referencedTableName: usuarios
+            referencedColumnNames: id
+
+  - changeSet:
+      id: 013-add-operador-to-vendas
+      author: system
+      preConditions:
+        - onFail: MARK_RAN
+      changes:
+        - addColumn:
+            tableName: vendas
+            columns:
+              - column:
+                  name: operador_id
+                  type: BIGINT
+        - addForeignKeyConstraint:
+            baseTableName: vendas
+            baseColumnNames: operador_id
+            constraintName: fk_vendas_operador_usuarios
+            referencedTableName: usuarios
+            referencedColumnNames: id

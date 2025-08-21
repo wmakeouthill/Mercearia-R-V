@@ -100,14 +100,29 @@ export class DashboardComponent implements OnInit, OnDestroy {
     });
   }
 
+  // modal state for abrir/fechar
+  abrirModal = false;
+  fecharModal = false;
+  abrirSaldoInput: number | null = null;
+  fecharSaldoInput: number | null = null;
+  fecharObservacoes = '';
+
   abrirCaixa(): void {
+    this.error = '';
+    this.abrirSaldoInput = null;
+    this.loading = false;
+    this.abrirModal = true;
+  }
+
+  confirmarAbrir(): void {
+    if (this.abrirSaldoInput == null) { this.error = 'Informe saldo inicial'; return; }
     this.loading = true;
     this.error = '';
-
-    this.caixaService.abrirCaixa().subscribe({
+    this.caixaService.abrirCaixa({ saldo_inicial: Number(this.abrirSaldoInput) }).subscribe({
       next: (response) => {
         this.success = response.message;
         this.loading = false;
+        this.abrirModal = false;
         setTimeout(() => this.success = '', 3000);
         logger.info('DASHBOARD', 'ABRIR_CAIXA', 'Caixa aberto');
       },
@@ -119,18 +134,35 @@ export class DashboardComponent implements OnInit, OnDestroy {
     });
   }
 
+  cancelarAbrir(): void {
+    this.abrirModal = false;
+    this.abrirSaldoInput = null;
+    this.loading = false;
+  }
+
   fecharCaixa(): void {
     if (!confirm('Tem certeza que deseja fechar o caixa?')) {
       return;
     }
+    // abrir modal de fechamento; não marcar como loading até a requisição
+    this.loading = false;
+    this.error = '';
+    this.fecharSaldoInput = null;
+    this.fecharObservacoes = '';
+    this.fecharModal = true;
+  }
 
+  confirmarFecharModal(): void {
+    if (this.fecharSaldoInput == null) { this.error = 'Informe saldo contado'; return; }
+    const saldo = Number(this.fecharSaldoInput);
+    if (Number.isNaN(saldo)) { this.error = 'Saldo contado inválido'; return; }
     this.loading = true;
     this.error = '';
-
-    this.caixaService.fecharCaixa().subscribe({
+    this.caixaService.fecharCaixa({ saldo_contado: saldo, observacoes: this.fecharObservacoes }).subscribe({
       next: (response) => {
         this.success = response.message;
         this.loading = false;
+        this.fecharModal = false;
         setTimeout(() => this.success = '', 3000);
         logger.info('DASHBOARD', 'FECHAR_CAIXA', 'Caixa fechado');
       },
@@ -140,6 +172,14 @@ export class DashboardComponent implements OnInit, OnDestroy {
         logger.error('DASHBOARD', 'FECHAR_CAIXA', 'Erro ao fechar caixa', error);
       }
     });
+  }
+
+  cancelarFechar(): void {
+    this.fecharModal = false;
+    this.fecharSaldoInput = null;
+    this.fecharObservacoes = '';
+    this.loading = false;
+    this.error = '';
   }
 
   toggleHorariosConfig(): void {

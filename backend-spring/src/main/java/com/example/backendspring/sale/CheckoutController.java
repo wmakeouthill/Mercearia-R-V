@@ -32,6 +32,8 @@ public class CheckoutController {
     private final ProductRepository productRepository;
     private final SaleDeletionRepository saleDeletionRepository;
     private final ObjectMapper objectMapper;
+    private final com.example.backendspring.caixa.CaixaStatusRepository caixaStatusRepository;
+    private final com.example.backendspring.user.UserRepository userRepository;
 
     private static final String DEFAULT_PAGAMENTO = "dinheiro";
     private static final String KEY_ERROR = "error";
@@ -41,7 +43,8 @@ public class CheckoutController {
 
     @PostMapping
     @Transactional
-    public ResponseEntity<Object> create(@RequestBody CheckoutRequest req) {
+    public ResponseEntity<Object> create(@RequestAttribute(name = "userId", required = false) Long userId,
+            @RequestBody CheckoutRequest req) {
         try {
             // validações básicas
             if (req.getItens() == null || req.getItens().isEmpty()) {
@@ -91,8 +94,41 @@ public class CheckoutController {
             log.info("CHECKOUT request recebido: itens={}, pagamentos={}, subtotal={}, total={}",
                     req.getItens().size(), req.getPagamentos().size(), subtotal, totalFinal);
 
+            // bloquear checkout caso caixa fechado e usuário não seja admin
+            var status = caixaStatusRepository.findTopByOrderByIdDesc().orElse(null);
+            if (status == null || !Boolean.TRUE.equals(status.getAberto())) {
+                var u = userRepository.findById(userId).orElse(null);
+                // permitir apenas admin quando caixa fechado
+                if (u == null || u.getRole() == null || !u.getRole().equals("admin")) {
+                    return ResponseEntity.status(403)
+                            .body(Map.of("error", "Caixa fechado. Checkout permitido somente para admin."));
+                }
+            }
+
             // criar venda e persistir
             SaleOrder venda = createSaleOrder(subtotal, desconto, acrescimo, totalFinal);
+            // associar operador (usuário autenticado) desde o início para persistir
+            // corretamente. Se userId não estiver disponível, tentar via SecurityContext
+            try {
+                com.example.backendspring.user.User op = null;
+                if (userId != null) {
+                    op = userRepository.findById(userId).orElse(null);
+                }
+                if (op == null) {
+                    var auth = SecurityContextHolder.getContext().getAuthentication();
+                    if (auth != null && auth.getName() != null) {
+                        try {
+                            op = userRepository.findByUsername(auth.getName()).orElse(null);
+                        } catch (Exception ignored) {
+                        }
+                    }
+                }
+                if (op != null)
+                    venda.setOperador(op);
+            } catch (Exception ignored) {
+            }
+
+            // (caixa ativa será verificada mais abaixo após associar cliente)
             // se vier dados do cliente, persistir
             if (req.getCustomerName() != null)
                 venda.setCustomerName(req.getCustomerName());
@@ -146,14 +182,43 @@ public class CheckoutController {
                 // ignore non-critical client save errors
             }
 
+            // Associate sale to current open caixa session if present (obter com lock)
+            com.example.backendspring.caixa.CaixaStatus caixaAtiva = null;
+            try {
+                var caixaAtivaOpt = caixaStatusRepository.findTopByAbertoTrueOrderByIdDesc();
+                if (caixaAtivaOpt.isPresent()) {
+                    caixaAtiva = caixaAtivaOpt.get();
+                    venda.setCaixaStatus(caixaAtiva);
+                }
+            } catch (Exception e) {
+                // Em caso de erro ao obter sessão com lock, continuar sem associação
+                log.warn("Não foi possível associar venda à sessão de caixa: {}", e.getMessage());
+            }
+
+            // persistir venda, itens e pagamentos (pagamentos receberão referencia ao
+            // caixa)
             saleOrderRepository.save(venda);
 
             addItemsToOrder(venda, req.getItens());
-            addPaymentsToOrder(venda, req.getPagamentos());
+            // Se caixaAtiva foi obtido, preencher operador na venda e em pagamentos
+            if (caixaAtiva != null) {
+                try {
+                    // usar userId (injetado via RequestAttribute) como fonte confiável do operador
+                    if (userId != null) {
+                        var op = userRepository.findById(userId).orElse(null);
+                        if (op != null)
+                            venda.setOperador(op);
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+            addPaymentsToOrder(venda, req.getPagamentos(), caixaAtiva);
 
             saleOrderRepository.save(venda);
 
             Map<String, Object> resp = buildResponse(venda);
+            // Expor operador no payload de criação para facilitar verificação imediata
+            resp.put("operador_username", venda.getOperador() != null ? venda.getOperador().getUsername() : null);
             return ResponseEntity.status(201).body(resp);
         } catch (Exception e) {
             log.error("Erro no checkout", e);
@@ -423,7 +488,8 @@ public class CheckoutController {
         }
     }
 
-    private void addPaymentsToOrder(SaleOrder venda, List<CheckoutPayment> pagamentos) {
+    private void addPaymentsToOrder(SaleOrder venda, List<CheckoutPayment> pagamentos,
+            com.example.backendspring.caixa.CaixaStatus caixaAtiva) {
         for (CheckoutPayment p : pagamentos) {
             String metodo = p.getMetodo() == null ? DEFAULT_PAGAMENTO : p.getMetodo();
             SalePayment sp = SalePayment.builder()
@@ -432,6 +498,9 @@ public class CheckoutController {
                     .valor(p.getValor())
                     .troco(p.getTroco())
                     .build();
+            if (caixaAtiva != null) {
+                sp.setCaixaStatus(caixaAtiva);
+            }
             venda.getPagamentos().add(sp);
         }
     }

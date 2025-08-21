@@ -16,6 +16,11 @@ export const routes: Routes = [
         canActivate: [AuthGuard, AdminGuard]
     },
     {
+        path: 'caixa/sessoes',
+        loadComponent: () => import('./components/caixa/sessoes-caixa').then(m => m.SessoesCaixaComponent),
+        canActivate: [AuthGuard, AdminGuard]
+    },
+    {
         path: 'produtos',
         loadComponent: () => import('./components/lista-produtos/lista-produtos').then(m => m.ListaProdutosComponent),
         canActivate: [AuthGuard, AdminGuard]

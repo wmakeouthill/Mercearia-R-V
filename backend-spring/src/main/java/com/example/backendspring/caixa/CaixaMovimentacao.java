@@ -31,6 +31,24 @@ public class CaixaMovimentacao {
     @JoinColumn(name = "usuario_id")
     private User usuario;
 
+    // Se a movimentação foi gerada por uma venda, guardar o operador responsável
+    @ManyToOne(optional = true)
+    @JoinColumn(name = "operador_id")
+    private User operador;
+
+    // Vinculo opcional à sessão/estado do caixa
+    @ManyToOne(optional = true)
+    @JoinColumn(name = "caixa_status_id")
+    private CaixaStatus caixaStatus;
+
+    // Motivo/subtipo para retiradas ou entradas (ex: sangria, reembolso)
+    private String motivo;
+
+    // Usuario que aprovou a movimentacao (quando aplicavel)
+    @ManyToOne(optional = true)
+    @JoinColumn(name = "aprovado_por")
+    private User aprovadoPor;
+
     @Column(name = "data_movimento", nullable = false)
     private OffsetDateTime dataMovimento;
 

@@ -20,7 +20,8 @@
       <div class="acoes-form">
         <button class="btn-primary" (click)="registrar()" [disabled]="loading">Registrar</button>
         <button class="btn-secondary" (click)="exportarCsv()">Exportar CSV</button>
-        <button class="btn-voltar btn-voltar-compact" (click)="voltarAoDashboard()">← Voltar ao Dashboard</button>
+        <button class="btn-ghost btn-registro" (click)="router.navigate(['/caixa/sessoes'])">Registro de Sessões</button>
+        <button class="btn-voltar btn-voltar-compact" (click)="voltarAoDashboard()">←&nbsp;Voltar ao Dashboard</button>
       </div>
     </div>
   </div>
@@ -186,4 +187,5 @@
   </div>
 </div>
 
+<!-- modais removidos (operações via dashboard/ponto-venda) -->
 

@@ -7,8 +7,8 @@ import { AuthService } from '../services/auth';
 })
 export class AdminGuard implements CanActivate {
     constructor(
-        private authService: AuthService,
-        private router: Router
+        private readonly authService: AuthService,
+        private readonly router: Router
     ) { }
 
     canActivate(): boolean {
@@ -19,4 +19,4 @@ export class AdminGuard implements CanActivate {
             return false;
         }
     }
-} 
+}
