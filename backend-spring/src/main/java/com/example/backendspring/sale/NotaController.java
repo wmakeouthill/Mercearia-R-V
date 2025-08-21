@@ -352,13 +352,9 @@ public class NotaController {
         html.append("<div class=\"meta\">Comprovante de Pedido</div>\n");
 
         DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+        // Mostrar somente o nome do cliente no comprovante (email/telefone removidos)
         if (venda.getCustomerName() != null)
             html.append("<div class=\"small\">Cliente: ").append(escapeHtml(venda.getCustomerName())).append(CLOSE_DIV);
-        if (venda.getCustomerEmail() != null)
-            html.append("<div class=\"small\">Email: ").append(escapeHtml(venda.getCustomerEmail())).append(CLOSE_DIV);
-        if (venda.getCustomerPhone() != null)
-            html.append("<div class=\"small\">Telefone: ").append(escapeHtml(venda.getCustomerPhone()))
-                    .append(CLOSE_DIV);
         html.append("<div class=\"small\">Data: ").append(venda.getDataVenda().format(fmt)).append(CLOSE_DIV);
 
         // let columns size by content; reserve fixed mm widths for numeric columns
@@ -389,16 +385,74 @@ public class NotaController {
             html.append("</tr>\n");
         });
         html.append("</tbody>\n");
-        // footer total with non-breaking space
-        // footer total with numeric non-breaking space
+        // footer: mostrar métodos de pagamento (com emoji) alinhados à esquerda e total
+        // à direita
+        String paymentsSummary = buildPaymentsSummary(venda);
+
+        // allow left cell to wrap so it doesn't push the total column; keep total
+        // non-wrapping and vertically centered
         html.append(
-                "<tfoot><tr><td colspan=\"3\" style=\"text-align:right\">Total:</td><td style=\"text-align:right\">R$&#160;"
-                        + String.format("%.2f", venda.getTotalFinal()) + "</td></tr></tfoot>\n");
+                "<tfoot><tr><td colspan=\"3\" style=\"text-align:left;white-space:normal;word-break:break-word;vertical-align:middle\">Pagamento via: "
+                        + paymentsSummary
+                        + "</td><td style=\"text-align:right;white-space:nowrap;vertical-align:middle\">Total: R$&#160;"
+                        + String.format("%.2f", venda.getTotalFinal())
+                        + "</td></tr></tfoot>\n");
         html.append("</table>\n");
 
         html.append("</div>\n");
         html.append("</body></html>");
         return html.toString();
+    }
+
+    // Build a compact, safe summary string for payments (e.g. "Cred R$ 10.00, Pix
+    // R$ 5.00").
+    private String buildPaymentsSummary(SaleOrder venda) {
+        if (venda == null)
+            return "";
+        try {
+            var pagamentos = venda.getPagamentos();
+            if (pagamentos == null || pagamentos.isEmpty())
+                return "";
+            StringBuilder psb = new StringBuilder();
+            for (var p : pagamentos) {
+                if (!psb.isEmpty())
+                    psb.append(", ");
+                String metodo = p.getMetodo() == null ? "" : p.getMetodo();
+                String label;
+                String iconSvg = "";
+                switch (metodo) {
+                    case "cartao_credito":
+                        label = "Cred";
+                        iconSvg = "<img src=\"https://twemoji.maxcdn.com/v/latest/svg/1f4b3.svg\" style=\"width:10px;height:10px;vertical-align:middle;margin-right:4px\"/>";
+                        break;
+                    case "cartao_debito":
+                        label = "Deb";
+                        iconSvg = "<img src=\"https://twemoji.maxcdn.com/v/latest/svg/1f4b3.svg\" style=\"width:10px;height:10px;vertical-align:middle;margin-right:4px\"/>";
+                        break;
+                    case "pix":
+                        label = "Pix";
+                        iconSvg = "<img src=\"https://twemoji.maxcdn.com/v/latest/svg/1f4f2.svg\" style=\"width:10px;height:10px;vertical-align:middle;margin-right:4px\"/>";
+                        break;
+                    case "dinheiro":
+                        label = "Dinheiro";
+                        iconSvg = "<img src=\"https://twemoji.maxcdn.com/v/latest/svg/1f4b5.svg\" style=\"width:10px;height:10px;vertical-align:middle;margin-right:4px\"/>";
+                        break;
+                    default:
+                        label = metodo;
+                }
+                // normalize spaces in label and remove trailing/leading spaces to avoid
+                // extra gap before ':'; append icon AFTER the label
+                String cleanLabel = label == null ? "" : label.replaceAll("\\s+", " ").trim();
+                psb.append(cleanLabel);
+                if (iconSvg != null && !iconSvg.isEmpty())
+                    psb.append(" ").append(iconSvg);
+                psb.append(": R$&#160;").append(String.format("%.2f", p.getValor()));
+            }
+            return psb.toString();
+        } catch (Exception e) {
+            log.debug("buildPaymentsSummary failed: {}", e.getMessage());
+            return "";
+        }
     }
 
     private byte[] renderPdfFromHtml(String htmlStr, Long id) {
