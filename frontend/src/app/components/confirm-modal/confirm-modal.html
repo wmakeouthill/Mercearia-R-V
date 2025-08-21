@@ -1,5 +1,5 @@
-<div class="modal-overlay">
-  <div class="modal confirm-modal">
+<div class="modal-overlay" (click)="onOverlayClick($event)" tabindex="-1" role="presentation" (keydown)="onKeydown($event)">
+  <div class="modal confirm-modal" (click)="$event.stopPropagation()" role="dialog" aria-modal="true" tabindex="0" (keydown)="onKeydown($event)">
     <h3>{{ title }}</h3>
     <p class="message">{{ message }}</p>
     <div class="actions">

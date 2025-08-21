@@ -16,6 +16,19 @@ export class ConfirmModalComponent {
 
     onConfirm(): void { this.confirm.emit(); }
     onCancel(): void { this.cancel.emit(); }
+
+    onOverlayClick(event: MouseEvent): void {
+        // Fecha o modal apenas quando clica no overlay (fora da caixa do modal)
+        if (event.target === event.currentTarget) {
+            this.cancel.emit();
+        }
+    }
+
+    onKeydown(event: KeyboardEvent): void {
+        if (event.key === 'Escape' || event.key === 'Esc') {
+            this.cancel.emit();
+        }
+    }
 }
 
 

@@ -236,12 +236,17 @@ export class EnviarNotaModalComponent implements OnChanges {
     }
     const to = this.modalCustomerEmail || '';
     if (!to || to.trim().length === 0) { this.notify.emit({ type: 'error', message: 'Informe um e-mail válido para enviar a nota.' }); return; }
+    // fecha imediatamente e mostra notificação global informando que o comprovante
+    // está sendo preparado/enviado para o e-mail do cliente, para o usuário não ficar preso no modal
+    try { this.notificationService.notify({ type: 'info', message: 'Comprovante sendo preparado e enviado para o email do cliente.' }); } catch (e) { }
+    this.closeModal();
+
+    // realiza envio em background e notifica sucesso/erro quando terminar
     this.apiService.sendNotaEmail(orderId, { to, subject: `Comprovante - Pedido #${orderId}`, body: 'Segue a nota do seu pedido.' }).subscribe({
       next: () => {
         const msg = `Email enviado com sucesso para ${to}`;
         try { this.notify.emit({ type: 'info', message: msg }); } catch (e) { }
-        try { this.notificationService.notify({ type: 'info', message: msg }); } catch (e) { }
-        this.closeModal();
+        try { this.notificationService.notify({ type: 'success', message: msg }); } catch (e) { }
       },
       error: (err) => {
         console.error('SEND_NOTA_EMAIL failed', err);
@@ -259,13 +264,20 @@ export class EnviarNotaModalComponent implements OnChanges {
     if (this.modalCustomerEmail) contactPayload.customerEmail = this.modalCustomerEmail;
     if (this.modalCustomerPhone) contactPayload.customerPhone = this.modalCustomerPhone;
     if (Object.keys(contactPayload).length > 0) { this.apiService.updateOrderContact(orderId, contactPayload).subscribe({ next: () => { }, error: () => { } }); }
-    let phone = (this.modalCustomerPhone || '').replace(/\D/g, ''); if (!phone) { this.closeModal(); return; } if (!phone.startsWith('55')) { if (phone.length <= 11) phone = '55' + phone; }
+    let phone = (this.modalCustomerPhone || '').replace(/\D/g, ''); if (!phone) { this.notify.emit({ type: 'error', message: 'Informe um telefone válido para enviar via WhatsApp.' }); return; } if (!phone.startsWith('55')) { if (phone.length <= 11) phone = '55' + phone; }
+
+    // fecha imediatamente e mostra notificação global informando que o comprovante
+    // está sendo preparado/enviado para o WhatsApp do cliente
+    try { this.notificationService.notify({ type: 'info', message: 'Comprovante sendo preparado e enviado para o WhatsApp do cliente.' }); } catch (e) { }
+    this.closeModal();
+
     const pdfUrl = this.apiService.getNotaPdfUrl(orderId);
     const msg = `Segue a nota do seu último pedido na nossa loja: ${pdfUrl}`;
     const waUrl = `https://web.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(msg)}`;
     try { const api = (window as any).electronAPI; if (api && typeof api.openExternal === 'function') { api.openExternal(waUrl).catch(() => { window.open(waUrl, '_blank'); }); } else { window.open(waUrl, '_blank'); } } catch (e) { window.open(waUrl, '_blank'); }
-    this.notify.emit({ type: 'info', message: `WhatsApp enviado com sucesso para ${this.modalCustomerPhone || 'cliente'}` });
-    this.closeModal();
+
+    // opcional: notificar que o link do WhatsApp foi aberto
+    try { this.notificationService.notify({ type: 'info', message: `WhatsApp aberto para ${this.modalCustomerPhone || 'cliente'}` }); } catch (e) { }
   }
 
   zoomIn(): void { this.pdfScale = Math.min(this.pdfScale + 0.2, 3); this.reRenderPdf(); }
