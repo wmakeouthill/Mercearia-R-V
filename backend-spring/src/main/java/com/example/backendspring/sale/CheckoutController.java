@@ -361,6 +361,19 @@ public class CheckoutController {
         return ResponseEntity.ok(lista);
     }
 
+    @GetMapping("/{id}")
+    @Transactional(readOnly = true)
+    public ResponseEntity<Object> getOrderById(@PathVariable Long id) {
+        var venda = saleOrderRepository.findById(id).orElse(null);
+        if (venda == null) {
+            return ResponseEntity.status(404).body(Map.of(KEY_ERROR, "Venda não encontrada"));
+        }
+        Map<String, Object> resp = buildResponse(venda);
+        // expose operador username for convenience
+        resp.put("operador_username", venda.getOperador() != null ? venda.getOperador().getUsername() : null);
+        return ResponseEntity.ok(resp);
+    }
+
     @DeleteMapping("/{id}")
     @Transactional
     public ResponseEntity<Object> deleteOrder(@PathVariable Long id, HttpServletRequest request) {

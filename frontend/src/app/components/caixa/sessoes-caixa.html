@@ -106,7 +106,7 @@
       <table class="small-table">
         <tr><th>ID</th><th>Data</th><th>Total</th><th>Operador</th></tr>
         <tr *ngFor="let v of modalData.vendas">
-          <td>{{ v.id }}</td>
+          <td><a href="#" (click)="openVendaDetalhada($event, v.id)">{{ v.id }}</a></td>
           <td>{{ v.data_venda | date:'dd/MM/yyyy HH:mm' }}</td>
           <td>R$ {{ v.total_final | number:'1.2-2' }}</td>
           <td>{{ v.operador || '-' }}</td>
@@ -118,6 +118,7 @@
       </div>
     </div>
   </dialog>
+  <!-- tooltip is rendered dynamically and appended to document.body -->
 </div>
 
 

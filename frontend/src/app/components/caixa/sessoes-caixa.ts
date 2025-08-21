@@ -2,6 +2,7 @@ import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 import { CaixaService } from '../../services/caixa.service';
+import { ApiService } from '../../services/api';
 import { StatusCaixa } from '../../models';
 
 @Component({
@@ -59,7 +60,7 @@ export class SessoesCaixaComponent implements OnInit {
   goToFirstPage(): void { this.goToPage(1); }
   goToLastPage(): void { this.goToPage(this.totalPages); }
 
-  constructor(private readonly caixaService: CaixaService, private readonly router: Router) { }
+  constructor(private readonly caixaService: CaixaService, private readonly router: Router, private readonly api: ApiService) { }
 
   // modal state
   modalOpen = false;
@@ -112,6 +113,114 @@ export class SessoesCaixaComponent implements OnInit {
     if (target.tagName.toLowerCase() === 'dialog') {
       this.closeDialog();
     }
+  }
+
+  // tooltip state for sale details
+  saleTooltip: { visible: boolean; left: number; top: number; order?: any } = { visible: false, left: 0, top: 0 };
+
+  openVendaDetalhada(ev: MouseEvent, id: number): void {
+    ev.preventDefault();
+    ev.stopPropagation();
+    const x = ev.clientX + 8;
+    const y = ev.clientY + 8;
+
+    // toggle: close if same id already visible
+    if (this.saleTooltip.visible && this.saleTooltip.order && this.saleTooltip.order.id === id) {
+      this.closeSaleTooltip();
+      // restore dialog z-index
+      const el = document.querySelector('dialog.recon-dialog') as HTMLDialogElement | null;
+      if (el) el.style.zIndex = '';
+      return;
+    }
+
+    this.saleTooltip = { visible: false, left: x, top: y };
+    this.api.getOrderById(id).subscribe({
+      next: (order) => {
+        // create tooltip element appended to body to avoid stacking-context issues
+        this.createBodyTooltip(x, y, order);
+      },
+      error: () => {
+        const order = this.modalData?.vendas?.find((o: any) => o.id === id);
+        if (order) this.createBodyTooltip(x, y, order);
+        else alert('Falha ao obter detalhes da venda');
+      }
+    });
+  }
+
+  closeSaleTooltip(): void {
+    this.saleTooltip = { visible: false, left: 0, top: 0 };
+    // remove body tooltip if exists
+    const el = document.getElementById('body-sale-tooltip');
+    if (el && el.parentNode) el.parentNode.removeChild(el);
+  }
+
+  private createBodyTooltip(left: number, top: number, order: any): void {
+    // create a small modal dialog positioned near cursor to guarantee it's above the main dialog
+    // remove existing
+    const prev = document.getElementById('body-sale-tooltip');
+    if (prev && prev.parentNode) prev.parentNode.removeChild(prev);
+
+    const dlg = document.createElement('dialog');
+    dlg.id = 'body-sale-tooltip';
+    dlg.className = 'mini-recon-dialog';
+    dlg.style.padding = '8px';
+    dlg.style.border = 'none';
+    dlg.style.borderRadius = '8px';
+    dlg.style.maxWidth = '420px';
+    dlg.style.zIndex = '2147483647';
+    dlg.innerHTML = `<div class="tooltip-card"><h4>Venda #${order.id}</h4><table>`;
+    let rows = '';
+    rows += '<tr><th>Produto</th><th>Qtd</th><th>Preço Unit.</th><th>Total</th></tr>';
+    for (const it of (order.itens || [])) {
+      rows += `<tr><td>${(it.produto_nome || it.produto_id) || ''}</td><td>${it.quantidade || ''}</td><td>R$ ${Number(it.preco_unitario || 0).toFixed(2)}</td><td>R$ ${Number(it.preco_total || 0).toFixed(2)}</td></tr>`;
+    }
+    dlg.innerHTML = `<div class="tooltip-card"><h4>Venda #${order.id}</h4><table>${rows}</table><div style="text-align:right;margin-top:8px"><button class="btn-primary" id="mini-close">Fechar</button></div></div>`;
+
+    // append and position
+    document.body.appendChild(dlg);
+    // position roughly near cursor; if near edges adjust
+    const vw = window.innerWidth; const vh = window.innerHeight;
+    const approxLeft = Math.min(Math.max(8, left), vw - 440);
+    const approxTop = Math.min(Math.max(8, top), vh - 200);
+    dlg.style.left = approxLeft + 'px';
+    dlg.style.top = approxTop + 'px';
+    try {
+      // use native modal to ensure stacking above other dialogs
+      (dlg as any).showModal();
+    } catch (e) {
+      // fallback: set visible block
+      dlg.style.display = 'block';
+      dlg.style.position = 'fixed';
+    }
+
+    // close handlers: click on dlg backdrop or on main dialog should close
+    const closeFn = () => {
+      try { (dlg as any).close(); } catch (e) { /* ignore */ }
+      if (dlg && dlg.parentNode) dlg.parentNode.removeChild(dlg);
+      document.removeEventListener('click', docClick);
+      if (mainDialog && mainDialogClick) mainDialog.removeEventListener('click', mainDialogClick);
+      if (dlgBackdropClick) dlg.removeEventListener('click', dlgBackdropClick);
+    };
+
+    const docClick = (ev: any) => {
+      // only used as fallback when dialog isn't modal
+      if (!dlg.contains(ev.target)) closeFn();
+    };
+    document.addEventListener('click', docClick);
+
+    // click on dialog backdrop
+    const dlgBackdropClick = (ev: MouseEvent) => {
+      if (ev.target === dlg) closeFn();
+    };
+    dlg.addEventListener('click', dlgBackdropClick);
+
+    // close when clicking the main recon dialog as user asked
+    const mainDialog = document.querySelector('dialog.recon-dialog') as HTMLElement | null;
+    const mainDialogClick = (ev: MouseEvent) => { closeFn(); };
+    if (mainDialog) mainDialog.addEventListener('click', mainDialogClick);
+
+    const btn = dlg.querySelector('#mini-close');
+    if (btn) btn.addEventListener('click', closeFn);
   }
 
   getKeys(obj: any): string[] {

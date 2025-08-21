@@ -322,9 +322,19 @@
 .modal-actions .btn-primary { background: var(--primary-blue); color: var(--white); }
 .modal-actions .btn-secondary { background: #ef4444; color: var(--white); }
 
+/* Sale tooltip */
+.sale-tooltip { position: fixed; z-index: 2147483647 !important; pointer-events: auto; }
+.tooltip-card { background: var(--card-bg,#fff); border-radius: 8px; padding: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.12); border: 1px solid rgba(0,0,0,0.06); max-width: 380px; }
+.tooltip-card h4 { margin: 0 0 8px 0; font-size: 14px; }
+.tooltip-card table { width: 100%; border-collapse: collapse; }
+.tooltip-card th, .tooltip-card td { padding: 6px; text-align: left; border-bottom: 1px solid #f3f4f6; font-size: 13px; }
+/* ensure body tooltip sits above dialog */
+#body-sale-tooltip { z-index: 2147483647; }
+
 /* explicit overlay for dialog fallback */
 .dialog-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 10000; }
 .recon-dialog { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 10001; max-width: 95%; width: 720px; border: none; border-radius: 12px; padding: 20px; box-shadow: 0 12px 40px rgba(0,0,0,0.3); }
 dialog.recon-dialog::backdrop { background: rgba(0,0,0,0.45) !important; }
+.sale-tooltip { position: fixed; z-index: 2147483647 !important; pointer-events: auto; }
 
 

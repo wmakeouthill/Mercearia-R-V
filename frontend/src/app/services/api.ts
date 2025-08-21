@@ -327,6 +327,14 @@ export class ApiService {
     );
   }
 
+  // Obter detalhes de uma ordem/checkout por id
+  getOrderById(orderId: number) {
+    return this.makeRequest(
+      () => this.http.get<any>(`${this.baseUrl}/checkout/${orderId}`),
+      'GET_ORDER_BY_ID'
+    );
+  }
+
   // Enviar email via servidor com anexo
   sendNotaEmail(orderId: number, payload: { to: string; subject?: string; body?: string }) {
     return this.makeRequest(
