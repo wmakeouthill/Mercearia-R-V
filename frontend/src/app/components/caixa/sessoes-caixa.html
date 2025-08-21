@@ -19,13 +19,14 @@
           <colgroup>
             <col style="width:5%" />
             <col style="width:5%" />
-            <col style="width:22%" />
-            <col style="width:15%" />
-            <col style="width:15%" />
-            <col style="width:15%" />
-            <col style="width:10%" />
-            <col style="width:7.5%" />
-            <col style="width:5.5%" />
+            <col style="width:18%" />
+            <col style="width:12%" />
+            <col style="width:12%" />
+            <col style="width:12%" />
+            <col style="width:8%" />
+            <col style="width:8%" />
+            <col style="width:8%" />
+            <col style="width:6%" />
             <col style="width:6%" />
           </colgroup>
           <thead>
@@ -38,7 +39,9 @@
               <th>Usuário (Fechamento)</th>
               <th class="right">Saldo Inicial</th>
               <th class="right">Saldo Contado</th>
-              <th class="right">Variação</th>
+              <th class="right">Variação (sessão)</th>
+              <th class="right">Cumul. Antes</th>
+              <th class="right">Cumul. Global</th>
               <th class="center">Ação</th>
             </tr>
           </thead>
@@ -53,6 +56,8 @@
               <td class="right">R$&nbsp;{{ it.saldo_inicial | number:'1.2-2' }}</td>
               <td class="right">R$&nbsp;{{ it.saldo_contado | number:'1.2-2' }}</td>
               <td class="right">R$&nbsp;{{ it.variacao | number:'1.2-2' }}</td>
+              <td class="right">R$&nbsp;{{ it.cumulative_variacao_before | number:'1.2-2' }}</td>
+              <td class="right">R$&nbsp;{{ it.cumulative_variacao_all | number:'1.2-2' }}</td>
               <td class="center"><button class="btn-primary btn-registro" (click)="openReconciliation(it.id)">Relatório</button></td>
             </tr>
           </tbody>
@@ -83,7 +88,12 @@
       <p><strong>Saldo Inicial:</strong> R$&nbsp;{{ modalData.saldo_inicial | number:'1.2-2' }}</p>
       <p><strong>Saldo Esperado:</strong> R$&nbsp;{{ modalData.saldo_esperado | number:'1.2-2' }}</p>
       <p><strong>Saldo Contado:</strong> R$&nbsp;{{ modalData.saldo_contado | number:'1.2-2' }}</p>
-      <p><strong>Variação:</strong> R$&nbsp;{{ modalData.variacao | number:'1.2-2' }}</p>
+      <p><strong>Variação (sessão):</strong> R$&nbsp;{{ modalData.variacao | number:'1.2-2' }}</p>
+      <p *ngIf="modalData.cumulative_variacao_before !== undefined"><strong>Cumulativo antes (todas sessões anteriores):</strong> R$&nbsp;{{ modalData.cumulative_variacao_before | number:'1.2-2' }}</p>
+      <p *ngIf="modalData.cumulative_variacao_all !== undefined"><strong>Cumulativo geral (todas sessões):</strong> R$&nbsp;{{ modalData.cumulative_variacao_all | number:'1.2-2' }}</p>
+      <p *ngIf="modalData.deficit_nao_reposto_before !== undefined"><strong>Déficit não reposto (antes):</strong> R$&nbsp;{{ modalData.deficit_nao_reposto_before | number:'1.2-2' }}</p>
+      <p *ngIf="modalData.day_variacao_total !== undefined"><strong>Variação total do dia:</strong> R$&nbsp;{{ modalData.day_variacao_total | number:'1.2-2' }}</p>
+      <p *ngIf="modalData.day_saldo_inicial_total !== undefined"><strong>Saldo inicial total do dia:</strong> R$&nbsp;{{ modalData.day_saldo_inicial_total | number:'1.2-2' }}</p>
       <h4>Totais por método</h4>
       <div class="totals-list">
         <div *ngFor="let k of getKeys(modalData.totals_by_metodo)" class="total-item">

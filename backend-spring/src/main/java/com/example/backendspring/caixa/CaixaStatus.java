@@ -47,8 +47,16 @@ public class CaixaStatus {
     // Saldo contado fisicamente no fechamento
     private Double saldoContado;
 
-    // Variacao: saldoContado - saldoEsperado
+    // Variação da sessão (saldo_contado - saldo_esperado)
     private Double variacao;
+
+    // Variação acumulada até esta sessão (incluir esta sessão)
+    @Column(name = "variacao_acumulada")
+    private Double variacaoAcumulada;
+
+    // Déficit acumulado não reposto até esta sessão
+    @Column(name = "deficit_nao_reposto_acumulada")
+    private Double deficitNaoRepostoAcumulada;
 
     // Identificador do terminal/caixa físico (opcional)
     private String terminalId;

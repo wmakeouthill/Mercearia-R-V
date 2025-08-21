@@ -202,6 +202,39 @@ public class CaixaController {
             var pageable = org.springframework.data.domain.PageRequest.of(pageNum - 1, pageSize,
                     org.springframework.data.domain.Sort.by("id").descending());
             var pg = caixaStatusRepository.findAll(pageable);
+            // carregar todas as sessões para calcular cumulativos/histórico
+            var allSessoes = caixaStatusRepository.findAll().stream()
+                    .sorted(java.util.Comparator.comparing(CaixaStatus::getId))
+                    .toList();
+
+            // map id -> cumulative variation before this session
+            java.util.Map<Long, Double> cumulativeBeforeMap = new java.util.HashMap<>();
+            double running = 0.0;
+            for (var s : allSessoes) {
+                if (s.getId() != null) {
+                    cumulativeBeforeMap.put(s.getId(), running);
+                    running += (s.getVariacao() == null ? 0.0 : s.getVariacao());
+                }
+            }
+            double cumulativeAll = running;
+
+            // precompute day aggregates: day -> {variacaoTotal, saldoInicialTotal}
+            java.util.Map<java.time.LocalDate, Double> dayVariacaoMap = new java.util.HashMap<>();
+            java.util.Map<java.time.LocalDate, Double> daySaldoInicialMap = new java.util.HashMap<>();
+            for (var s : allSessoes) {
+                java.time.LocalDate d = null;
+                if (s.getDataAbertura() != null)
+                    d = s.getDataAbertura().toLocalDate();
+                else if (s.getDataFechamento() != null)
+                    d = s.getDataFechamento().toLocalDate();
+                if (d != null) {
+                    dayVariacaoMap.put(d,
+                            dayVariacaoMap.getOrDefault(d, 0.0) + (s.getVariacao() == null ? 0.0 : s.getVariacao()));
+                    daySaldoInicialMap.put(d, daySaldoInicialMap.getOrDefault(d, 0.0)
+                            + (s.getSaldoInicial() == null ? 0.0 : s.getSaldoInicial()));
+                }
+            }
+
             var items = pg.getContent().stream().map(cs -> {
                 java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
                 m.put("id", cs.getId());
@@ -216,6 +249,30 @@ public class CaixaController {
                 m.put("variacao", cs.getVariacao());
                 m.put("terminal_id", cs.getTerminalId());
                 m.put("observacoes", cs.getObservacoesFechamento());
+
+                // cumulative metrics
+                if (cs.getId() != null) {
+                    m.put("cumulative_variacao_before", cumulativeBeforeMap.getOrDefault(cs.getId(), 0.0));
+                    m.put("cumulative_variacao_all", cumulativeAll);
+                } else {
+                    m.put("cumulative_variacao_before", 0.0);
+                    m.put("cumulative_variacao_all", cumulativeAll);
+                }
+
+                // day aggregates
+                java.time.LocalDate d = null;
+                if (cs.getDataAbertura() != null)
+                    d = cs.getDataAbertura().toLocalDate();
+                else if (cs.getDataFechamento() != null)
+                    d = cs.getDataFechamento().toLocalDate();
+                if (d != null) {
+                    m.put("day_variacao_total", dayVariacaoMap.getOrDefault(d, 0.0));
+                    m.put("day_saldo_inicial_total", daySaldoInicialMap.getOrDefault(d, 0.0));
+                } else {
+                    m.put("day_variacao_total", 0.0);
+                    m.put("day_saldo_inicial_total", 0.0);
+                }
+
                 return m;
             }).toList();
             java.util.Map<String, Object> body = new java.util.LinkedHashMap<>();
@@ -550,19 +607,13 @@ public class CaixaController {
         }
         var agora = OffsetDateTime.now();
 
-        // calcular saldo esperado: vendas do periodo + entradas - retiradas
+        // tornar referência final ao objeto de sessão para uso em lambdas
+        final CaixaStatus sessionFinal = status;
+
+        // calcular saldo esperado e preencher sessão (delegado a helper)
         try {
-            // para simplicidade, calcular saldo esperado como saldo do dia atual
-            var hoje = agora.toLocalDate();
-            Double saldoMov = movimentacaoRepository.saldoDoDia(hoje);
-            double vendas = 0.0;
-            try {
-                // somaReceitaByDia retorna double
-                vendas = saleRepository.somaReceitaByDia(hoje);
-            } catch (Exception ignored) {
-            }
-            double esperado = (saldoMov != null ? saldoMov : 0.0) + vendas;
-            status.setSaldoEsperado(esperado);
+            double esperado = calculateExpectedForSession(sessionFinal);
+            sessionFinal.setSaldoEsperado(esperado);
         } catch (Exception ignored) {
         }
 
@@ -570,28 +621,66 @@ public class CaixaController {
         if (body == null || body.getSaldoContado() == null) {
             return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, "saldo_contado é obrigatório ao fechar o caixa"));
         }
-        status.setSaldoContado(body.getSaldoContado());
-        if (status.getSaldoEsperado() != null) {
-            status.setVariacao(status.getSaldoContado() - status.getSaldoEsperado());
+        sessionFinal.setSaldoContado(body.getSaldoContado());
+        if (sessionFinal.getSaldoEsperado() != null) {
+            sessionFinal.setVariacao(sessionFinal.getSaldoContado() - sessionFinal.getSaldoEsperado());
         }
         if (body.getObservacoes() != null)
-            status.setObservacoesFechamento(body.getObservacoes());
+            sessionFinal.setObservacoesFechamento(body.getObservacoes());
 
-        status.setAberto(false);
-        status.setFechadoPor(userRepository.findById(userId).orElse(null));
-        status.setDataFechamento(agora);
-        status.setAtualizadoEm(agora);
-        caixaStatusRepository.save(status);
+        sessionFinal.setAberto(false);
+        sessionFinal.setFechadoPor(userRepository.findById(userId).orElse(null));
+        sessionFinal.setDataFechamento(agora);
+        sessionFinal.setAtualizadoEm(agora);
+
+        // calcular e persistir cumulativos: variação acumulada e déficit não reposto
+        try {
+            var all = caixaStatusRepository.findAll().stream()
+                    .sorted(java.util.Comparator.comparing(CaixaStatus::getId)).toList();
+            double running = 0.0;
+            double totalPos = 0.0;
+            double totalNeg = 0.0;
+            for (var s : all) {
+                if (s.getId() == null)
+                    continue;
+                if (s.getId().equals(sessionFinal.getId())) {
+                    // include current session's variacao
+                    running += (sessionFinal.getVariacao() == null ? 0.0 : sessionFinal.getVariacao());
+                    if (sessionFinal.getVariacao() != null) {
+                        if (sessionFinal.getVariacao() > 0)
+                            totalPos += sessionFinal.getVariacao();
+                        else
+                            totalNeg += -sessionFinal.getVariacao();
+                    }
+                    break;
+                } else {
+                    running += (s.getVariacao() == null ? 0.0 : s.getVariacao());
+                    if (s.getVariacao() != null) {
+                        if (s.getVariacao() > 0)
+                            totalPos += s.getVariacao();
+                        else
+                            totalNeg += -s.getVariacao();
+                    }
+                }
+            }
+            sessionFinal.setVariacaoAcumulada(running);
+            double deficit = Math.max(0.0, totalNeg - totalPos);
+            sessionFinal.setDeficitNaoRepostoAcumulada(deficit);
+        } catch (Exception ignored) {
+        }
+
+        caixaStatusRepository.save(sessionFinal);
         java.util.Map<String, Object> resp = new java.util.LinkedHashMap<>();
-        resp.put("id", status.getId());
-        resp.put("aberto", Boolean.TRUE.equals(status.getAberto()));
-        resp.put("data_fechamento", status.getDataFechamento());
-        resp.put("fechado_por", status.getFechadoPor() != null ? status.getFechadoPor().getId() : null);
-        resp.put("fechado_por_username", status.getFechadoPor() != null ? status.getFechadoPor().getUsername() : null);
-        resp.put("saldo_esperado", status.getSaldoEsperado());
-        resp.put("saldo_contado", status.getSaldoContado());
-        resp.put("variacao", status.getVariacao());
-        resp.put("observacoes", status.getObservacoesFechamento());
+        resp.put("id", sessionFinal.getId());
+        resp.put("aberto", Boolean.TRUE.equals(sessionFinal.getAberto()));
+        resp.put("data_fechamento", sessionFinal.getDataFechamento());
+        resp.put("fechado_por", sessionFinal.getFechadoPor() != null ? sessionFinal.getFechadoPor().getId() : null);
+        resp.put("fechado_por_username",
+                sessionFinal.getFechadoPor() != null ? sessionFinal.getFechadoPor().getUsername() : null);
+        resp.put("saldo_esperado", sessionFinal.getSaldoEsperado());
+        resp.put("saldo_contado", sessionFinal.getSaldoContado());
+        resp.put("variacao", sessionFinal.getVariacao());
+        resp.put("observacoes", sessionFinal.getObservacoesFechamento());
         return ResponseEntity.ok(resp);
     }
 
@@ -693,6 +782,44 @@ public class CaixaController {
             resp.put("sum_entradas", totalEntradas);
             resp.put("sum_retiradas", totalRetiradas);
 
+            // --- métricas históricas ---
+            try {
+                java.util.Map<String, Double> historicalMetrics = computeHistoricalMetrics(status);
+                resp.put("cumulative_variacao_before", historicalMetrics.get("cumulative_before"));
+                resp.put("total_variacoes_positivas_before", 0.0); // Not directly available from historical metrics
+                resp.put("total_variacoes_negativas_before", 0.0); // Not directly available from historical metrics
+                resp.put("deficit_nao_reposto_before", 0.0); // Not directly available from historical metrics
+
+                resp.put("cumulative_variacao_all", historicalMetrics.get("cumulative_all"));
+                resp.put("total_variacoes_positivas_all", 0.0); // Not directly available from historical metrics
+                resp.put("total_variacoes_negativas_all", 0.0); // Not directly available from historical metrics
+                resp.put("deficit_nao_reposto_all", 0.0); // Not directly available from historical metrics
+
+                // métricas do dia da sessão (somar todas as sessões do mesmo dia)
+                final java.time.LocalDate sessionDay = status.getDataAbertura() != null
+                        ? status.getDataAbertura().toLocalDate()
+                        : (status.getDataFechamento() != null ? status.getDataFechamento().toLocalDate() : null);
+                if (sessionDay != null) {
+                    double dayVariacao = caixaStatusRepository.findAll().stream()
+                            .filter(s -> (s.getDataAbertura() != null
+                                    && s.getDataAbertura().toLocalDate().equals(sessionDay))
+                                    || (s.getDataFechamento() != null
+                                            && s.getDataFechamento().toLocalDate().equals(sessionDay)))
+                            .mapToDouble(s -> s.getVariacao() == null ? 0.0 : s.getVariacao())
+                            .sum();
+                    double daySaldoInicial = caixaStatusRepository.findAll().stream()
+                            .filter(s -> (s.getDataAbertura() != null
+                                    && s.getDataAbertura().toLocalDate().equals(sessionDay))
+                                    || (s.getDataFechamento() != null
+                                            && s.getDataFechamento().toLocalDate().equals(sessionDay)))
+                            .mapToDouble(s -> s.getSaldoInicial() == null ? 0.0 : s.getSaldoInicial())
+                            .sum();
+                    resp.put("day_variacao_total", dayVariacao);
+                    resp.put("day_saldo_inicial_total", daySaldoInicial);
+                }
+            } catch (Exception ignored) {
+            }
+
             resp.put("saldo_esperado", status.getSaldoEsperado());
             resp.put("saldo_contado", status.getSaldoContado());
             resp.put("variacao", status.getVariacao());
@@ -701,6 +828,73 @@ public class CaixaController {
         } catch (Exception e) {
             return ResponseEntity.status(500).body(Map.of(KEY_ERROR, "Falha ao gerar relatório de reconciliação"));
         }
+    }
+
+    /**
+     * Calcula o saldo esperado para uma sessão: saldo_inicial + (entradas -
+     * retiradas vinculadas)
+     * + pagamentos em dinheiro das vendas vinculadas.
+     */
+    private double calculateExpectedForSession(CaixaStatus sess) {
+        var agora = java.time.OffsetDateTime.now();
+        final Long sessionId = sess.getId();
+        double movimentacoesSessao = 0.0;
+        try {
+            movimentacoesSessao = movimentacaoRepository.findAllOrderByData().stream()
+                    .filter(m -> m.getCaixaStatus() != null && sessionId != null
+                            && sessionId.equals(m.getCaixaStatus().getId()))
+                    .mapToDouble(m -> TIPO_ENTRADA.equals(m.getTipo()) ? (m.getValor() == null ? 0.0 : m.getValor())
+                            : -(m.getValor() == null ? 0.0 : m.getValor()))
+                    .sum();
+        } catch (Exception ignored) {
+        }
+
+        double vendasSessao = 0.0;
+        try {
+            var inicio = sess.getDataAbertura() != null ? sess.getDataAbertura().toLocalDate() : null;
+            var fim = sess.getDataFechamento() != null ? sess.getDataFechamento().toLocalDate() : agora.toLocalDate();
+            if (inicio != null && fim != null) {
+                var legacy = saleRepository.findByPeriodo(inicio, fim);
+                vendasSessao += legacy.stream()
+                        .filter(s -> "dinheiro".equals(s.getMetodoPagamento()))
+                        .mapToDouble(s -> s.getPrecoTotal() == null ? 0.0 : s.getPrecoTotal())
+                        .sum();
+            }
+        } catch (Exception ignored) {
+        }
+
+        try {
+            double ordersCash = saleOrderRepository.findAllOrderByData().stream()
+                    .filter(o -> o.getCaixaStatus() != null && sessionId != null
+                            && sessionId.equals(o.getCaixaStatus().getId()))
+                    .flatMap(o -> o.getPagamentos().stream())
+                    .filter(p -> p.getMetodo() != null && p.getMetodo().equals("dinheiro"))
+                    .mapToDouble(p -> p.getValor() == null ? 0.0 : p.getValor()).sum();
+            vendasSessao += ordersCash;
+        } catch (Exception ignored) {
+        }
+
+        return (sess.getSaldoInicial() == null ? 0.0 : sess.getSaldoInicial()) + movimentacoesSessao + vendasSessao;
+    }
+
+    /**
+     * Calcula métricas históricas (cumulativos e agregados por dia) usando datas.
+     */
+    private java.util.Map<String, Double> computeHistoricalMetrics(CaixaStatus sess) {
+        java.util.Map<String, Double> m = new java.util.LinkedHashMap<>();
+        try {
+            var all = caixaStatusRepository.findAll().stream().toList();
+            final Long currentId = sess.getId();
+            double beforeSum = all.stream()
+                    .filter(s -> s.getId() != null && currentId != null && s.getId() < currentId)
+                    .mapToDouble(s -> s.getVariacao() == null ? 0.0 : s.getVariacao())
+                    .sum();
+            double allSum = all.stream().mapToDouble(s -> s.getVariacao() == null ? 0.0 : s.getVariacao()).sum();
+            m.put("cumulative_before", beforeSum);
+            m.put("cumulative_all", allSum);
+        } catch (Exception ignored) {
+        }
+        return m;
     }
 
     @Data

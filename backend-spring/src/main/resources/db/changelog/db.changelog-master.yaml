@@ -358,3 +358,87 @@ databaseChangeLog:
             constraintName: fk_vendas_operador_usuarios
             referencedTableName: usuarios
             referencedColumnNames: id
+
+  - changeSet:
+      id: 20250821-add-saldo-contado
+      author: assistant
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - columnExists:
+                tableName: status_caixa
+                columnName: saldo_contado
+      changes:
+        - addColumn:
+            tableName: status_caixa
+            columns:
+              - column:
+                  name: saldo_contado
+                  type: numeric(18,2)
+      rollback:
+        - dropColumn:
+            tableName: status_caixa
+            columnName: saldo_contado
+
+  - changeSet:
+      id: 20250821-add-variacao
+      author: assistant
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - columnExists:
+                tableName: status_caixa
+                columnName: variacao
+      changes:
+        - addColumn:
+            tableName: status_caixa
+            columns:
+              - column:
+                  name: variacao
+                  type: numeric(18,2)
+      rollback:
+        - dropColumn:
+            tableName: status_caixa
+            columnName: variacao
+
+  - changeSet:
+      id: 20250821-add-variacao-acumulada
+      author: assistant
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - columnExists:
+                tableName: status_caixa
+                columnName: variacao_acumulada
+      changes:
+        - addColumn:
+            tableName: status_caixa
+            columns:
+              - column:
+                  name: variacao_acumulada
+                  type: numeric(18,2)
+      rollback:
+        - dropColumn:
+            tableName: status_caixa
+            columnName: variacao_acumulada
+
+  - changeSet:
+      id: 20250821-add-deficit-nao-reposto-acumulada
+      author: assistant
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - columnExists:
+                tableName: status_caixa
+                columnName: deficit_nao_reposto_acumulada
+      changes:
+        - addColumn:
+            tableName: status_caixa
+            columns:
+              - column:
+                  name: deficit_nao_reposto_acumulada
+                  type: numeric(18,2)
+      rollback:
+        - dropColumn:
+            tableName: status_caixa
+            columnName: deficit_nao_reposto_acumulada

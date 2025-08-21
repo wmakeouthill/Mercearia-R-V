@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api';
 import { CaixaService } from '../../services/caixa.service';
+import { AuthService } from '../../services/auth';
 import { logger } from '../../utils/logger';
 import { forkJoin } from 'rxjs';
 import { RelatorioResumo } from '../../models';
@@ -48,6 +49,7 @@ export class CaixaComponent implements OnInit {
   constructor(
     private readonly api: ApiService,
     private readonly caixaService: CaixaService,
+    private readonly authService: AuthService,
     public readonly router: Router,
   ) { }
 
@@ -286,13 +288,8 @@ export class CaixaComponent implements OnInit {
     this.loading = true;
     this.error = '';
     this.success = '';
-    // bloquear no UI para evitar tentativas por operadores quando caixa fechado
-    if (!this.caixaService.isCaixaAberto()) {
-      this.error = 'Caixa fechado. Operação permitida somente para administrador.';
-      this.loading = false;
-      return;
-    }
-
+    // Deixar o backend validar permissões (inclui permitir admin quando caixa fechado).
+    // Evita bloqueios inconsistentes por diferenças de estado no cliente.
     this.caixaService.adicionarMovimentacao({ tipo: this.tipo, valor: Number(this.valor), descricao: this.descricao || undefined })
       .subscribe({
         next: (resp) => {
