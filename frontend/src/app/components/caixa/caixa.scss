@@ -302,9 +302,15 @@
 }
 
 /* Modal styles aligned with project standards */
-.modal { position: fixed; inset: 0; z-index: 10000; }
-.modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.45); border: none; z-index:10000; display:block; }
-.modal-content { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); background: var(--card-bg,#fff); padding: 20px; border-radius: 12px; width: 720px; max-width: 95%; max-height: 85%; overflow:auto; box-shadow: 0 12px 40px rgba(0,0,0,0.3); z-index:10001; }
+.modal {
+  position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 10000; display:flex; align-items:center; justify-content:center; box-sizing: border-box;
+}
+.modal-backdrop {
+  position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: transparent; border: none; z-index:10000; display:block; box-sizing: border-box; pointer-events: auto;
+}
+.modal-content {
+  position: relative; background: var(--card-bg,#fff); padding: 20px; border-radius: 12px; width: 720px; max-width: 95%; max-height: 85%; overflow:auto; box-shadow: 0 12px 40px rgba(0,0,0,0.3); z-index:10001; box-sizing: border-box;
+}
 
 .totals-list { display:flex; flex-direction:column; gap:6px; margin-bottom:12px; }
 .total-item { display:flex; gap:8px; align-items:center; }
@@ -315,5 +321,10 @@
 .modal-actions .btn { height: 40px; padding: 0 12px; border-radius:8px; font-weight:700; }
 .modal-actions .btn-primary { background: var(--primary-blue); color: var(--white); }
 .modal-actions .btn-secondary { background: #ef4444; color: var(--white); }
+
+/* explicit overlay for dialog fallback */
+.dialog-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 10000; }
+.recon-dialog { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 10001; max-width: 95%; width: 720px; border: none; border-radius: 12px; padding: 20px; box-shadow: 0 12px 40px rgba(0,0,0,0.3); }
+dialog.recon-dialog::backdrop { background: rgba(0,0,0,0.45) !important; }
 
 

@@ -69,8 +69,8 @@ export class SessoesCaixaComponent implements OnInit {
     this.modalOpen = true;
     this.modalData = null;
     this.caixaService.getReconciliation(sessionId).subscribe({
-      next: data => { this.modalData = data; },
-      error: () => { this.modalData = { error: 'Falha ao carregar reconciliação' }; }
+      next: data => { this.modalData = data; setTimeout(() => this.showDialog(), 0); },
+      error: () => { this.modalData = { error: 'Falha ao carregar reconciliação' }; setTimeout(() => this.showDialog(), 0); }
     });
   }
 
@@ -90,6 +90,28 @@ export class SessoesCaixaComponent implements OnInit {
     a.download = `reconcil_${this.modalData.id || 'session'}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  // Dialog control
+  private dialogEl: HTMLDialogElement | null = null;
+  showDialog(): void {
+    const el = document.querySelector('dialog.recon-dialog') as HTMLDialogElement | null;
+    if (!el) return;
+    this.dialogEl = el;
+    try { if (!el.open) el.showModal(); } catch (e) { /* fallback */ }
+  }
+  closeDialog(ev?: any): void {
+    if (this.dialogEl && this.dialogEl.open) {
+      try { this.dialogEl.close(); } catch (e) { /* ignore */ }
+    }
+    this.modalOpen = false;
+    this.modalData = null;
+  }
+  onDialogClick(e: MouseEvent): void {
+    const target = e.target as HTMLElement;
+    if (target.tagName.toLowerCase() === 'dialog') {
+      this.closeDialog();
+    }
   }
 
   getKeys(obj: any): string[] {
