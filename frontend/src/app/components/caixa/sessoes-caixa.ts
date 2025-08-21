@@ -61,6 +61,51 @@ export class SessoesCaixaComponent implements OnInit {
 
   constructor(private readonly caixaService: CaixaService, private readonly router: Router) { }
 
+  // modal state
+  modalOpen = false;
+  modalData: any = null;
+
+  openReconciliation(sessionId: number): void {
+    this.modalOpen = true;
+    this.modalData = null;
+    this.caixaService.getReconciliation(sessionId).subscribe({
+      next: data => { this.modalData = data; },
+      error: () => { this.modalData = { error: 'Falha ao carregar reconciliação' }; }
+    });
+  }
+
+  closeModal(): void { this.modalOpen = false; this.modalData = null; }
+
+  exportCsv(): void {
+    if (!this.modalData) return;
+    const lines: string[] = [];
+    lines.push('Tipo,ID,Descricao,Valor,Usuario,Data');
+    for (const m of this.modalData.movimentacoes || []) {
+      lines.push([m.tipo, m.id, (m.descricao || '').replace(/,/g, ' '), (m.valor || 0).toFixed(2), (m.usuario || ''), new Date(m.data_movimento).toISOString()].join(','));
+    }
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `reconcil_${this.modalData.id || 'session'}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  getKeys(obj: any): string[] {
+    return obj ? Object.keys(obj) : [];
+  }
+
+  getMethodLabel(key: string): string {
+    switch (key) {
+      case 'dinheiro': return 'Dinheiro 💵';
+      case 'cartao_credito': return 'Crédito 💳';
+      case 'cartao_debito': return 'Débito 💳';
+      case 'pix': return 'PIX ⚡';
+      default: return key;
+    }
+  }
+
   ngOnInit(): void {
     this.loadPage(1);
   }

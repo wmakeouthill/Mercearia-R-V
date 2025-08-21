@@ -26,6 +26,7 @@
             <col style="width:10%" />
             <col style="width:7.5%" />
             <col style="width:5.5%" />
+            <col style="width:6%" />
           </colgroup>
           <thead>
             <tr>
@@ -38,6 +39,7 @@
               <th class="right">Saldo Inicial</th>
               <th class="right">Saldo Contado</th>
               <th class="right">Variação</th>
+              <th class="center">Ação</th>
             </tr>
           </thead>
           <tbody>
@@ -51,6 +53,7 @@
               <td class="right">R$ {{ it.saldo_inicial | number:'1.2-2' }}</td>
               <td class="right">R$ {{ it.saldo_contado | number:'1.2-2' }}</td>
               <td class="right">R$ {{ it.variacao | number:'1.2-2' }}</td>
+              <td class="center"><button class="btn-primary btn-registro" (click)="openReconciliation(it.id)">Relatório</button></td>
             </tr>
           </tbody>
         </table>
@@ -68,6 +71,54 @@
       </div>
     </div>
     <div *ngIf="!items || items.length===0">Nenhuma sessão encontrada</div>
+  </div>
+
+  <!-- Modal -->
+  <div class="modal" *ngIf="modalOpen" role="dialog" aria-modal="true">
+    <div class="modal-backdrop" (click)="closeModal()" aria-label="Fechar modal"></div>
+    <div class="modal-content">
+      <h3>Relatório de Reconciliação - Sessão {{ modalData?.id || '' }}</h3>
+      <div *ngIf="!modalData">Carregando...</div>
+      <div *ngIf="modalData?.error">{{ modalData.error }}</div>
+      <div *ngIf="modalData && !modalData.error">
+        <p><strong>Saldo Inicial:</strong> R$ {{ modalData.saldo_inicial | number:'1.2-2' }}</p>
+        <p><strong>Saldo Esperado:</strong> R$ {{ modalData.saldo_esperado | number:'1.2-2' }}</p>
+        <p><strong>Saldo Contado:</strong> R$ {{ modalData.saldo_contado | number:'1.2-2' }}</p>
+        <p><strong>Variação:</strong> R$ {{ modalData.variacao | number:'1.2-2' }}</p>
+        <h4>Totais por método</h4>
+        <div class="totals-list">
+          <div *ngFor="let k of getKeys(modalData.totals_by_metodo)" class="total-item">
+            <span class="method-label">{{ getMethodLabel(k) }}:</span>
+            <span class="method-value">R$ {{ modalData.totals_by_metodo[k] | number:'1.2-2' }}</span>
+          </div>
+        </div>
+        <h4>Movimentações</h4>
+        <table class="small-table">
+          <tr><th>ID</th><th>Tipo</th><th>Valor</th><th>Usuário</th><th>Data</th></tr>
+          <tr *ngFor="let m of modalData.movimentacoes">
+            <td>{{ m.id }}</td>
+            <td>{{ m.tipo }}</td>
+            <td>R$ {{ m.valor | number:'1.2-2' }}</td>
+            <td>{{ m.usuario || '-' }}</td>
+            <td>{{ m.data_movimento | date:'dd/MM/yyyy HH:mm' }}</td>
+          </tr>
+        </table>
+        <h4>Vendas</h4>
+        <table class="small-table">
+          <tr><th>ID</th><th>Data</th><th>Total</th><th>Operador</th></tr>
+          <tr *ngFor="let v of modalData.vendas">
+            <td>{{ v.id }}</td>
+            <td>{{ v.data_venda | date:'dd/MM/yyyy HH:mm' }}</td>
+            <td>R$ {{ v.total_final | number:'1.2-2' }}</td>
+            <td>{{ v.operador || '-' }}</td>
+          </tr>
+        </table>
+        <div class="modal-actions">
+          <button class="btn" (click)="closeModal()">Fechar</button>
+          <button class="btn" (click)="exportCsv()">Exportar CSV</button>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 

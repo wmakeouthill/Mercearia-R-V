@@ -196,6 +196,9 @@ databaseChangeLog:
   - changeSet:
       id: 009-add-caixa-fields-and-fks
       author: system
+      # Accept previous checksum to avoid validation failure when editing an already-applied changeset in development
+      validCheckSum:
+        - "9:fc891c2a6b2d0ca0bfd949bd43b4a87c"
       preConditions:
         - onFail: MARK_RAN
       changes:
@@ -220,6 +223,12 @@ databaseChangeLog:
               - column:
                   name: observacoes_fechamento
                   type: TEXT
+              - column:
+                  name: criado_em
+                  type: TIMESTAMP WITH TIME ZONE
+              - column:
+                  name: atualizado_em
+                  type: TIMESTAMP WITH TIME ZONE
 
         - addColumn:
             tableName: caixa_movimentacoes
@@ -233,6 +242,12 @@ databaseChangeLog:
               - column:
                   name: aprovado_por
                   type: BIGINT
+              - column:
+                  name: criado_em
+                  type: TIMESTAMP WITH TIME ZONE
+              - column:
+                  name: atualizado_em
+                  type: TIMESTAMP WITH TIME ZONE
 
         - addColumn:
             tableName: venda_cabecalho

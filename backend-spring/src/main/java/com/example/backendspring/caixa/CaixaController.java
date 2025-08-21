@@ -616,6 +616,90 @@ public class CaixaController {
         return ResponseEntity.ok(Map.of(KEY_MESSAGE, "Horários configurados com sucesso"));
     }
 
+    @GetMapping("/session/{id}/reconciliation")
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    public ResponseEntity<java.util.Map<String, Object>> reconciliation(@PathVariable("id") Long sessionId) {
+        try {
+            var statusOpt = caixaStatusRepository.findById(sessionId);
+            if (statusOpt.isEmpty()) {
+                return ResponseEntity.status(404).body(Map.of(KEY_ERROR, "Sessão não encontrada"));
+            }
+            var status = statusOpt.get();
+            java.util.Map<String, Object> resp = new java.util.LinkedHashMap<>();
+            resp.put("id", status.getId());
+            resp.put("aberto", Boolean.TRUE.equals(status.getAberto()));
+            resp.put("data_abertura", status.getDataAbertura());
+            resp.put("data_fechamento", status.getDataFechamento());
+            resp.put("saldo_inicial", status.getSaldoInicial());
+
+            // Movimentações vinculadas à sessão
+            java.util.List<java.util.Map<String, Object>> movs = movimentacaoRepository.findAllOrderByData().stream()
+                    .filter(m -> m.getCaixaStatus() != null && status.getId().equals(m.getCaixaStatus().getId()))
+                    .map(m -> {
+                        java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
+                        row.put("id", m.getId());
+                        row.put("tipo", m.getTipo());
+                        row.put("valor", m.getValor());
+                        row.put("descricao", m.getDescricao());
+                        row.put("usuario", m.getUsuario() != null ? m.getUsuario().getUsername() : null);
+                        row.put("data_movimento", m.getDataMovimento());
+                        return row;
+                    }).toList();
+            resp.put("movimentacoes", movs);
+
+            // Vendas vinculadas à sessão
+            var orders = saleOrderRepository.findAllOrderByData().stream()
+                    .filter(o -> o.getCaixaStatus() != null && status.getId().equals(o.getCaixaStatus().getId()))
+                    .toList();
+            java.util.List<java.util.Map<String, Object>> vendas = orders.stream().map(o -> {
+                java.util.Map<String, Object> r = new java.util.LinkedHashMap<>();
+                r.put("id", o.getId());
+                r.put("data_venda", o.getDataVenda());
+                r.put("total_final", o.getTotalFinal());
+                r.put("operador", o.getOperador() != null ? o.getOperador().getUsername() : null);
+                r.put("itens", o.getItens().stream().map(it -> {
+                    var im = new java.util.LinkedHashMap<String, Object>();
+                    im.put("produto_id", it.getProduto() != null ? it.getProduto().getId() : null);
+                    im.put("produto_nome", it.getProduto() != null ? it.getProduto().getNome() : null);
+                    im.put("quantidade", it.getQuantidade());
+                    im.put("preco_total", it.getPrecoTotal());
+                    return im;
+                }).toList());
+                r.put("pagamentos", o.getPagamentos().stream().map(p -> {
+                    var pm = new java.util.LinkedHashMap<String, Object>();
+                    pm.put("metodo", p.getMetodo());
+                    pm.put("valor", p.getValor());
+                    return pm;
+                }).toList());
+                return r;
+            }).toList();
+            resp.put("vendas", vendas);
+
+            // Totais por método de pagamento
+            java.util.Map<String, Double> totalsByMetodo = new java.util.LinkedHashMap<>();
+            orders.stream().flatMap(o -> o.getPagamentos().stream()).forEach(p -> {
+                totalsByMetodo.putIfAbsent(p.getMetodo(), 0.0);
+                totalsByMetodo.put(p.getMetodo(),
+                        totalsByMetodo.get(p.getMetodo()) + (p.getValor() == null ? 0.0 : p.getValor()));
+            });
+            double totalEntradas = movs.stream().filter(m -> "entrada".equals(m.get("tipo")))
+                    .mapToDouble(m -> ((Number) m.get("valor")).doubleValue()).sum();
+            double totalRetiradas = movs.stream().filter(m -> "retirada".equals(m.get("tipo")))
+                    .mapToDouble(m -> ((Number) m.get("valor")).doubleValue()).sum();
+            resp.put("totals_by_metodo", totalsByMetodo);
+            resp.put("sum_entradas", totalEntradas);
+            resp.put("sum_retiradas", totalRetiradas);
+
+            resp.put("saldo_esperado", status.getSaldoEsperado());
+            resp.put("saldo_contado", status.getSaldoContado());
+            resp.put("variacao", status.getVariacao());
+
+            return ResponseEntity.ok(resp);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of(KEY_ERROR, "Falha ao gerar relatório de reconciliação"));
+        }
+    }
+
     @Data
     public static class HorariosRequest {
         private String horarioAberturaObrigatorio;

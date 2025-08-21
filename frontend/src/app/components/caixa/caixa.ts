@@ -286,6 +286,13 @@ export class CaixaComponent implements OnInit {
     this.loading = true;
     this.error = '';
     this.success = '';
+    // bloquear no UI para evitar tentativas por operadores quando caixa fechado
+    if (!this.caixaService.isCaixaAberto()) {
+      this.error = 'Caixa fechado. Operação permitida somente para administrador.';
+      this.loading = false;
+      return;
+    }
+
     this.caixaService.adicionarMovimentacao({ tipo: this.tipo, valor: Number(this.valor), descricao: this.descricao || undefined })
       .subscribe({
         next: (resp) => {

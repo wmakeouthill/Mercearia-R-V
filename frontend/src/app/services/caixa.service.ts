@@ -60,6 +60,13 @@ export class CaixaService {
     );
   }
 
+  /**
+   * Obtém relatório de reconciliação para uma sessão específica
+   */
+  getReconciliation(sessionId: number): Observable<any> {
+    return this.makeRequest('GET_RECONCILIATION', () => this.http.get<any>(`${this.baseUrl}/caixa/session/${sessionId}/reconciliation`));
+  }
+
   listarMovimentacoes(params: {
     data?: string,
     tipo?: string,
@@ -98,6 +105,7 @@ export class CaixaService {
   }
 
   adicionarMovimentacao(mov: { tipo: 'entrada' | 'retirada'; valor: number; descricao?: string }): Observable<{ message: string }> {
+    // Ainda que o backend valide permissões, recarregamos o status após tentativa
     return this.makeRequest('ADICIONAR_MOVIMENTACAO', () => this.http.post<{ message: string }>(`${this.baseUrl}/caixa/movimentacoes`, mov)).pipe(
       tap(() => {
         this.loadStatusCaixa();

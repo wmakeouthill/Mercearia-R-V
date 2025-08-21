@@ -301,4 +301,19 @@
   }
 }
 
+/* Modal styles aligned with project standards */
+.modal { position: fixed; inset: 0; z-index: 10000; }
+.modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.45); border: none; z-index:10000; display:block; }
+.modal-content { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); background: var(--card-bg,#fff); padding: 20px; border-radius: 12px; width: 720px; max-width: 95%; max-height: 85%; overflow:auto; box-shadow: 0 12px 40px rgba(0,0,0,0.3); z-index:10001; }
+
+.totals-list { display:flex; flex-direction:column; gap:6px; margin-bottom:12px; }
+.total-item { display:flex; gap:8px; align-items:center; }
+.method-label { font-weight:700; color:var(--primary-blue); }
+.method-value { margin-left:8px; font-weight:700; }
+.modal-content h3 { margin-top: 0; }
+.modal-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:12px; }
+.modal-actions .btn { height: 40px; padding: 0 12px; border-radius:8px; font-weight:700; }
+.modal-actions .btn-primary { background: var(--primary-blue); color: var(--white); }
+.modal-actions .btn-secondary { background: #ef4444; color: var(--white); }
+
 
