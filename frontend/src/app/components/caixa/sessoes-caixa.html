@@ -93,12 +93,13 @@
       </div>
       <h4>Movimentações</h4>
       <table class="small-table">
-        <tr><th>ID</th><th>Tipo</th><th>Valor</th><th>Usuário</th><th>Data</th></tr>
+        <tr><th>ID</th><th>Tipo</th><th>Valor</th><th>Usuário</th><th>Descrição</th><th>Data</th></tr>
         <tr *ngFor="let m of modalData.movimentacoes">
           <td>{{ m.id }}</td>
           <td>{{ m.tipo }}</td>
           <td>R$ {{ m.valor | number:'1.2-2' }}</td>
           <td>{{ m.usuario || '-' }}</td>
+          <td>{{ m.descricao || '-' }}</td>
           <td>{{ m.data_movimento | date:'dd/MM/yyyy HH:mm' }}</td>
         </tr>
       </table>
