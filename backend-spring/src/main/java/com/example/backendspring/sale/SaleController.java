@@ -3,12 +3,11 @@ package com.example.backendspring.sale;
 import com.example.backendspring.product.Product;
 import com.example.backendspring.product.ProductRepository;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.example.backendspring.caixa.CaixaStatusRepository;
 import com.example.backendspring.client.Client;
 import com.example.backendspring.client.ClientRepository;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
-import com.example.backendspring.caixa.CaixaStatusRepository;
-import com.example.backendspring.user.UserRepository;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
@@ -35,8 +34,7 @@ public class SaleController {
     private final SaleReportService saleReportService;
     private final SaleDeletionRepository saleDeletionRepository;
     private final ObjectMapper objectMapper;
-    private final com.example.backendspring.caixa.CaixaStatusRepository caixaStatusRepository;
-    private final com.example.backendspring.user.UserRepository userRepository;
+    private final CaixaStatusRepository caixaStatusRepository;
 
     private static final String KEY_ERROR = "error";
     private static final String KEY_MESSAGE = "message";
@@ -203,15 +201,13 @@ public class SaleController {
             return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, "Estoque insuficiente"));
         }
 
-        // bloquear venda caso caixa fechado e usuário não seja admin
+        // bloquear venda caso caixa fechado (removida exceção para admin)
         try {
             var status = caixaStatusRepository.findTopByOrderByIdDesc().orElse(null);
             if (status == null || !Boolean.TRUE.equals(status.getAberto())) {
-                var u = userRepository.findById(userId).orElse(null);
-                if (u == null || u.getRole() == null || !u.getRole().equals("admin")) {
-                    return ResponseEntity.status(403)
-                            .body(Map.of(KEY_ERROR, "Caixa fechado. Operação permitida somente para admin."));
-                }
+                return ResponseEntity.status(403)
+                        .body(Map.of(KEY_ERROR,
+                                "Caixa fechado. Operação não é permitida quando o caixa está fechado."));
             }
         } catch (Exception ignored) {
         }

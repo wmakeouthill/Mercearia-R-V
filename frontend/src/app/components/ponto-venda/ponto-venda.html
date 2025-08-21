@@ -208,3 +208,13 @@
 
 @if (showEnviarModal) {<app-enviar-nota-modal [orderId]="modalOrderId" (close)="closeEnviarModal()" (notify)="handleModalNotify($event)"></app-enviar-nota-modal>}
 @if (showConfirmModal) {<app-confirm-modal [title]="'Venda finalizada'" [message]="confirmMessage" (confirm)="onConfirmSend()" (cancel)="onCancelSend()"></app-confirm-modal>}
+
+@if (statusCaixa && !statusCaixa.aberto) {
+    <div class="caixa-blocked-overlay">
+        <div class="overlay-content">
+            <div class="lock-icon">🔒</div>
+            <div class="blocked-text">Caixa Fechado</div>
+            <button class="overlay-btn" (click)="voltarAoDashboard()">Voltar ao Dashboard</button>
+        </div>
+    </div>
+}

@@ -5,6 +5,42 @@
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
+.caixa-blocked-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.caixa-blocked-overlay .overlay-content {
+    background: linear-gradient(135deg, var(--white) 0%, #f8f9fa 100%);
+    padding: 28px 36px;
+    border-radius: 12px;
+    text-align: center;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.35);
+    color: var(--primary-blue);
+}
+.caixa-blocked-overlay .lock-icon {
+    font-size: 48px;
+    margin-bottom: 12px;
+}
+.caixa-blocked-overlay .blocked-text {
+    font-size: 1.4rem;
+    font-weight: 700;
+    margin-bottom: 14px;
+}
+.caixa-blocked-overlay .overlay-btn {
+    background: linear-gradient(135deg, #DBC27D 0%, #D1B867 100%);
+    border: none;
+    padding: 10px 18px;
+    border-radius: 10px;
+    color: var(--primary-blue);
+    font-weight: 700;
+    cursor: pointer;
+}
+
 .ponto-venda-header {
     display: flex;
     justify-content: space-between;

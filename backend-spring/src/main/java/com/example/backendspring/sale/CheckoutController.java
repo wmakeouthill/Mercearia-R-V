@@ -94,15 +94,12 @@ public class CheckoutController {
             log.info("CHECKOUT request recebido: itens={}, pagamentos={}, subtotal={}, total={}",
                     req.getItens().size(), req.getPagamentos().size(), subtotal, totalFinal);
 
-            // bloquear checkout caso caixa fechado e usuário não seja admin
+            // bloquear checkout caso caixa fechado para todos os usuários (removida exceção
+            // para admin)
             var status = caixaStatusRepository.findTopByOrderByIdDesc().orElse(null);
             if (status == null || !Boolean.TRUE.equals(status.getAberto())) {
-                var u = userRepository.findById(userId).orElse(null);
-                // permitir apenas admin quando caixa fechado
-                if (u == null || u.getRole() == null || !u.getRole().equals("admin")) {
-                    return ResponseEntity.status(403)
-                            .body(Map.of("error", "Caixa fechado. Checkout permitido somente para admin."));
-                }
+                return ResponseEntity.status(403)
+                        .body(Map.of("error", "Caixa fechado. Checkout não é permitido quando o caixa está fechado."));
             }
 
             // criar venda e persistir

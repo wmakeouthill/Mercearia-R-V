@@ -64,7 +64,7 @@
                 </div>
             </div>}
 
-                        <div class="nav-card sales-card" [class.blocked]="!isAdmin && statusCaixa && !statusCaixa.aberto" (click)="handlePontoVendaClick()" (keydown.enter)="handlePontoVendaClick()" (keydown.space)="handlePontoVendaClick()">
+                        <div class="nav-card sales-card" [class.blocked]="statusCaixa && !statusCaixa.aberto" (click)="handlePontoVendaClick()" (keydown.enter)="handlePontoVendaClick()" (keydown.space)="handlePontoVendaClick()">
                 <div class="card-header">
                     <div class="nav-icon">💰</div>
                     <h3>Ponto de Venda</h3>
@@ -75,7 +75,7 @@
                 </div>
 
                 <!-- Overlay de bloqueio quando caixa fechado -->
-                @if (!isAdmin && statusCaixa && !statusCaixa.aberto) {
+                @if (statusCaixa && !statusCaixa.aberto) {
                     <div class="caixa-blocked-overlay">
                         <div class="overlay-content">
                             <div class="lock-icon">🔒</div>

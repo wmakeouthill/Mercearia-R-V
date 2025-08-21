@@ -417,8 +417,10 @@ public class CaixaController {
             }
 
             var agora = java.time.OffsetDateTime.now();
-            // associar à sessão atual do caixa, se existir
-            var statusAtualLocal = caixaStatusRepository.findTopByOrderByIdDesc().orElse(null);
+            // associar à sessão atual do caixa: preferir sessão aberta; senão usar última
+            // sessão existente
+            var statusAtualLocal = caixaStatusRepository.findTopByAbertoTrueOrderByIdDesc()
+                    .orElseGet(() -> caixaStatusRepository.findTopByOrderByIdDesc().orElse(null));
             CaixaMovimentacao.CaixaMovimentacaoBuilder movBuilder = CaixaMovimentacao.builder()
                     .tipo(tipo)
                     .valor(req.getValor())

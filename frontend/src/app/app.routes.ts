@@ -1,6 +1,7 @@
 import { Routes } from '@angular/router';
 import { AuthGuard } from './guards/auth.guard';
 import { AdminGuard } from './guards/admin.guard';
+import { CaixaGuard } from './guards/caixa.guard';
 
 export const routes: Routes = [
     { path: '', redirectTo: '/dashboard', pathMatch: 'full' },
@@ -38,7 +39,7 @@ export const routes: Routes = [
     {
         path: 'vendas',
         loadComponent: () => import('./components/ponto-venda/ponto-venda').then(m => m.PontoVendaComponent),
-        canActivate: [AuthGuard]
+        canActivate: [AuthGuard, CaixaGuard]
     },
     {
         path: 'relatorios',

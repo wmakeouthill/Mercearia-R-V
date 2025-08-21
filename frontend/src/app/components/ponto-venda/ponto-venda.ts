@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, HostListener, ElementRef, Renderer2, ViewChild } from '@angular/core';
+import { Component, OnInit, OnDestroy, HostListener, ElementRef, Renderer2, ViewChild, ChangeDetectorRef } from '@angular/core';
 import { EnviarNotaModalComponent } from '../enviar-nota-modal/enviar-nota-modal';
 import { ConfirmModalComponent } from '../confirm-modal/confirm-modal';
 import { CommonModule } from '@angular/common';
@@ -161,7 +161,8 @@ export class PontoVendaComponent implements OnInit, OnDestroy {
     private readonly imageService: ImageService,
     private readonly router: Router,
     private readonly renderer: Renderer2,
-    private readonly notificationService: NotificationService
+    private readonly notificationService: NotificationService,
+    private readonly cdr: ChangeDetectorRef
   ) { }
 
   onConfirmSend(): void {
@@ -181,6 +182,15 @@ export class PontoVendaComponent implements OnInit, OnDestroy {
     logger.info('PONTO_VENDA', 'INIT', 'Componente iniciado');
     this.isAdmin = this.authService.isAdmin();
     this.podeControlarCaixa = this.authService.podeControlarCaixa();
+    // Se o serviço já carregou o status, aplicar imediatamente para mostrar overlay
+    const st = this.caixaService.getCurrentStatus();
+    if (st) {
+      this.statusCaixa = st;
+      if (!st.aberto) {
+        this.error = 'Caixa fechado. As operações estão bloqueadas até reabertura.';
+      }
+      try { this.cdr.detectChanges(); } catch (e) { /* ignore */ }
+    }
     this.checkCaixaStatus();
     this.setupCaixaMonitoring();
     this.setupPeriodicCaixaCheck();
@@ -242,24 +252,21 @@ export class PontoVendaComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * Verifica o status inicial do caixa
+   * Verifica o status inicial do caixa (aplica a todos os perfis, inclusive admin)
    */
   private checkCaixaStatus(): void {
-    // Se é admin, sempre pode usar o ponto de venda
-    if (this.isAdmin) {
-      return;
-    }
-
     this.caixaService.getStatusCaixa().subscribe({
       next: (status) => {
         this.statusCaixa = status;
         if (!status.aberto) {
-          this.redirectToDashboard('O caixa está fechado. Você foi redirecionado para o dashboard.');
+          // Permanecer no ponto de venda e mostrar overlay (visual de bloqueio)
+          this.error = 'Caixa fechado. As operações estão bloqueadas até reabertura.';
         }
       },
       error: (error) => {
         logger.error('PONTO_VENDA', 'CHECK_CAIXA', 'Erro ao verificar status do caixa', error);
-        this.redirectToDashboard('Erro ao verificar status do caixa. Você foi redirecionado para o dashboard.');
+        // Mostrar erro local, sem redirecionar
+        this.error = 'Erro ao verificar status do caixa.';
       }
     });
   }
@@ -268,18 +275,15 @@ export class PontoVendaComponent implements OnInit, OnDestroy {
    * Monitora mudanças no status do caixa em tempo real
    */
   private setupCaixaMonitoring(): void {
-    // Se é admin, não precisa monitorar
-    if (this.isAdmin) {
-      return;
-    }
-
     this.statusCaixaSubscription = this.caixaService.statusCaixa$.subscribe(status => {
       if (status) {
         this.statusCaixa = status;
-        // Se o caixa foi fechado enquanto o usuário estava usando o ponto de venda
+        // Se o caixa foi fechado enquanto o usuário estava usando o ponto de venda,
+        // não redirecionar: exibir overlay e mensagem
         if (!status.aberto) {
-          this.redirectToDashboard('O caixa foi fechado. Você foi redirecionado para o dashboard.');
+          this.error = 'Caixa fechado. As operações foram bloqueadas.';
         }
+        try { this.cdr.detectChanges(); } catch (e) { /* ignore */ }
       }
     });
   }
@@ -288,18 +292,15 @@ export class PontoVendaComponent implements OnInit, OnDestroy {
    * Configura verificação periódica do status do caixa (a cada 30 segundos)
    */
   private setupPeriodicCaixaCheck(): void {
-    // Se é admin, não precisa verificar periodicamente
-    if (this.isAdmin) {
-      return;
-    }
-
+    // Verificação periódica do status do caixa para todos os usuários (incluindo admin)
     this.periodicCheckInterval = setInterval(() => {
       this.caixaService.getStatusCaixa().subscribe({
         next: (status) => {
           this.statusCaixa = status;
           if (!status.aberto) {
-            this.redirectToDashboard('O caixa foi fechado automaticamente. Você foi redirecionado para o dashboard.');
+            this.error = 'Caixa fechado. As operações foram bloqueadas.';
           }
+          try { this.cdr.detectChanges(); } catch (e) { /* ignore */ }
         },
         error: (error) => {
           logger.warn('PONTO_VENDA', 'CHECK_CAIXA_PERIODICO', 'Erro na verificação periódica do caixa', error);
@@ -405,8 +406,8 @@ export class PontoVendaComponent implements OnInit, OnDestroy {
 
   adicionarAoCarrinho(manterSelecao: boolean = false): void {
     // Verificar se o caixa está aberto (proteção adicional)
-    if (!this.isAdmin && this.statusCaixa && !this.statusCaixa.aberto) {
-      this.redirectToDashboard('O caixa foi fechado. Não é possível adicionar produtos ao carrinho.');
+    if (this.statusCaixa && !this.statusCaixa.aberto) {
+      this.error = 'O caixa está fechado. Não é possível adicionar produtos ao carrinho.';
       return;
     }
 
@@ -485,8 +486,9 @@ export class PontoVendaComponent implements OnInit, OnDestroy {
 
   finalizarVenda(): void {
     // Verificar se o caixa está aberto (proteção adicional)
-    if (!this.isAdmin && this.statusCaixa && !this.statusCaixa.aberto) {
-      this.redirectToDashboard('O caixa foi fechado. Não é possível finalizar vendas.');
+    if (this.statusCaixa && !this.statusCaixa.aberto) {
+      this.error = 'O caixa está fechado. Não é possível finalizar vendas.';
+      this.loading = false;
       return;
     }
 
