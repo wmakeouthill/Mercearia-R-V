@@ -997,8 +997,16 @@ export class RelatorioVendasComponent implements OnInit {
   private passaFiltroData(venda: Venda): boolean {
     if (!this.filtroData) return true;
     try {
-      const vendaDataLocal = extractLocalDate(venda.data_venda);
-      return vendaDataLocal === this.filtroData;
+      if (this.filtroPeriodo === 'dia') {
+        const vendaDataLocal = extractLocalDate(venda.data_venda); // YYYY-MM-DD
+        return vendaDataLocal === this.filtroData;
+      }
+
+      // filtroPeriodo === 'mes' -> filtroData expected YYYY-MM (from input type=month)
+      const vendaMes = extractYearMonth(venda.data_venda); // YYYY-MM
+      // normalize filtroData which can be 'YYYY-MM' or 'YYYY-MM-DD' if user pasted
+      const filtroMes = (this.filtroData || '').slice(0, 7);
+      return vendaMes === filtroMes;
     } catch (error) {
       logger.warn('RELATORIO_VENDAS', 'FILTER_INVALID_DATE', 'Data de venda inválida ao aplicar filtro', { venda, error: String(error) });
       return false;
@@ -1027,6 +1035,25 @@ export class RelatorioVendasComponent implements OnInit {
     if (/^\d{4}-\d{2}-\d{2}$/.test(data)) {
       return formatDateYMD(data);
     }
+
+    // Para relatórios mensais o agrupamento produz 'YYYY-MM'
+    if (/^\d{4}-\d{2}$/.test(data)) {
+      // formatar como Mmm/AA (ex: Jan/24)
+      try {
+        const parts = data.split('-');
+        const year = Number(parts[0]);
+        const month = Number(parts[1]);
+        const date = new Date(year, month - 1, 1);
+        // Remover possível ponto final da abreviação (ex: "ago.") e capitalizar
+        const monthName = date.toLocaleString('pt-BR', { month: 'short' }).replace(/\.$/, '');
+        const yearShort = String(year).slice(-2);
+        const formattedMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
+        return `${formattedMonth}/${yearShort}`;
+      } catch (e) {
+        return data;
+      }
+    }
+
     return formatDateBR(data);
   }
 
