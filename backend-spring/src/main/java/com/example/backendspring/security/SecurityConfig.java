@@ -42,6 +42,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.DELETE, "/api/checkout/**").hasRole(ROLE_ADMIN)
                         .requestMatchers(HttpMethod.GET, "/api/audit/sales").hasRole(ROLE_ADMIN)
                         .requestMatchers(HttpMethod.PUT, "/api/audit/**").hasRole(ROLE_ADMIN)
+                        .requestMatchers(HttpMethod.DELETE, "/api/audit/**").hasRole(ROLE_ADMIN)
                         .requestMatchers(HttpMethod.PUT, "/api/caixa/horarios").hasRole(ROLE_ADMIN)
                         // Allow public GET access to generated nota PDF so frontend can
                         // preview/download without needing JWT

@@ -203,4 +203,21 @@ public class AuditController {
             return ResponseEntity.ok(Map.of("count", 0, "recent", List.of()));
         }
     }
+
+    @DeleteMapping("/sales/{id}")
+    @Transactional
+    public ResponseEntity<Object> deleteAuditSale(@PathVariable Long id) {
+        try {
+            Optional<SaleDeletion> maybe = saleDeletionRepository.findById(id);
+            if (maybe.isEmpty())
+                return ResponseEntity.status(404).body(Map.of("error", "Registro de auditoria não encontrado"));
+
+            saleDeletionRepository.deleteById(id);
+            return ResponseEntity.ok(Map.of("message", "Registro de auditoria excluído com sucesso"));
+        } catch (Exception e) {
+            log.error("Failed to delete audit sale", e);
+            return ResponseEntity.status(500)
+                    .body(Map.of("error", "Falha ao excluir registro de auditoria", "details", e.getMessage()));
+        }
+    }
 }
