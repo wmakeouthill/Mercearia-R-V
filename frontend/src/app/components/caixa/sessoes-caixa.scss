@@ -54,7 +54,12 @@
 .sessoes-table col:nth-child(9) { width: 110px; }
 
 .sessoes-table td.center, .sessoes-table th.center { text-align: center; }
-.sessoes-table td.right, .sessoes-table th.right { text-align: right; }
+.sessoes-table td.right, .sessoes-table th.right { text-align: right; white-space: nowrap; }
+
+/* prevent currency symbol and amount from breaking into separate lines */
+.sessoes-table td.right::before { content: '\00a0'; }
+/* ensure variation column never breaks into multiple lines */
+.sessoes-table td.right, .sessoes-table th.right { white-space: nowrap; }
 
 .tabela-cabecalho { font-weight: 700; border-bottom: 1px solid #e5e7eb; padding: 8px 0; }
 .tabela-cabecalho .th { white-space: nowrap; }

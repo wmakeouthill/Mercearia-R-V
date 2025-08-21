@@ -50,9 +50,9 @@
               <td>{{ it.aberto_por || '-' }}</td>
               <td>{{ it.data_fechamento ? (it.data_fechamento | date:'dd/MM/yyyy HH:mm') : '-' }}</td>
               <td>{{ it.fechado_por || '-' }}</td>
-              <td class="right">R$ {{ it.saldo_inicial | number:'1.2-2' }}</td>
-              <td class="right">R$ {{ it.saldo_contado | number:'1.2-2' }}</td>
-              <td class="right">R$ {{ it.variacao | number:'1.2-2' }}</td>
+              <td class="right">R$&nbsp;{{ it.saldo_inicial | number:'1.2-2' }}</td>
+              <td class="right">R$&nbsp;{{ it.saldo_contado | number:'1.2-2' }}</td>
+              <td class="right">R$&nbsp;{{ it.variacao | number:'1.2-2' }}</td>
               <td class="center"><button class="btn-primary btn-registro" (click)="openReconciliation(it.id)">Relatório</button></td>
             </tr>
           </tbody>
@@ -80,10 +80,10 @@
     <div *ngIf="!modalData">Carregando...</div>
     <div *ngIf="modalData?.error">{{ modalData.error }}</div>
     <div *ngIf="modalData && !modalData.error">
-      <p><strong>Saldo Inicial:</strong> R$ {{ modalData.saldo_inicial | number:'1.2-2' }}</p>
-      <p><strong>Saldo Esperado:</strong> R$ {{ modalData.saldo_esperado | number:'1.2-2' }}</p>
-      <p><strong>Saldo Contado:</strong> R$ {{ modalData.saldo_contado | number:'1.2-2' }}</p>
-      <p><strong>Variação:</strong> R$ {{ modalData.variacao | number:'1.2-2' }}</p>
+      <p><strong>Saldo Inicial:</strong> R$&nbsp;{{ modalData.saldo_inicial | number:'1.2-2' }}</p>
+      <p><strong>Saldo Esperado:</strong> R$&nbsp;{{ modalData.saldo_esperado | number:'1.2-2' }}</p>
+      <p><strong>Saldo Contado:</strong> R$&nbsp;{{ modalData.saldo_contado | number:'1.2-2' }}</p>
+      <p><strong>Variação:</strong> R$&nbsp;{{ modalData.variacao | number:'1.2-2' }}</p>
       <h4>Totais por método</h4>
       <div class="totals-list">
         <div *ngFor="let k of getKeys(modalData.totals_by_metodo)" class="total-item">

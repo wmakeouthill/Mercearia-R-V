@@ -193,6 +193,59 @@ export class SessoesCaixaComponent implements OnInit {
       dlg.style.position = 'fixed';
     }
 
+    // make mini-dialog draggable by its header
+    try {
+      const header = dlg.querySelector('h4');
+      if (header) {
+        header.style.cursor = 'move';
+        let dragging = false;
+        let startX = 0, startY = 0, startLeft = 0, startTop = 0;
+
+        const onPointerMove = (ev: MouseEvent) => {
+          if (!dragging) return;
+          ev.preventDefault();
+          const dx = ev.clientX - startX;
+          const dy = ev.clientY - startY;
+          let newLeft = startLeft + dx;
+          let newTop = startTop + dy;
+          // clamp to viewport
+          const maxLeft = window.innerWidth - dlg.offsetWidth - 8;
+          const maxTop = window.innerHeight - dlg.offsetHeight - 8;
+          newLeft = Math.max(8, Math.min(newLeft, maxLeft));
+          newTop = Math.max(8, Math.min(newTop, maxTop));
+          dlg.style.left = newLeft + 'px';
+          dlg.style.top = newTop + 'px';
+        };
+
+        const onPointerUp = () => {
+          dragging = false;
+          document.removeEventListener('mousemove', onPointerMove);
+          document.removeEventListener('mouseup', onPointerUp);
+        };
+
+        const onPointerDown = (ev: MouseEvent) => {
+          ev.preventDefault();
+          dragging = true;
+          startX = ev.clientX;
+          startY = ev.clientY;
+          startLeft = parseInt(dlg.style.left || '0', 10);
+          startTop = parseInt(dlg.style.top || '0', 10);
+          document.addEventListener('mousemove', onPointerMove);
+          document.addEventListener('mouseup', onPointerUp);
+        };
+
+        header.addEventListener('mousedown', onPointerDown);
+        // cleanup on close
+        const cleanupDrag = () => {
+          header.removeEventListener('mousedown', onPointerDown);
+          document.removeEventListener('mousemove', onPointerMove);
+          document.removeEventListener('mouseup', onPointerUp);
+        };
+        // attach cleanup to close function later by storing on element
+        (dlg as any).__cleanupDrag = cleanupDrag;
+      }
+    } catch (err) { /* ignore drag setup errors */ }
+
     // close handlers: click on dlg backdrop or on main dialog should close
     const closeFn = () => {
       try { (dlg as any).close(); } catch (e) { /* ignore */ }
@@ -200,6 +253,8 @@ export class SessoesCaixaComponent implements OnInit {
       document.removeEventListener('click', docClick);
       if (mainDialog && mainDialogClick) mainDialog.removeEventListener('click', mainDialogClick);
       if (dlgBackdropClick) dlg.removeEventListener('click', dlgBackdropClick);
+      // cleanup drag handlers if present
+      try { if ((dlg as any).__cleanupDrag) (dlg as any).__cleanupDrag(); } catch (ignored) { }
     };
 
     const docClick = (ev: any) => {
