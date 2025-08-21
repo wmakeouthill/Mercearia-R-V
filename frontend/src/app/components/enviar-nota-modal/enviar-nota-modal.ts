@@ -51,7 +51,7 @@ export class EnviarNotaModalComponent implements OnChanges {
   private pdfArrayBuffer: ArrayBuffer | null = null;
   private pdfDoc: any = null;
   private pageObserver: IntersectionObserver | null = null;
-  private renderedPages = new Set<number>();
+  private readonly renderedPages = new Set<number>();
 
   constructor(
     private readonly apiService: ApiService,
@@ -89,7 +89,7 @@ export class EnviarNotaModalComponent implements OnChanges {
     this.objectFailed = false;
 
     this.apiService.getNotaPdf(orderId).subscribe({
-      next: async (blob: any) => {
+      next: (blob: any) => {
         try {
           const pdfBlob = blob as Blob;
           if (!pdfBlob || pdfBlob.size === 0) {
@@ -97,7 +97,11 @@ export class EnviarNotaModalComponent implements OnChanges {
             return;
           }
           if (this.previewObjectUrl) {
-            try { URL.revokeObjectURL(this.previewObjectUrl); } catch (e) { }
+            try {
+              URL.revokeObjectURL(this.previewObjectUrl);
+            } catch (e) {
+              console.debug('revokeObjectURL failed', e);
+            }
             this.previewObjectUrl = null;
             this.previewBlobUrl = null;
           }
@@ -105,7 +109,13 @@ export class EnviarNotaModalComponent implements OnChanges {
           this.previewObjectUrl = url;
           this.previewBlobUrl = this.sanitizer.bypassSecurityTrustResourceUrl(url);
           this.renderPdfJsFromBlob(pdfBlob).catch(e => console.debug('ENVIAR_NOTA render failed', e));
-          setTimeout(() => { try { this.renderPdfJsFromBlob(pdfBlob); } catch (e) { } }, 60);
+          setTimeout(() => {
+            try {
+              this.renderPdfJsFromBlob(pdfBlob);
+            } catch (e) {
+              console.debug('renderPdfJsFromBlob timeout call failed', e);
+            }
+          }, 60);
         } catch (e) {
           console.error('Falha ao criar preview do PDF', e);
         }
@@ -138,7 +148,11 @@ export class EnviarNotaModalComponent implements OnChanges {
   closeModal(): void {
     this.close.emit();
     if (this.previewObjectUrl) {
-      try { URL.revokeObjectURL(this.previewObjectUrl); } catch (e) { }
+      try {
+        URL.revokeObjectURL(this.previewObjectUrl);
+      } catch (e) {
+        console.debug('revokeObjectURL failed', e);
+      }
       this.previewObjectUrl = null;
     }
     this.previewBlobUrl = null;
@@ -189,7 +203,9 @@ export class EnviarNotaModalComponent implements OnChanges {
 
   private alignDropdownWidth(): void {
     try {
-      if (!this.clientInput || !this.clientDropdown) return;
+      if (!this.clientInput || !this.clientDropdown) {
+        return;
+      }
       const inputEl = this.clientInput.nativeElement as HTMLElement;
       const dropdownEl = this.clientDropdown.nativeElement as HTMLElement;
       // compute left relative to positioned ancestor (offsetParent)
@@ -204,7 +220,7 @@ export class EnviarNotaModalComponent implements OnChanges {
       const inputWidth = inputEl.offsetWidth;
       dropdownEl.style.width = `${inputWidth}px`;
       dropdownEl.style.left = `${offsetLeft}px`;
-    } catch (e) { /* ignore */ }
+    } catch (e) { console.debug('alignDropdownWidth failed', e); }
   }
 
   downloadPreviewPdf(): void {
@@ -216,12 +232,27 @@ export class EnviarNotaModalComponent implements OnChanges {
   }
 
   printPdf(): void {
-    if (!this.previewObjectUrl) return;
+    if (!this.previewObjectUrl) {
+      return;
+    }
     const iframe = document.createElement('iframe');
-    iframe.style.position = 'fixed'; iframe.style.right = '0'; iframe.style.bottom = '0'; iframe.style.width = '0'; iframe.style.height = '0';
-    iframe.src = this.previewObjectUrl as string;
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.src = String(this.previewObjectUrl);
     document.body.appendChild(iframe);
-    iframe.onload = () => { try { iframe.contentWindow?.focus(); iframe.contentWindow?.print(); } catch (e) { console.error('Failed to print PDF', e); } finally { setTimeout(() => { document.body.removeChild(iframe); }, 500); } };
+    iframe.onload = () => {
+      try {
+        iframe.contentWindow?.focus();
+        iframe.contentWindow?.print();
+      } catch (e) {
+        console.error('Failed to print PDF', e);
+      } finally {
+        setTimeout(() => { document.body.removeChild(iframe); }, 500);
+      }
+    };
   }
 
   sendNotaByEmailFromModal(): void {
@@ -238,59 +269,131 @@ export class EnviarNotaModalComponent implements OnChanges {
     if (!to || to.trim().length === 0) { this.notify.emit({ type: 'error', message: 'Informe um e-mail válido para enviar a nota.' }); return; }
     // fecha imediatamente e mostra notificação global informando que o comprovante
     // está sendo preparado/enviado para o e-mail do cliente, para o usuário não ficar preso no modal
-    try { this.notificationService.notify({ type: 'info', message: 'Comprovante sendo preparado e enviado para o email do cliente.' }); } catch (e) { }
+    try {
+      this.notificationService.notify({ type: 'info', message: 'Comprovante sendo preparado e enviado para o email do cliente.' });
+    } catch (e) {
+      console.debug('notificationService.notify failed', e);
+    }
     this.closeModal();
 
     // realiza envio em background e notifica sucesso/erro quando terminar
     this.apiService.sendNotaEmail(orderId, { to, subject: `Comprovante - Pedido #${orderId}`, body: 'Segue a nota do seu pedido.' }).subscribe({
       next: () => {
         const msg = `Email enviado com sucesso para ${to}`;
-        try { this.notify.emit({ type: 'info', message: msg }); } catch (e) { }
-        try { this.notificationService.notify({ type: 'success', message: msg }); } catch (e) { }
+        try {
+          this.notify.emit({ type: 'info', message: msg });
+        } catch (e) {
+          console.debug('emit notify failed', e);
+        }
+        try {
+          this.notificationService.notify({ type: 'success', message: msg });
+        } catch (e) {
+          console.debug('notificationService.notify failed', e);
+        }
       },
       error: (err) => {
         console.error('SEND_NOTA_EMAIL failed', err);
         const msg = err?.error?.message || 'Falha ao enviar email';
-        try { this.notify.emit({ type: 'error', message: msg }); } catch (e) { }
-        try { this.notificationService.notify({ type: 'error', message: msg }); } catch (e) { }
+        try {
+          this.notify.emit({ type: 'error', message: msg });
+        } catch (e) {
+          console.debug('emit notify failed', e);
+        }
+        try {
+          this.notificationService.notify({ type: 'error', message: msg });
+        } catch (e) {
+          console.debug('notificationService.notify failed', e);
+        }
       }
     });
   }
 
   sendNotaByWhatsappFromModal(): void {
-    if (!this.orderId) return; const orderId = this.orderId;
+    if (!this.orderId) {
+      return;
+    }
+    const orderId = this.orderId;
     const contactPayload: any = {};
     if (this.modalCustomerName) contactPayload.customerName = this.modalCustomerName;
     if (this.modalCustomerEmail) contactPayload.customerEmail = this.modalCustomerEmail;
     if (this.modalCustomerPhone) contactPayload.customerPhone = this.modalCustomerPhone;
     if (Object.keys(contactPayload).length > 0) { this.apiService.updateOrderContact(orderId, contactPayload).subscribe({ next: () => { }, error: () => { } }); }
-    let phone = (this.modalCustomerPhone || '').replace(/\D/g, ''); if (!phone) { this.notify.emit({ type: 'error', message: 'Informe um telefone válido para enviar via WhatsApp.' }); return; } if (!phone.startsWith('55')) { if (phone.length <= 11) phone = '55' + phone; }
+    let phone = (this.modalCustomerPhone || '').replace(/\D/g, '');
+    if (!phone) {
+      this.notify.emit({ type: 'error', message: 'Informe um telefone válido para enviar via WhatsApp.' });
+      return;
+    }
+    if (!phone.startsWith('55')) {
+      if (phone.length <= 11) {
+        phone = '55' + phone;
+      }
+    }
 
     // fecha imediatamente e mostra notificação global informando que o comprovante
     // está sendo preparado/enviado para o WhatsApp do cliente
-    try { this.notificationService.notify({ type: 'info', message: 'Comprovante sendo preparado e enviado para o WhatsApp do cliente.' }); } catch (e) { }
+    try {
+      this.notificationService.notify({ type: 'info', message: 'Comprovante sendo preparado e enviado para o WhatsApp do cliente.' });
+    } catch (e) {
+      console.debug('notificationService.notify failed', e);
+    }
     this.closeModal();
 
     const pdfUrl = this.apiService.getNotaPdfUrl(orderId);
     const msg = `Segue a nota do seu último pedido na nossa loja: ${pdfUrl}`;
     const waUrl = `https://web.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(msg)}`;
-    try { const api = (window as any).electronAPI; if (api && typeof api.openExternal === 'function') { api.openExternal(waUrl).catch(() => { window.open(waUrl, '_blank'); }); } else { window.open(waUrl, '_blank'); } } catch (e) { window.open(waUrl, '_blank'); }
+    try {
+      const api = (window as any).electronAPI;
+      if (api && typeof api.openExternal === 'function') {
+        api.openExternal(waUrl).catch(() => { window.open(waUrl, '_blank'); });
+      } else {
+        window.open(waUrl, '_blank');
+      }
+    } catch (e) {
+      window.open(waUrl, '_blank');
+    }
 
     // opcional: notificar que o link do WhatsApp foi aberto
-    try { this.notificationService.notify({ type: 'info', message: `WhatsApp aberto para ${this.modalCustomerPhone || 'cliente'}` }); } catch (e) { }
+    try {
+      this.notificationService.notify({ type: 'info', message: `WhatsApp aberto para ${this.modalCustomerPhone || 'cliente'}` });
+    } catch (e) {
+      console.debug('notificationService.notify failed', e);
+    }
   }
 
-  zoomIn(): void { this.pdfScale = Math.min(this.pdfScale + 0.2, 3); this.reRenderPdf(); }
-  zoomOut(): void { this.pdfScale = Math.max(this.pdfScale - 0.2, 0.6); this.reRenderPdf(); }
+  zoomIn(): void {
+    this.pdfScale = Math.min(this.pdfScale + 0.2, 3);
+    this.reRenderPdf();
+  }
+
+  zoomOut(): void {
+    this.pdfScale = Math.max(this.pdfScale - 0.2, 0.6);
+    this.reRenderPdf();
+  }
+
   async fitWidth(): Promise<void> {
-    if (!this.pdfViewerContainer) return; const containerWidth = this.pdfViewerContainer.nativeElement.clientWidth || 420; const firstCanvas = this.pdfViewerContainer.nativeElement.querySelector('.pdf-page-canvas') as HTMLCanvasElement | null; if (!firstCanvas) return; const intrinsic = firstCanvas.width || (firstCanvas.getBoundingClientRect().width || containerWidth); const newScale = Math.max(0.6, Math.min(3, containerWidth / intrinsic * this.pdfScale)); this.pdfScale = Number(newScale.toFixed(2)); await this.reRenderPdf();
+    if (!this.pdfViewerContainer) {
+      return;
+    }
+    const containerWidth = this.pdfViewerContainer.nativeElement.clientWidth || 420;
+    const firstCanvas = this.pdfViewerContainer.nativeElement.querySelector('.pdf-page-canvas') as HTMLCanvasElement | null;
+    if (!firstCanvas) {
+      return;
+    }
+    const intrinsic = firstCanvas.width || (firstCanvas.getBoundingClientRect().width || containerWidth);
+    const newScale = Math.max(0.6, Math.min(3, containerWidth / intrinsic * this.pdfScale));
+    this.pdfScale = Number(newScale.toFixed(2));
+    await this.reRenderPdf();
   }
 
   private async reRenderPdf(): Promise<void> {
     try {
-      if (!this.pdfViewerContainer) return;
+      if (!this.pdfViewerContainer) {
+        return;
+      }
       if (!this.pdfDoc) {
-        if (!this.pdfArrayBuffer) return;
+        if (!this.pdfArrayBuffer) {
+          return;
+        }
         const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf');
         (pdfjsLib as any).GlobalWorkerOptions.workerSrc = '/assets/pdfjs/pdf.worker.min.js';
         const loadingTask = (pdfjsLib as any).getDocument({ data: this.pdfArrayBuffer });
@@ -299,9 +402,14 @@ export class EnviarNotaModalComponent implements OnChanges {
       this.cleanupObserverAndSlots();
       this.pdfViewerContainer.nativeElement.innerHTML = '';
       this.renderedPages.clear();
-      if (this.pdfDoc.numPages === 1) { await this.renderSinglePage(1); return; }
+      if (this.pdfDoc.numPages === 1) {
+        await this.renderSinglePage(1);
+        return;
+      }
       this.setupPlaceholders(this.pdfDoc.numPages);
-    } catch (e) { console.error('reRenderPdf failed', e); }
+    } catch (e) {
+      console.error('reRenderPdf failed', e);
+    }
   }
 
   private async renderPdfJsFromBlob(pdfBlob: Blob): Promise<void> {
@@ -321,21 +429,106 @@ export class EnviarNotaModalComponent implements OnChanges {
   }
 
   private async renderSinglePage(pageNum: number): Promise<void> {
-    if (!this.pdfDoc || !this.pdfViewerContainer) return; if (this.renderedPages.has(pageNum)) return; try { const page = await this.pdfDoc.getPage(pageNum); const viewport = page.getViewport({ scale: this.pdfScale }); const canvas = document.createElement('canvas'); canvas.width = viewport.width; canvas.height = viewport.height; canvas.className = 'pdf-page-canvas'; const ctx = canvas.getContext('2d'); if (!ctx) return; await page.render({ canvasContext: ctx, viewport }).promise; this.pdfViewerContainer.nativeElement.appendChild(canvas); this.renderedPages.add(pageNum); } catch (e) { console.error('renderSinglePage failed', e); }
+    if (!this.pdfDoc || !this.pdfViewerContainer) {
+      return;
+    }
+    if (this.renderedPages.has(pageNum)) {
+      return;
+    }
+    try {
+      const page = await this.pdfDoc.getPage(pageNum);
+      const viewport = page.getViewport({ scale: this.pdfScale });
+      const canvas = document.createElement('canvas');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      canvas.className = 'pdf-page-canvas';
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        return;
+      }
+      await page.render({ canvasContext: ctx, viewport }).promise;
+      this.pdfViewerContainer.nativeElement.appendChild(canvas);
+      this.renderedPages.add(pageNum);
+    } catch (e) {
+      console.error('renderSinglePage failed', e);
+    }
   }
 
   private setupPlaceholders(numPages: number): void {
-    if (!this.pdfViewerContainer) return; const container = this.pdfViewerContainer.nativeElement; const options: IntersectionObserverInit = { root: container, rootMargin: '400px', threshold: 0.1 };
-    this.pageObserver = new IntersectionObserver((entries) => { entries.forEach(ent => { if (ent.isIntersecting) { const slot = ent.target as HTMLElement; const pageAttr = slot.getAttribute('data-page'); if (!pageAttr) return; const pageNum = Number(pageAttr); this.renderPageIfNeeded(pageNum).catch(e => console.error('renderPageIfNeeded failed', e)); } }); }, options);
-    for (let p = 1; p <= numPages; p++) { const slot = document.createElement('div'); slot.className = 'pdf-page-slot'; slot.setAttribute('data-page', String(p)); slot.style.minHeight = '360px'; slot.style.display = 'flex'; slot.style.alignItems = 'center'; slot.style.justifyContent = 'center'; slot.style.marginBottom = '12px'; slot.innerHTML = `<div class="page-loading">Carregando página ${p}...</div>`; container.appendChild(slot); if (this.pageObserver) this.pageObserver.observe(slot); }
+    if (!this.pdfViewerContainer) {
+      return;
+    }
+    const container = this.pdfViewerContainer.nativeElement;
+    const options: IntersectionObserverInit = { root: container, rootMargin: '400px', threshold: 0.1 };
+    this.pageObserver = new IntersectionObserver((entries) => {
+      entries.forEach(ent => {
+        if (ent.isIntersecting) {
+          const slot = ent.target as HTMLElement;
+          const pageAttr = slot.getAttribute('data-page');
+          if (!pageAttr) {
+            return;
+          }
+          const pageNum = Number(pageAttr);
+          this.renderPageIfNeeded(pageNum).catch(e => console.error('renderPageIfNeeded failed', e));
+        }
+      });
+    }, options);
+    for (let p = 1; p <= numPages; p++) {
+      const slot = document.createElement('div');
+      slot.className = 'pdf-page-slot';
+      slot.setAttribute('data-page', String(p));
+      slot.style.minHeight = '360px';
+      slot.style.display = 'flex';
+      slot.style.alignItems = 'center';
+      slot.style.justifyContent = 'center';
+      slot.style.marginBottom = '12px';
+      slot.innerHTML = `<div class="page-loading">Carregando página ${p}...</div>`;
+      container.appendChild(slot);
+      if (this.pageObserver) {
+        this.pageObserver.observe(slot);
+      }
+    }
   }
 
   private async renderPageIfNeeded(pageNum: number): Promise<void> {
-    if (!this.pdfDoc || !this.pdfViewerContainer) return; if (this.renderedPages.has(pageNum)) return; try { const page = await this.pdfDoc.getPage(pageNum); const viewport = page.getViewport({ scale: this.pdfScale }); const canvas = document.createElement('canvas'); canvas.width = viewport.width; canvas.height = viewport.height; canvas.className = 'pdf-page-canvas'; const ctx = canvas.getContext('2d'); if (!ctx) return; await page.render({ canvasContext: ctx, viewport }).promise; const container = this.pdfViewerContainer.nativeElement; const slot = container.querySelector(`.pdf-page-slot[data-page="${pageNum}"]`); if (slot && slot.parentElement) { slot.parentElement.replaceChild(canvas, slot); } this.renderedPages.add(pageNum); } catch (e) { console.error('renderPage failed', e); }
+    if (!this.pdfDoc || !this.pdfViewerContainer) {
+      return;
+    }
+    if (this.renderedPages.has(pageNum)) {
+      return;
+    }
+    try {
+      const page = await this.pdfDoc.getPage(pageNum);
+      const viewport = page.getViewport({ scale: this.pdfScale });
+      const canvas = document.createElement('canvas');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      canvas.className = 'pdf-page-canvas';
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        return;
+      }
+      await page.render({ canvasContext: ctx, viewport }).promise;
+      const container = this.pdfViewerContainer.nativeElement;
+      const slot = container.querySelector(`.pdf-page-slot[data-page="${pageNum}"]`);
+      if (slot && slot.parentElement) {
+        slot.parentElement.replaceChild(canvas, slot);
+      }
+      this.renderedPages.add(pageNum);
+    } catch (e) {
+      console.error('renderPage failed', e);
+    }
   }
 
   private cleanupObserverAndSlots(): void {
-    try { if (this.pageObserver) { this.pageObserver.disconnect(); this.pageObserver = null; } } catch (e) { }
+    try {
+      if (this.pageObserver) {
+        this.pageObserver.disconnect();
+        this.pageObserver = null;
+      }
+    } catch (e) {
+      console.debug('cleanupObserverAndSlots failed', e);
+    }
     this.renderedPages.clear();
   }
 }
