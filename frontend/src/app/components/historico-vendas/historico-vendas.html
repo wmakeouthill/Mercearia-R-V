@@ -54,22 +54,12 @@
                         <input type="date" id="data" [(ngModel)]="dataFiltro" (change)="filterVendas()"
                             class="input-filtro">
                     </div>
-                    <div class="filtro-item">
+                    <div class="filtro-item produto">
                         <label for="produto">🔍 Produto:</label>
                         <input type="text" id="produto" [(ngModel)]="produtoFiltro" (input)="filterVendas()"
-                            placeholder="Nome do produto..." class="input-filtro input-busca">
+                          placeholder="Nome do produto..." class="input-filtro input-busca">
                     </div>
-                </div>
-                <div class="filtro-acoes">
-                    <button (click)="filterVendas()" class="btn-filtrar">🔍 Filtrar</button>
-                    <button (click)="limparFiltros()" class="btn-limpar">🔄 Limpar</button>
-                </div>
-            </div>
-
-            <!-- Nova linha de filtros -->
-            <div class="filtros-linha-inferior">
-                <div class="filtros-grupo-detalhado">
-                    <div class="filtro-item">
+                    <div class="filtro-item metodo">
                         <label for="metodoPagamento">💳 Método de Pagamento:</label>
                         <select id="metodoPagamento" [(ngModel)]="metodoPagamentoFiltro" class="select-filtro"
                             (change)="filterVendas()">
@@ -81,13 +71,30 @@
                         </select>
                     </div>
                 </div>
+                <div class="filtro-acoes">
+                    <button (click)="filterVendas()" class="btn-filtrar">🔍 Filtrar</button>
+                    <button (click)="limparFiltros()" class="btn-limpar">🔄 Limpar</button>
+                </div>
             </div>
+
+            <!-- Nova linha de filtros (método de pagamento movido para a mesma linha do produto) -->
         </div>
     </div>
 
     <!-- Tabela de Vendas -->
     <div class="vendas-detalhadas">
-        <h2>📋 Vendas Registradas</h2>
+        <div class="header-top">
+            <div class="header-left"><h2>📋 Vendas Registradas</h2></div>
+            <div class="header-actions">
+                <label class="page-size-label">Linhas:
+                    <select [(ngModel)]="pageSize" (change)="setPageSize(pageSize)" class="select-filtro page-size-select">
+                        <option [ngValue]="20">20</option>
+                        <option [ngValue]="50">50</option>
+                        <option [ngValue]="100">100</option>
+                    </select>
+                </label>
+            </div>
+        </div>
 
         <!-- Modal de confirmação customizado -->
         <div *ngIf="showConfirmModal" class="confirm-overlay">

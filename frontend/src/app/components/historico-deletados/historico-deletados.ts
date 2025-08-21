@@ -1,5 +1,6 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ApiService } from '../../services/api';
 import { AuthService } from '../../services/auth';
@@ -11,7 +12,7 @@ import { formatDateBR, parseDate } from '../../utils/date-utils';
 @Component({
     selector: 'app-historico-deletados',
     standalone: true,
-    imports: [CommonModule],
+    imports: [CommonModule, FormsModule],
     templateUrl: './historico-deletados.html',
     styleUrl: './historico-deletados.scss'
 })
@@ -26,6 +27,50 @@ export class HistoricoDeletadosComponent implements OnInit {
     pageSize: 20 | 50 | 100 = 20;
     total = 0;
     hasNext = false;
+    jumpPage: number | null = null;
+
+    get totalPages(): number {
+        const pages = Math.ceil((Number(this.total) || 0) / Number(this.pageSize || 1));
+        return Math.max(1, pages || 1);
+    }
+
+    get paginationItems(): Array<number | string> {
+        const totalPages = this.totalPages;
+        const currentPage = this.page;
+        const siblings = 2;
+        const range: Array<number | string> = [];
+        if (totalPages <= 1) return [1];
+        range.push(1);
+        const leftSibling = Math.max(2, currentPage - siblings);
+        const rightSibling = Math.min(totalPages - 1, currentPage + siblings);
+        if (leftSibling > 2) range.push('…');
+        for (let i = leftSibling; i <= rightSibling; i++) range.push(i);
+        if (rightSibling < totalPages - 1) range.push('…');
+        if (totalPages > 1) range.push(totalPages);
+        return range;
+    }
+
+    goToPage(targetPage: number): void {
+        const page = Math.max(1, Math.min(this.totalPages, Math.floor(Number(targetPage) || 1)));
+        if (page === this.page) return;
+        this.page = page;
+        this.loadDeletions();
+    }
+    nextPage() { if (this.page < this.totalPages) this.goToPage(this.page + 1); }
+    prevPage() { if (this.page > 1) this.goToPage(this.page - 1); }
+    goBy(delta: number): void { this.goToPage(this.page + delta); }
+    goToFirstPage(): void { this.goToPage(1); }
+    goToLastPage(): void { this.goToPage(this.totalPages); }
+    setPageSize(n: 20 | 50 | 100) { this.pageSize = n; this.page = 1; this.loadDeletions(); }
+
+    onJumpToPage(): void {
+        if (this.jumpPage == null) return;
+        this.goToPage(this.jumpPage);
+    }
+
+    onClickPage(p: number | string): void {
+        if (typeof p === 'number') this.goToPage(p);
+    }
 
     constructor(
         private readonly apiService: ApiService,
@@ -58,8 +103,7 @@ export class HistoricoDeletadosComponent implements OnInit {
         });
     }
 
-    prevPage(): void { if (this.page > 1) { this.page--; this.loadDeletions(); } }
-    nextPage(): void { if (this.hasNext) { this.page++; this.loadDeletions(); } }
+
 
     private mapDeletionsToVendas(deletions: any[]): any[] {
         const rows: any[] = [];
@@ -222,6 +266,25 @@ export class HistoricoDeletadosComponent implements OnInit {
             error: (err) => {
                 logger.error('HISTORICO_DELETADOS', 'RESTORE', 'Erro ao restaurar venda', err);
                 this.error = err?.error?.error || 'Falha ao restaurar venda';
+                this.loading = false;
+            }
+        });
+    }
+
+    deleteAuditRecord(deletionId: number): void {
+        if (!this.authService.isAdmin()) {
+            this.error = 'Permissão negada: somente administradores podem excluir registros de auditoria';
+            return;
+        }
+        if (!deletionId) return;
+        this.loading = true;
+        this.apiService.deleteAuditSale(deletionId).subscribe({
+            next: () => {
+                this.loadDeletions();
+            },
+            error: (err) => {
+                logger.error('HISTORICO_DELETADOS', 'DELETE_AUDIT', 'Erro ao excluir registro de auditoria', err);
+                this.error = err?.error?.error || 'Falha ao excluir registro de auditoria';
                 this.loading = false;
             }
         });

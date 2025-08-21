@@ -10,6 +10,18 @@
   <div *ngIf="error" class="error-message">{{ error }}</div>
 
   <div *ngIf="!loading && vendasFiltradas.length > 0" class="vendas-tabela">
+    <div class="header-top">
+      <div class="header-left"><h2>🗄️ Auditoria de Vendas Deletadas</h2></div>
+      <div class="header-actions">
+        <label class="page-size-label">Linhas:
+          <select [(ngModel)]="pageSize" (change)="setPageSize(pageSize)" class="select-filtro page-size-select">
+            <option [ngValue]="20">20</option>
+            <option [ngValue]="50">50</option>
+            <option [ngValue]="100">100</option>
+          </select>
+        </label>
+      </div>
+    </div>
     <table class="tabela-vendas">
       <thead>
         <tr>
@@ -19,7 +31,7 @@
           <th class="col-metodo">Pagamentos</th>
           <th class="col-total">Total</th>
           <th class="col-data">Data/Hora</th>
-          <th class="col-acoes">Ações</th>
+          <th class="col-acoes" colspan="3">Ações</th>
         </tr>
       </thead>
       <tbody>
@@ -39,11 +51,20 @@
           </td>
           <td class="valor-total">R$ {{ (venda.preco_total || 0).toFixed(2) }}</td>
           <td class="venda-data"><span class="data-hora-inline">{{ formatarData(venda.data_venda) }}</span></td>
-          <td class="acoes">
+          <td class="acoes-col acoes-left">
             <button *ngIf="venda.itens && venda.itens.length > 1" type="button" (click)="toggleExpand(venda.row_id)" class="btn-expand" [class.rotated]="expandedRows.has(venda.row_id)" [attr.aria-expanded]="expandedRows.has(venda.row_id)" title="Expandir venda">🔽</button>
+          </td>
+          <td class="acoes-col acoes-center">
             <button type="button" (click)="restoreDeletion(venda._deletionId)" class="btn-restaurar"
                     [disabled]="!authService.isAdmin()" [attr.title]="!authService.isAdmin() ? 'Somente administradores podem restaurar vendas' : 'Restaurar venda'">
               ♻️
+            </button>
+          </td>
+          <td class="acoes-col acoes-right">
+            <!-- Novo: permitir exclusão do registro de auditoria (somente admin) -->
+            <button type="button" (click)="deleteAuditRecord(venda._deletionId)" class="btn-excluir-audit"
+                    [disabled]="!authService.isAdmin()" [attr.title]="!authService.isAdmin() ? 'Somente administradores podem excluir auditoria' : 'Excluir registro de auditoria'">
+              🗑️
             </button>
           </td>
         </tr>
@@ -71,10 +92,31 @@
   </div>
 
   <div *ngIf="!loading && deletions.length === 0" class="vazio">Nenhum registro de deleção encontrado.</div>
-  <div class="paginacao" *ngIf="deletions.length > 0">
-    <button (click)="prevPage()" [disabled]="page<=1">‹ Anterior</button>
-    <span>Página {{ page }}</span>
-    <button (click)="nextPage()" [disabled]="!hasNext">Próxima ›</button>
+  <div class="paginacao" *ngIf="total > 0">
+    <div class="pagination-left">
+      <button class="btn-page btn-ghost" (click)="goToFirstPage()" [disabled]="page<=1" title="Primeira">«</button>
+      <button class="btn-page btn-ghost" (click)="goBy(-10)" [disabled]="page<=1" title="-10">«10</button>
+      <button class="btn-page btn-ghost" (click)="goBy(-5)" [disabled]="page<=1" title="-5">«5</button>
+      <button class="btn-page btn-ghost" (click)="prevPage()" [disabled]="page<=1" title="Anterior">‹</button>
+    </div>
+    <div class="pagination-center">
+      @for (p of paginationItems; track $index) {
+        @if (p === '…') {<span class="ellipsis">…</span>} @else {<button class="btn-page" [class.active]="p === page" (click)="onClickPage(p)">{{ p }}</button>}
+      }
+    </div>
+    <div class="pagination-right">
+      <button class="btn-page btn-ghost" (click)="nextPage()" [disabled]="page>=totalPages" title="Próxima">›</button>
+      <button class="btn-page btn-ghost" (click)="goBy(5)" [disabled]="page>=totalPages" title="+5">5»</button>
+      <button class="btn-page btn-ghost" (click)="goBy(10)" [disabled]="page>=totalPages" title="+10">10»</button>
+      <button class="btn-page btn-ghost" (click)="goToLastPage()" [disabled]="page>=totalPages" title="Última">»</button>
+    </div>
+    <div class="pagination-jump">
+      <label>
+        Ir para
+        <input type="number" min="1" [max]="totalPages" [(ngModel)]="jumpPage" (keyup.enter)="onJumpToPage()" />
+      </label>
+      <button class="btn-go" (click)="onJumpToPage()">Ir</button>
+    </div>
   </div>
 </div>
 

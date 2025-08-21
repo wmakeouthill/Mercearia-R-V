@@ -172,7 +172,8 @@ export class SessoesCaixaComponent implements OnInit {
     let rows = '';
     rows += '<tr><th>Produto</th><th>Qtd</th><th>Preço Unit.</th><th>Total</th></tr>';
     for (const it of (order.itens || [])) {
-      rows += `<tr><td>${(it.produto_nome || it.produto_id) || ''}</td><td>${it.quantidade || ''}</td><td>R$ ${Number(it.preco_unitario || 0).toFixed(2)}</td><td>R$ ${Number(it.preco_total || 0).toFixed(2)}</td></tr>`;
+      const precoUnit = (it.preco_unitario != null && it.preco_unitario !== 0) ? Number(it.preco_unitario) : (it.preco_total && it.quantidade ? Number(it.preco_total) / Number(it.quantidade) : 0);
+      rows += `<tr><td>${(it.produto_nome || it.produto_id) || ''}</td><td>${it.quantidade || ''}</td><td>R$ ${precoUnit.toFixed(2)}</td><td>R$ ${Number(it.preco_total || 0).toFixed(2)}</td></tr>`;
     }
     dlg.innerHTML = `<div class="tooltip-card"><h4>Venda #${order.id}</h4><table>${rows}</table><div style="text-align:right;margin-top:8px"><button class="btn-primary" id="mini-close">Fechar</button></div></div>`;
 

@@ -662,6 +662,7 @@ public class CaixaController {
                     im.put("produto_id", it.getProduto() != null ? it.getProduto().getId() : null);
                     im.put("produto_nome", it.getProduto() != null ? it.getProduto().getNome() : null);
                     im.put("quantidade", it.getQuantidade());
+                    im.put("preco_unitario", it.getPrecoUnitario());
                     im.put("preco_total", it.getPrecoTotal());
                     return im;
                 }).toList());

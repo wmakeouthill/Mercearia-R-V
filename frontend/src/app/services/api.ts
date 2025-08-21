@@ -417,6 +417,13 @@ export class ApiService {
     );
   }
 
+  deleteAuditSale(deletionId: number): Observable<any> {
+    return this.makeRequest(
+      () => this.http.delete<any>(`${this.baseUrl}/audit/sales/${deletionId}`),
+      'DELETE_AUDIT_SALE'
+    );
+  }
+
   // CLIENTES
   getClientes(q?: string): Observable<any[]> {
     const url = q ? `${this.baseUrl}/clientes?q=${encodeURIComponent(q)}` : `${this.baseUrl}/clientes`;

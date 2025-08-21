@@ -173,7 +173,7 @@
     justify-content: space-between;
     align-items: center;
     gap: 16px;
-    flex-wrap: wrap;
+    flex-wrap: nowrap; /* manter tudo em uma linha quando couber */
 }
 
 .filtros-linha-inferior {
@@ -183,9 +183,18 @@
 
 .filtros-grupo {
     display: flex;
-    gap: 16px;
+    gap: 12px;
     align-items: center;
+    flex: 1 1 auto; /* allow group to take remaining space */
+    min-width: 0; /* allow children to shrink */
 }
+
+/* garantir comportamento inline dos itens: date ocupa espaço fixo, produto+metodo expande */
+.filtros-grupo > .filtro-item { flex: 0 0 auto; }
+.filtros-grupo > .filtro-item.produto { flex: 0 0 220px; }
+.filtros-grupo > .filtro-item.metodo { flex: 0 0 200px; }
+.filtros-grupo > .filtro-item.produto .input-busca { width: 220px; }
+.filtros-grupo > .filtro-item.metodo .select-filtro { width: 200px; }
 
 .filtros-grupo-detalhado {
     display: flex;
@@ -290,13 +299,35 @@
 
     h2 {
         color: var(--primary-blue);
-        margin: 0 0 16px 0;
+        margin: 0;
         font-size: 1.4rem;
         font-weight: 700;
         display: flex;
         align-items: center;
         gap: 8px;
     }
+
+    /* header-top to align title and page-size control in same row */
+    .header-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 12px;
+    }
+
+    .header-actions { display: flex; align-items: center; gap: 8px; }
+    .page-size-label { font-weight: 600; color: var(--primary-blue); font-size: 0.9rem; display: inline-flex; align-items: center; gap: 8px; }
+    .page-size-select { padding: 6px 8px; border-radius: 8px; border: 2px solid var(--medium-gray); background: var(--white); font-weight: 700; color: var(--primary-blue); height: 36px; min-width: 64px; }
+
+    /* compact layout for produto + metodo de pagamento */
+    /* usar grid para forçar os dois controles na mesma linha */
+    .produto-and-metodo { display: grid; grid-template-columns: 1fr minmax(120px, 160px); gap: 12px; align-items: start; min-width: 0; }
+    .produto-and-metodo > div { display: flex; flex-direction: column; gap: 4px; }
+    .produto-and-metodo .input-busca { width: 100%; min-width: 0; }
+    .produto-and-metodo .select-filtro { width: 100%; min-width: 0; }
+
+    .filtro-acoes { flex-shrink: 0; }
 }
 
 .loading {
@@ -697,6 +728,20 @@
         .valor-total {
             font-size: 0.8rem !important;
         }
+    }
+}
+
+/* Force filters to stay in a row for medium viewports where there's room */
+@media (min-width: 520px) {
+    .historico-container .filtros-linha-superior {
+        flex-direction: row !important;
+        align-items: center !important;
+    }
+    .historico-container .filtros-grupo {
+        flex-wrap: nowrap !important;
+    }
+    .historico-container .produto-and-metodo {
+        grid-template-columns: 1fr minmax(120px,160px) !important;
     }
 }
 
