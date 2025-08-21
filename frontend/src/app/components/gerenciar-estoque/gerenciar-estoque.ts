@@ -17,6 +17,7 @@ import { logger } from '../../utils/logger';
       <div class="header">
         <h2>📋 Gerenciar Estoque</h2>
         <div class="header-actions">
+          <button (click)="limparFiltro()" class="btn-filtrar" [disabled]="selectedNivelFiltroSet.size === 0">🔍 Limpar filtro</button>
           <button (click)="voltarAoDashboard()" class="btn-voltar">← Voltar ao Dashboard</button>
         </div>
       </div>
@@ -130,23 +131,23 @@ import { logger } from '../../utils/logger';
           <h4>Em Estoque</h4>
           <span class="stat-value">{{ getProdutosEmEstoque() }}</span>
         </div>
-        <div class="stat-card">
+        <div class="stat-card clickable" (click)="toggleFiltroNivel('alto')" [class.active]="selectedNivelFiltroSet.has('alto')">
           <h4>Alto</h4>
           <span class="stat-value">{{ getProdutosEstoqueAlto() }}</span>
         </div>
-        <div class="stat-card">
+        <div class="stat-card clickable" (click)="toggleFiltroNivel('medio')" [class.active]="selectedNivelFiltroSet.has('medio')">
           <h4>Médio</h4>
           <span class="stat-value">{{ getProdutosEstoqueMedio() }}</span>
         </div>
-        <div class="stat-card">
+        <div class="stat-card clickable" (click)="toggleFiltroNivel('baixo')" [class.active]="selectedNivelFiltroSet.has('baixo')">
           <h4>Baixo</h4>
           <span class="stat-value warning">{{ getProdutosEstoqueBaixo() }}</span>
         </div>
-        <div class="stat-card">
+        <div class="stat-card clickable" (click)="toggleFiltroNivel('critico')" [class.active]="selectedNivelFiltroSet.has('critico')">
           <h4>Crítico</h4>
           <span class="stat-value danger">{{ getProdutosEstoqueCritico() }}</span>
         </div>
-        <div class="stat-card">
+        <div class="stat-card clickable" (click)="toggleFiltroNivel('sem-estoque')" [class.active]="selectedNivelFiltroSet.has('sem-estoque')">
           <h4>Sem Estoque</h4>
           <span class="stat-value danger">{{ getProdutosSemEstoque() }}</span>
         </div>
@@ -194,6 +195,29 @@ import { logger } from '../../utils/logger';
       background: linear-gradient(135deg, #D1B867 0%, #C9AA55 100%);
       transform: translateY(-2px);
       box-shadow: 0 6px 16px rgba(219, 194, 125, 0.45);
+    }
+
+    /* reuse exact .btn-filtrar style from relatorio-vendas */
+    .btn-filtrar {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 600;
+      transition: all 0.3s ease;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      box-shadow: 0 2px 8px rgba(0, 46, 89, 0.1);
+      background: linear-gradient(135deg, var(--primary-blue) 0%, var(--secondary-blue) 100%);
+      color: var(--white);
+      margin-right: 8px;
+    }
+
+    .btn-filtrar:hover:not(:disabled) {
+      background: linear-gradient(135deg, var(--secondary-blue) 0%, var(--dark-blue) 100%);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(0, 46, 89, 0.3);
     }
 
     .header h2 {
@@ -400,6 +424,24 @@ import { logger } from '../../utils/logger';
       font-size: 14px;
     }
 
+    .stat-card.clickable {
+      cursor: pointer;
+      transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+      border: 2px solid transparent;
+    }
+
+    .stat-card.clickable:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 8px 20px rgba(0,0,0,0.08);
+    }
+
+    .stat-card.clickable.active {
+      border-color: rgba(0,46,89,0.12);
+      background: linear-gradient(135deg, rgba(0,46,89,0.03) 0%, rgba(219,194,125,0.03) 100%);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 16px rgba(0,46,89,0.08);
+    }
+
     .stat-value {
       font-size: 24px;
       font-weight: bold;
@@ -439,6 +481,9 @@ export class GerenciarEstoqueComponent implements OnInit {
   page = 1;
   pageSize: 6 | 12 | 18 | 24 = 6;
   jumpPage: number | null = null;
+  // support multi selections using a Set
+  selectedNivelFiltroSet: Set<string> = new Set();
+  selectedNivelFiltro: string | null = null; // kept for backward compatibility in template bindings if needed
   // thresholds
   readonly CRITICAL_THRESHOLD = 3;
   readonly LOW_THRESHOLD = 10;
@@ -533,15 +578,45 @@ export class GerenciarEstoqueComponent implements OnInit {
   }
 
   filterProdutos(): void {
-    if (!this.searchTerm.trim()) {
-      this.produtosFiltrados = [...this.produtos];
+    const term = this.searchTerm ? this.searchTerm.trim().toLowerCase() : '';
+    const nivel = this.selectedNivelFiltroSet.size ? Array.from(this.selectedNivelFiltroSet) : [];
+
+    this.produtosFiltrados = this.produtos.filter(p => {
+      const q = Number(p.quantidade_estoque || 0);
+      const matchesTerm = !term || p.nome.toLowerCase().includes(term) || (p.codigo_barras?.toLowerCase().includes(term));
+      let matchesNivel = true;
+      if (nivel.length > 0) {
+        matchesNivel = nivel.some(n => {
+          if (n === 'alto') return q >= this.MEDIUM_THRESHOLD;
+          if (n === 'medio') return q >= this.LOW_THRESHOLD && q < this.MEDIUM_THRESHOLD;
+          if (n === 'baixo') return q > 0 && q < this.LOW_THRESHOLD;
+          if (n === 'critico') return q < this.CRITICAL_THRESHOLD;
+          if (n === 'sem-estoque') return q === 0;
+          return false;
+        });
+      }
+
+      return matchesTerm && matchesNivel;
+    });
+
+    this.page = 1;
+  }
+
+  toggleFiltroNivel(nivel: string): void {
+    if (this.selectedNivelFiltroSet.has(nivel)) {
+      this.selectedNivelFiltroSet.delete(nivel);
     } else {
-      const term = this.searchTerm.toLowerCase();
-      this.produtosFiltrados = this.produtos.filter(produto =>
-        produto.nome.toLowerCase().includes(term) ||
-        produto.codigo_barras?.toLowerCase().includes(term)
-      );
+      this.selectedNivelFiltroSet.add(nivel);
     }
+    // keep compatibility var (not used for logic anymore)
+    this.selectedNivelFiltro = this.selectedNivelFiltroSet.size ? Array.from(this.selectedNivelFiltroSet)[0] : null;
+    this.filterProdutos();
+  }
+
+  limparFiltro(): void {
+    this.selectedNivelFiltroSet.clear();
+    this.selectedNivelFiltro = null;
+    this.filterProdutos();
   }
 
   atualizarEstoque(produto: Produto): void {
