@@ -301,6 +301,7 @@ public class CaixaController {
         return base.stream().map(m -> {
             java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
             row.put("id", m.getId());
+            row.put("caixa_status_id", m.getCaixaStatus() != null ? m.getCaixaStatus().getId() : null);
             row.put("tipo", m.getTipo());
             row.put(KEY_VALOR, m.getValor());
             row.put(KEY_DESCRICAO, m.getDescricao());
@@ -353,8 +354,30 @@ public class CaixaController {
                 row.put(KEY_USUARIO, null);
             }
             row.put(KEY_DATA_MOVIMENTO, v.getDataVenda());
+            // tentar associar a sessão do caixa pela data da venda (legacy sales não têm
+            // caixaStatus)
+            try {
+                var sess = findSessionForTimestamp(v.getDataVenda());
+                row.put("caixa_status_id", sess != null ? sess.getId() : null);
+            } catch (Exception ignored) {
+                row.put("caixa_status_id", null);
+            }
             return row;
         }).toList();
+    }
+
+    private CaixaStatus findSessionForTimestamp(java.time.OffsetDateTime dt) {
+        if (dt == null)
+            return null;
+        return caixaStatusRepository.findAll().stream().filter(s -> {
+            if (s.getDataAbertura() == null)
+                return false;
+            boolean afterOpen = !s.getDataAbertura().isAfter(dt); // s.dataAbertura <= dt
+            boolean beforeClose = s.getDataFechamento() == null || !s.getDataFechamento().isBefore(dt); // dt <=
+                                                                                                        // dataFechamento
+                                                                                                        // or open
+            return afterOpen && beforeClose;
+        }).findFirst().orElse(null);
     }
 
     private java.util.List<java.util.Map<String, Object>> buildSaleOrderRows(java.time.LocalDate dia,
@@ -398,6 +421,7 @@ public class CaixaController {
             // operador da venda (se disponível)
             row.put(KEY_USUARIO, vo.getOperador() != null ? vo.getOperador().getUsername() : null);
             row.put(KEY_DATA_MOVIMENTO, vo.getDataVenda());
+            row.put("caixa_status_id", vo.getCaixaStatus() != null ? vo.getCaixaStatus().getId() : null);
             return row;
         })).toList();
     }

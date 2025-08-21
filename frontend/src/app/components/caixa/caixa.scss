@@ -203,7 +203,8 @@
 
   .tabela-cabecalho {
     display: grid;
-    grid-template-columns: 120px 220px 120px 1fr 160px 160px 200px;
+    /* adicionada última coluna para 'Id' */
+    grid-template-columns: 120px 220px 120px 1fr 160px 160px 200px 80px;
     gap: 12px;
     padding: 6px 16px;
     border-bottom: 2px solid var(--light-gray);
@@ -233,7 +234,8 @@
 
   .item {
     display: grid;
-    grid-template-columns: 120px 220px 120px 1fr 160px 160px 200px;
+    /* espelhando o cabeçalho: última coluna é para 'Id' */
+    grid-template-columns: 120px 220px 120px 1fr 160px 160px 200px 80px;
     gap: 12px;
     padding: 6px 16px;
     border-bottom: 1px solid var(--light-gray);
@@ -243,6 +245,7 @@
   .item .tipo { display: flex; align-items: center; }
   .item .col { display: flex; align-items: center; justify-content: center; }
   .item .col.produto, .item .col.descricao { justify-content: flex-start; }
+  .item .col.id, .tabela-cabecalho .th.id { justify-content: center; text-align: center; }
   .badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 999px; font-weight: 600; font-size: 12px; }
   .badge .icon { font-size: 14px; line-height: 1; }
   .badge.entrada { background: rgba(22,163,74,0.12); color: #166534; border: 1px solid rgba(22,163,74,0.3); }

@@ -133,6 +133,7 @@
           <button class="th metodo sort" (click)="setSort('metodo')">Método</button>
           <div class="th usuario">Usuário</div>
           <button class="th data sort" (click)="setSort('data')">Data/Hora</button>
+          <div class="th id">Id</div>
         </div>
         @for (m of movimentacoes; track $index) {
           <div class="item">
@@ -154,6 +155,7 @@
             </div>
             <div class="col usuario">{{ m.usuario || '-' }}</div>
             <div class="col data">{{ m.data_movimento | date:'dd/MM/yyyy HH:mm' }}</div>
+            <div class="col id">{{ m.caixa_status_id || (m.caixa_status ? m.caixa_status.id : '-') }}</div>
           </div>
         }
          <div class="paginacao">

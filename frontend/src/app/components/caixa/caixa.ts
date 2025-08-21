@@ -26,7 +26,7 @@ export class CaixaComponent implements OnInit {
   mesSelecionado = getCurrentDateForInput().substring(0, 7);
   resumo: { data: string; saldo_movimentacoes: number } | null = null;
   resumoVendasDia: RelatorioResumo | null = null;
-  movimentacoes: Array<{ id: number; tipo: TipoMovLista; valor: number; descricao?: string; usuario?: string; data_movimento: string; produto_nome?: string; metodo_pagamento?: string; pagamento_valor?: number }> = [];
+  movimentacoes: Array<{ id: number; tipo: TipoMovLista; valor: number; descricao?: string; usuario?: string; data_movimento: string; produto_nome?: string; metodo_pagamento?: string; pagamento_valor?: number; caixa_status_id?: number; caixa_status?: any }> = [];
   filtroTipo = '';
   filtroMetodo = '';
   filtroHoraInicio = '';
@@ -308,7 +308,7 @@ export class CaixaComponent implements OnInit {
 
   exportarCsv(): void {
     const linhas: string[] = [];
-    const headers = ['Tipo', 'Produto', 'Valor', 'Descricao', 'Metodo', 'Usuario', 'DataHora'];
+    const headers = ['Tipo', 'Produto', 'Valor', 'Descricao', 'Metodo', 'Usuario', 'DataHora', 'SessaoId'];
     linhas.push(headers.join(','));
     for (const m of this.movimentacoes) {
       const row = [
@@ -318,7 +318,8 @@ export class CaixaComponent implements OnInit {
         (m.descricao || '').replaceAll(',', ' '),
         this.getMetodosTexto(m).replaceAll(',', ' '),
         (m.usuario || '').replaceAll(',', ' '),
-        new Date(m.data_movimento).toLocaleString('pt-BR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })
+        new Date(m.data_movimento).toLocaleString('pt-BR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }),
+        (m.caixa_status_id || (m.caixa_status ? m.caixa_status.id : '')).toString()
       ];
       linhas.push(row.join(','));
     }
