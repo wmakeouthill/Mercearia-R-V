@@ -1,0 +1,4 @@
+#!/bin/sh
+echo "pg_dump (stub) 1.0"
+exit 0
+
