@@ -5,7 +5,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
+import org.springframework.boot.autoconfigure.AutoConfigureBefore;
+import org.springframework.boot.autoconfigure.liquibase.LiquibaseAutoConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -23,6 +24,7 @@ import java.time.Duration;
 import java.nio.file.attribute.BasicFileAttributes;
 
 @Configuration
+@AutoConfigureBefore(LiquibaseAutoConfiguration.class)
 public class PostgresEmbeddedConfig {
 
     private static final Logger log = LoggerFactory.getLogger(PostgresEmbeddedConfig.class);
@@ -41,7 +43,6 @@ public class PostgresEmbeddedConfig {
     private String configuredPass;
 
     @Bean(destroyMethod = "close")
-    @ConditionalOnExpression("'${spring.datasource.url:}' == ''")
     public EmbeddedPostgres embeddedPostgres() throws IOException {
         boolean persist = shouldPersistData();
         Path dataDir = resolveInitialDataDirectory(persist);
@@ -76,9 +77,32 @@ public class PostgresEmbeddedConfig {
 
     private Path resolvePersistentDataDirectoryFromEnv() {
         String pgDataDirEnv = System.getenv("PG_DATA_DIR");
-        return (pgDataDirEnv != null && !pgDataDirEnv.isBlank())
-                ? Paths.get(pgDataDirEnv).toAbsolutePath()
-                : Paths.get("data", "pg").toAbsolutePath();
+        if (pgDataDirEnv != null) {
+            // Trim whitespace and strip surrounding quotes if present
+            pgDataDirEnv = pgDataDirEnv.trim();
+            if (pgDataDirEnv.startsWith("\"") && pgDataDirEnv.endsWith("\"") && pgDataDirEnv.length() > 1) {
+                pgDataDirEnv = pgDataDirEnv.substring(1, pgDataDirEnv.length() - 1).trim();
+            }
+            if (!pgDataDirEnv.isBlank()) {
+                return Paths.get(pgDataDirEnv).toAbsolutePath();
+            }
+        }
+
+        // Prefer local repo folder 'pg' only if it looks like a Postgres data dir
+        Path localPg = Paths.get("pg");
+        if (Files.exists(localPg)) {
+            // heuristic: a Postgres data directory usually contains a file named PG_VERSION
+            Path pgVersion = localPg.resolve("PG_VERSION");
+            Path baseDir = localPg.resolve("base");
+            if (Files.exists(pgVersion) || Files.exists(baseDir)) {
+                return localPg.toAbsolutePath();
+            }
+            // otherwise ignore this 'pg' directory (may contain binaries/stubs)
+            log.debug("Found 'pg' dir but it doesn't look like a data directory; ignoring");
+        }
+
+        // Fallback to data/pg
+        return Paths.get("data", "pg").toAbsolutePath();
     }
 
     private void ensureDirectory(Path dir) {
@@ -409,14 +433,11 @@ public class PostgresEmbeddedConfig {
 
     @Bean
     public DataSource dataSource(@Autowired(required = false) EmbeddedPostgres pg) {
-        // Se variáveis de ambiente/arquivo definirem URL, usa elas; senão, usa embedded
-        if (configuredUrl != null && !configuredUrl.isBlank()) {
-            return new SimpleDriverDataSource(new org.postgresql.Driver(), configuredUrl, configuredUser,
-                    configuredPass);
-        }
+        // Forçar uso exclusivo do EmbeddedPostgres. Não permitir fallback para URL
+        // externa.
         if (pg == null) {
             throw new IllegalStateException(
-                    "EmbeddedPostgres não está disponível e nenhuma URL externa foi configurada");
+                    "EmbeddedPostgres não está disponível; inicialização abortada (fallback para URL proibido)");
         }
         String url = pg.getJdbcUrl(POSTGRES_DB, POSTGRES_USER);
         return new SimpleDriverDataSource(new org.postgresql.Driver(), url, POSTGRES_USER, "");

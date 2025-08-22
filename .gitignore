@@ -40,6 +40,7 @@ package-lock-backup.json
 .DS_Store
 Thumbs.db
 Desktop.ini
+backend-spring/backups/*.dump
 
 # IDEs/editores
 .vscode/

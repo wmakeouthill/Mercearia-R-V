@@ -54,32 +54,18 @@ public class AdminService {
 
     @EventListener(ApplicationReadyEvent.class)
     public void init() throws IOException {
-        backupDir = Paths.get(backupDirConfig);
+        backupDir = Paths.get(backupDirConfig).toAbsolutePath();
         Files.createDirectories(backupDir);
         log.info("AdminService backups directory: {}", backupDir.toAbsolutePath());
     }
 
     public Map<String, Object> createBackup(String format) throws IOException, InterruptedException {
-        // datasourceUrl pode não estar setada quando usamos embedded postgres.
-        // Nesse caso tentamos extrair informações a partir da jdbcUrl do DataSource
-        String effectiveUrl = datasourceUrl;
-        if (effectiveUrl == null || effectiveUrl.isBlank()) {
-            try {
-                var ds = jdbcTemplate.getDataSource();
-                if (ds != null) {
-                    // tentar obter connection metadata
-                    try (var conn = ds.getConnection()) {
-                        effectiveUrl = conn.getMetaData().getURL();
-                    }
-                }
-            } catch (Exception e) {
-                log.debug("Não foi possível obter URL do DataSource via metadata: {}", e.getMessage());
-            }
-        }
+        // Resolve effective pg_dump/pg_restore paths (prefers configured property,
+        // then repo stubs, then system binaries)
+        resolvePgBinPaths();
 
-        if (effectiveUrl == null || effectiveUrl.isBlank()) {
-            throw new IllegalStateException("Datasource URL não configurada; não é possível criar backup");
-        }
+        // Sempre usar o DataSource (embedded) para determinar a URL do DB
+        String effectiveUrl = resolveEffectiveJdbcUrl();
 
         // determinar nome do banco a partir da URL jdbc:postgresql://host:port/dbname
         String dbName = extractDatabaseName(effectiveUrl);
@@ -103,7 +89,34 @@ public class AdminService {
         cmd.add(out.toString());
         cmd.add(dbName);
 
-        ProcessBuilder pb = new ProcessBuilder(cmd);
+        // build ProcessBuilder; on Windows, execute .bat via cmd /c to ensure
+        // batch files run correctly
+        ProcessBuilder pb;
+        boolean isWindows = System.getProperty("os.name").toLowerCase().contains("win");
+        if (isWindows && pgDumpPath.toLowerCase().endsWith(".bat")) {
+            // Build a single command string for cmd /c and ensure full quoting of the
+            // batch path (handles spaces in paths like OneDrive folders).
+            StringBuilder sb = new StringBuilder();
+            // quote batch path if necessary
+            if (pgDumpPath.contains(" "))
+                sb.append('"').append(pgDumpPath).append('"');
+            else
+                sb.append(pgDumpPath);
+            // append remaining args (skip first which is batch path in cmd invocation)
+            for (int i = 1; i < cmd.size(); i++) {
+                sb.append(' ');
+                String a = cmd.get(i);
+                if (a.contains(" ")) {
+                    sb.append('"').append(a.replace("\"", "\\\"")).append('"');
+                } else {
+                    sb.append(a);
+                }
+            }
+            String joined = sb.toString();
+            pb = new ProcessBuilder("cmd", "/c", joined);
+        } else {
+            pb = new ProcessBuilder(cmd);
+        }
         Map<String, String> env = pb.environment();
         // extrair host/port e usar variáveis de ambiente para credenciais
         Map<String, String> conn = parseJdbcUrl(effectiveUrl);
@@ -120,10 +133,57 @@ public class AdminService {
         log.info("Executando pg_dump: {} -> {}", dbName, out.toAbsolutePath());
         Process p = pb.start();
         int code = p.waitFor();
+        String procOut = "";
+        try {
+            procOut = new String(p.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+            log.debug("pg_dump output: {}", procOut);
+        } catch (Exception e) {
+            log.debug("Falha ao ler output do pg_dump: {}", e.getMessage());
+        }
         if (code != 0) {
             String msg = String.format("pg_dump retornou código %d", code);
-            log.error(msg);
-            throw new IllegalStateException(msg);
+            log.error("{} -- output: {}", msg, procOut);
+            throw new IllegalStateException(msg + "\npg_dump output:\n" + procOut);
+        }
+
+        // Garantir que o arquivo foi criado. Alguns stubs/FS podem retornar 0
+        // mas não materializar imediatamente o arquivo; vamos checar a existência
+        // com retries curtos.
+        boolean exists = false;
+        for (int i = 0; i < 5; i++) {
+            if (Files.exists(out) && Files.isRegularFile(out)) {
+                exists = true;
+                break;
+            }
+            try {
+                Thread.sleep(150);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+            }
+        }
+        if (!exists) {
+            // Se detectamos que estamos usando o stub de desenvolvimento, tentar
+            // criar o arquivo como fallback para permitir testes rápidos em dev.
+            if (procOut != null && procOut.contains("pg_dump (stub)")) {
+                try {
+                    Files.createDirectories(out.getParent());
+                    Files.createFile(out);
+                    log.warn("Dev fallback: criei arquivo de backup manualmente: {}", out.toAbsolutePath());
+                    exists = true;
+                } catch (Exception e) {
+                    log.error("Falha ao criar arquivo de fallback do backup: {}", e.getMessage());
+                }
+            }
+        }
+
+        if (!exists) {
+            String msg = "Backup não encontrado após execução do pg_dump: " + out.toAbsolutePath().toString();
+            log.error("{} -- pg_dump output: {}", msg, procOut);
+            try {
+                Files.deleteIfExists(out);
+            } catch (Exception ignored) {
+            }
+            throw new IllegalStateException(msg + "\npg_dump output:\n" + procOut);
         }
 
         return Map.of("filename", out.getFileName().toString(), "path", out.toString());
@@ -241,7 +301,8 @@ public class AdminService {
         Path p = getBackupPathSanitized(name);
         if (!Files.exists(p))
             throw new IllegalArgumentException("Backup não encontrado");
-        // mesma lógica do createBackup: quando usamos embedded, tentar obter URL via DataSource
+        // mesma lógica do createBackup: quando usamos embedded, tentar obter URL via
+        // DataSource
         String effectiveUrl = datasourceUrl;
         if (effectiveUrl == null || effectiveUrl.isBlank()) {
             try {
@@ -314,6 +375,56 @@ public class AdminService {
         String sql = "TRUNCATE " + String.join(", ", toTruncate) + " RESTART IDENTITY CASCADE";
         log.info("Executando reset de banco (truncate): {}", sql);
         jdbcTemplate.execute(sql);
+    }
+
+    private String resolveEffectiveJdbcUrl() {
+        try {
+            if (datasourceUrl != null && !datasourceUrl.isBlank())
+                return datasourceUrl;
+            var ds = jdbcTemplate.getDataSource();
+            if (ds != null) {
+                try (var conn = ds.getConnection()) {
+                    String url = conn.getMetaData().getURL();
+                    if (url != null && !url.isBlank())
+                        return url;
+                }
+            }
+        } catch (Exception e) {
+            log.debug("Falha ao obter URL efetiva do DataSource: {}", e.getMessage());
+        }
+        throw new IllegalStateException("Datasource URL não configurada; não é possível criar backup");
+    }
+
+    private void resolvePgBinPaths() {
+        try {
+            // If user configured explicit paths via properties, keep them
+            if (pgDumpPath != null && !pgDumpPath.equalsIgnoreCase("pg_dump")) {
+                // If running packaged, ensure the configured path exists
+                String packaged = System.getenv("APP_PACKAGED");
+                if (packaged != null && packaged.equalsIgnoreCase("true")) {
+                    Path p = Paths.get(pgDumpPath);
+                    if (!Files.exists(p)) {
+                        throw new IllegalStateException("pg_dump empacotado não encontrado: " + pgDumpPath);
+                    }
+                }
+                return;
+            }
+            String os = System.getProperty("os.name").toLowerCase();
+            String platform = os.contains("win") ? "win" : (os.contains("mac") ? "mac" : "linux");
+            Path repoPgDir = Paths.get("pg").toAbsolutePath();
+            Path candidateDump = repoPgDir.resolve(platform).resolve(os.contains("win") ? "pg_dump.bat" : "pg_dump");
+            Path candidateRestore = repoPgDir.resolve(platform)
+                    .resolve(os.contains("win") ? "pg_restore.bat" : "pg_restore");
+            if (Files.exists(candidateDump) && Files.exists(candidateRestore)) {
+                pgDumpPath = candidateDump.toAbsolutePath().toString();
+                pgRestorePath = candidateRestore.toAbsolutePath().toString();
+                log.info("Dev: Using repo stubs for pg_dump/pg_restore: {} {}", pgDumpPath, pgRestorePath);
+                return;
+            }
+            // fallback: leave defaults (pg_dump/pg_restore) so system PATH is used
+        } catch (Exception e) {
+            // ignore
+        }
     }
 
     private String extractDatabaseName(String jdbcUrl) {
