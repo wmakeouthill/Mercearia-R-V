@@ -576,7 +576,7 @@ export class ApiService {
 
   getAuditLogs(): Observable<any[]> {
     return this.makeRequest(
-      () => this.http.get<any[]>(`${this.baseUrl}/admin/audit-logs`),
+      () => this.http.get<any[]>(`${this.baseUrl}/admin/actions`),
       'GET_AUDIT_LOGS'
     );
   }

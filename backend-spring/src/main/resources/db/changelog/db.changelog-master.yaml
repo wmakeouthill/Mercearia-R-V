@@ -442,3 +442,43 @@ databaseChangeLog:
         - dropColumn:
             tableName: status_caixa
             columnName: deficit_nao_reposto_acumulada
+
+  - changeSet:
+      id: 20250822-create-admin-actions
+      author: assistant
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - tableExists:
+                tableName: admin_actions
+      changes:
+        - createTable:
+            tableName: admin_actions
+            ifNotExists: true
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: username
+                  type: VARCHAR(255)
+              - column:
+                  name: action
+                  type: VARCHAR(100)
+              - column:
+                  name: observation
+                  type: TEXT
+              - column:
+                  name: filename
+                  type: VARCHAR(255)
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+      rollback:
+        - dropTable:
+            tableName: admin_actions
+            ifExists: true

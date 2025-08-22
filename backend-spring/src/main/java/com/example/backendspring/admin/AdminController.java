@@ -41,6 +41,8 @@ public class AdminController {
         String filename = (String) res.get("filename");
         org.slf4j.LoggerFactory.getLogger(AdminController.class)
                 .info("ADMIN_TOOL action=create_backup format={} filename={} user={}", format, filename, username);
+        // persist audit record
+        adminService.recordAdminAction(username, "create_backup", "", filename);
         return ResponseEntity.ok(Map.of("filename", res.get("filename")));
     }
 
@@ -74,6 +76,7 @@ public class AdminController {
             /* ignore */ }
         org.slf4j.LoggerFactory.getLogger(AdminController.class).info("ADMIN_TOOL action=restore filename={} user={}",
                 name, username);
+        adminService.recordAdminAction(username, "restore", "", name);
         return ResponseEntity.ok(Map.of(KEY_MESSAGE, "restore_started"));
     }
 
@@ -108,6 +111,7 @@ public class AdminController {
         String observation = body.getOrDefault("observation", "");
         org.slf4j.LoggerFactory.getLogger(AdminController.class).info("ADMIN_RESET user={} mode={} observation={}",
                 username, mode, observation);
+        adminService.recordAdminAction(username, "reset_database", observation + " mode=" + mode, null);
 
         adminService.resetDatabase(exceptProducts);
 
@@ -201,5 +205,12 @@ public class AdminController {
         }
 
         return ResponseEntity.ok(out);
+    }
+
+    @GetMapping("/actions")
+    @PreAuthorize(ROLE_ADMIN)
+    public ResponseEntity<List<Map<String, Object>>> listAdminActions() {
+        var rows = adminService.listAdminActions();
+        return ResponseEntity.ok(rows);
     }
 }

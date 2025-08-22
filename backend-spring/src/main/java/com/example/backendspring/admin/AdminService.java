@@ -112,6 +112,27 @@ public class AdminService {
         return Map.of("filename", out.getFileName().toString(), "path", out.toString());
     }
 
+    public void recordAdminAction(String username, String action, String observation, String filename) {
+        try {
+            var now = java.time.OffsetDateTime.now();
+            jdbcTemplate.update(
+                    "INSERT INTO admin_actions (username, action, observation, filename, created_at) VALUES (?,?,?,?,?)",
+                    username, action, observation, filename, now);
+        } catch (Exception e) {
+            log.warn("Failed to record admin action: {}", e.getMessage());
+        }
+    }
+
+    public List<Map<String, Object>> listAdminActions() {
+        try {
+            return jdbcTemplate.queryForList(
+                    "SELECT id, username, action, observation, filename, created_at FROM admin_actions ORDER BY created_at DESC LIMIT 100");
+        } catch (Exception e) {
+            log.warn("Failed to list admin actions: {}", e.getMessage());
+            return List.of();
+        }
+    }
+
     public List<Map<String, Object>> listBackups() throws IOException {
         if (!Files.exists(backupDir))
             return List.of();

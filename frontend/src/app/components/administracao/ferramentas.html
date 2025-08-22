@@ -56,10 +56,15 @@
             <h4>Backups disponíveis</h4>
             @if (backups.length === 0) {<div>Nenhum backup encontrado</div>} @else {<ul>
               @for (b of backups; track b.name) {<li>
-                <span class="backup-name">{{ b.name }}</span>
-                <div class="backup-actions">
-                  <button (click)="downloadBackup(b.name)">Baixar</button>
-                  <button (click)="restoreBackup(b.name)">Restaurar</button>
+                <div class="backup-row" title="{{ b.createdAt }}">
+                  <div class="backup-meta">
+                    <span class="backup-name">{{ b.name }}</span>
+                    <small class="backup-ts">{{ b.createdAt }}</small>
+                  </div>
+                  <div class="backup-actions">
+                    <button (click)="downloadBackup(b.name)">Baixar</button>
+                    <button (click)="openRestoreConfirm(b)" class="restore-inline">Restaurar</button>
+                  </div>
                 </div>
               </li>}
             </ul>}

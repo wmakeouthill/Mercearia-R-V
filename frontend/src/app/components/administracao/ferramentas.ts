@@ -51,10 +51,12 @@ export class FerramentasComponent implements OnInit {
         this.apiService.getAuditLogs().subscribe({
             next: (list) => {
                 this.logs = (list || []).map((l: any) => ({
-                    timestamp: l.timestamp || '',
-                    level: l.level || '',
-                    logger: l.logger || '',
-                    message: l.message || l.msg || ''
+                    timestamp: (l.created_at || l.createdAt || l.timestamp) || '',
+                    level: l.action || l.level || '',
+                    logger: l.username || l.logger || '',
+                    message: l.observation || l.message || '',
+                    user: l.username || '',
+                    observation: l.observation || ''
                 }));
             },
             error: () => { /* ignore */ }
@@ -83,11 +85,26 @@ export class FerramentasComponent implements OnInit {
         });
     }
 
-    restoreBackup(name: string): void {
-        if (!confirm(`Restaurar backup '${name}' irá sobrescrever o banco atual. Deseja prosseguir?`)) return;
+    // open restore confirmation modal
+    restoreTarget: any = null; // selected backup
+    restoreConfirmPhrase = "Desejo restaurar este backup e sobrescrever o banco de dados.";
+    restoreInput = '';
+
+    openRestoreConfirm(backup: any): void {
+        this.restoreTarget = backup;
+        this.restoreInput = '';
+        // show browser confirm modal for now with info; will open custom modal-like UI
+        const ok = confirm(`Você vai restaurar o backup:\n\nNome: ${backup.name}\nCriado em: ${backup.createdAt}\n\nConfirma?`);
+        if (!ok) return;
+        // Ask for exact phrase
+        const phrase = prompt('Digite a frase para confirmar: "' + this.restoreConfirmPhrase + '"');
+        if (phrase !== this.restoreConfirmPhrase) {
+            alert('Frase de confirmação incorreta. Restauração cancelada.');
+            return;
+        }
         this.backupLoading = true;
-        this.apiService.restoreBackup(name).subscribe({
-            next: () => { this.backupLoading = false; this.success = `Backup ${name} restaurado.`; },
+        this.apiService.restoreBackup(backup.name).subscribe({
+            next: () => { this.backupLoading = false; this.success = `Backup ${backup.name} restaurado.`; },
             error: (err) => { this.backupLoading = false; this.error = err.error?.error || 'Erro ao restaurar backup'; }
         });
     }
