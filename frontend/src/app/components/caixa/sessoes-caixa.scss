@@ -6,11 +6,9 @@
 .bloco-filtros { display:flex; gap:12px; flex-wrap:nowrap; align-items:flex-start; padding:12px; background:var(--white); border-radius:12px; margin-bottom:12px; border:2px solid rgba(0,46,89,0.06); }
 .bloco-filtros label { display:flex; flex-direction:column; font-weight:600; color:var(--primary-blue); font-size:13px; }
 .filtros-inputs { display:flex; gap:12px; flex-wrap:nowrap; align-items:center; }
-.acoes-filtros { display:flex; gap:8px; align-items:center; align-self:flex-end; }
 .filtros .compact { padding:6px 8px; font-size:13px; }
 
-/* padronizar botões Filtrar / Limpar seguindo padrões do projeto (dashboard.scss) */
-.acoes-filtros { margin-left: auto; display:flex; gap:8px; align-items:center; justify-content:flex-end; }
+.acoes-filtros { margin-left: auto; display:flex; gap:8px; align-items:center; justify-content:flex-end; align-self:flex-end; }
 .acoes-filtros .btn-filtrar,
 .acoes-filtros .btn-limpar {
   padding: 8px 12px;
@@ -34,9 +32,6 @@
 .btn-excluir-compact { padding: 6px 8px; min-width: 40px; height: 36px; border-radius: 8px; }
 
 /* reutilizar estilos de tabela */
-.tabela-wrapper { width:100%; overflow-x:auto; box-sizing:border-box; padding:0 8px; }
-.paginacao { display:grid; grid-template-columns: auto 1fr auto auto; gap:8px 12px; padding:12px 16px; align-items:center; }
-.pagination-left, .pagination-right { display:inline-flex; gap:6px; align-items:center; }
 .pagination-center { display:flex; gap:6px; align-items:center; justify-content:center; }
 .pagination-jump { display:inline-flex; align-items:center; gap:8px; justify-self:end; }
 
@@ -67,44 +62,11 @@
 .sessoes-table {
   width: 100%;
   border-collapse: collapse;
+  /* prefer auto layout so cell content defines column width first; fall back to fixed on very small screens */
+  table-layout: auto;
 }
 
-.sessoes-table thead th {
-  background: rgba(0, 46, 89, 0.03);
-  color: var(--primary-blue);
-  font-weight: 700;
-  text-transform: uppercase;
-  font-size: 12px;
-  padding: 8px 12px;
-  border-bottom: 2px solid var(--light-gray);
-  white-space: nowrap;
-}
 
-.sessoes-table tbody td {
-  padding: 8px 12px;
-  border-bottom: 1px solid #f3f4f6;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.sessoes-table col:nth-child(1) { width: 60px; }
-.sessoes-table col:nth-child(2) { width: 80px; }
-.sessoes-table col:nth-child(3) { min-width: 160px; }
-.sessoes-table col:nth-child(4) { min-width: 160px; }
-.sessoes-table col:nth-child(5) { min-width: 140px; }
-.sessoes-table col:nth-child(6) { min-width: 140px; }
-.sessoes-table col:nth-child(7) { width: 110px; }
-.sessoes-table col:nth-child(8) { width: 110px; }
-.sessoes-table col:nth-child(9) { width: 110px; }
-
-.sessoes-table td.center, .sessoes-table th.center { text-align: center; }
-.sessoes-table td.right, .sessoes-table th.right { text-align: right; white-space: nowrap; }
-
-/* prevent currency symbol and amount from breaking into separate lines */
-.sessoes-table td.right::before { content: '\00a0'; }
-/* ensure variation column never breaks into multiple lines */
-.sessoes-table td.right, .sessoes-table th.right { white-space: nowrap; }
 
 .tabela-cabecalho { font-weight: 700; border-bottom: 1px solid #e5e7eb; padding: 8px 0; }
 .tabela-cabecalho .th { white-space: nowrap; }
@@ -120,20 +82,39 @@
 .col:nth-child(6), .th:nth-child(6) { text-align: left; word-break: break-word; }
 
 /* permitir quebra de título em duas linhas para alguns th */
-.sessoes-table th.break-two { white-space: normal; line-height: 1.1; }
-.sessoes-table td.break-two { white-space: normal; }
-
-/* coluna ação menor */
-.sessoes-table th.acao, .sessoes-table td.acao { width: 60px; max-width: 60px; }
-.btn-excluir-compact { padding: 6px 6px; min-width: 36px; }
-.col:nth-child(7), .th:nth-child(7) { text-align: center; } /* saldo inicial */
-.col:nth-child(8), .th:nth-child(8) { text-align: center; } /* saldo contado */
-.col:nth-child(9), .th:nth-child(9) { text-align: center; } /* variacao */
+.sessoes-table th.break-two { white-space: normal; line-height: 1.1; text-align: center; display: table-cell; vertical-align: top; }
 
 /* botão voltar não quebra linha */
 .acoes-topo .btn-voltar { white-space: nowrap; }
 
+/* paginacao final */
 .paginacao { margin-top: 12px; display:flex; justify-content:space-between; align-items:center; gap:8px }
 .pagination-left, .pagination-right { display:flex; gap:6px; }
+
+/* Minimal overrides: keep first columns compact and ensure action column has min width */
+.sessoes-table col:nth-child(1) { width: 60px; }
+.sessoes-table col:nth-child(2) { width: 60px; }
+.sessoes-table col:last-child { min-width: 120px; }
+
+/* Make columns shrink to content when possible but keep minimums to avoid overflow */
+.sessoes-table td, .sessoes-table th { min-width: 0; }
+.sessoes-table td { white-space: nowrap; }
+.sessoes-table td.break-two { white-space: normal; }
+
+/* Responsive: on narrow screens, switch to table-layout: fixed to keep layout stable and enable horizontal scroll */
+@media (max-width: 520px) {
+  .sessoes-table { table-layout: fixed; }
+  .sessoes-table td, .sessoes-table th { overflow: hidden; text-overflow: ellipsis; }
+}
+
+/* Prefer cell content sizing by preventing header text from forcing column width */
+.sessoes-table thead th { box-sizing: border-box; vertical-align: top !important; text-align: center !important; }
+.sessoes-table thead th span { display:block; }
+
+/* Force data cells centered vertically and horizontally */
+.sessoes-table tbody td { padding: 6px 8px; border-bottom: 1px solid #f3f4f6; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle !important; text-align: center !important; box-sizing: border-box; }
+
+/* Cells: center everything; allow wrap only where marked (td.break-two) */
+.sessoes-table td:not(.break-two) { white-space: nowrap; }
 
 

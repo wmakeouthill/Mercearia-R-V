@@ -65,31 +65,33 @@
       <div class="tabela-wrapper">
         <table class="sessoes-table">
           <colgroup>
-            <col style="width:5%" />
-            <col style="width:5%" />
-            <col style="width:16%" />
-            <col style="width:14%" />
-            <col style="width:12%" />
-            <col style="width:14%" />
-            <col style="width:8%" />
-            <col style="width:8%" />
-            <col style="width:8%" />
-            <col style="width:5%" />
-            <col style="width:5%" />
+            <!-- fixed-percent layout to prevent header overlap; sums to 100% -->
+            <col style="width:4%" />   <!-- ID -->
+            <col style="width:4%" />   <!-- Aberto -->
+            <col style="width:12%" />  <!-- Abertura -->
+            <col style="width:12%" />  <!-- Usuário (Abertura) -->
+            <col style="width:8%" />   <!-- Fechamento -->
+            <col style="width:12%" />  <!-- Usuário (Fechamento) -->
+            <col style="width:8%" />   <!-- Saldo Inicial -->
+            <col style="width:8%" />   <!-- Saldo Contado -->
+            <col style="width:8%" />   <!-- Variação -->
+            <col style="width:8%" />   <!-- Cumul. Antes -->
+            <col style="width:8%" />   <!-- Cumul. Global -->
+            <col style="min-width:160px" />   <!-- Ação (min width) -->
           </colgroup>
           <thead>
             <tr>
               <th class="center">ID</th>
               <th class="center">Aberto</th>
-              <th>Abertura</th>
-              <th class="break-two">Usuário (Abertura)</th>
-              <th>Fechamento</th>
-              <th class="break-two">Usuário (Fechamento)</th>
-              <th class="right">Saldo Inicial</th>
-              <th class="right">Saldo Contado</th>
-              <th class="right break-two">Variação (sessão)</th>
-              <th class="right break-two">Cumul. Antes</th>
-              <th class="right break-two">Cumul. Global</th>
+              <th><span>Abertura</span></th>
+              <th class="break-two"><span>Usuário</span><span>(Abertura)</span></th>
+              <th><span>Fechamento</span></th>
+              <th class="break-two"><span>Usuário</span><span>(Fechamento)</span></th>
+              <th class="right"><span>Saldo</span><span>Inicial</span></th>
+              <th class="right"><span>Saldo</span><span>Contado</span></th>
+              <th class="right break-two"><span>Variação</span><span>(sessão)</span></th>
+              <th class="right break-two"><span>Cumul.</span><span>Antes</span></th>
+              <th class="right break-two"><span>Cumul.</span><span>Global</span></th>
               <th class="center acao">Ação</th>
             </tr>
           </thead>
