@@ -50,6 +50,12 @@
         <span class="button-icon">👤+</span>
         Criar Usuário
       </button>
+
+      <!-- Ferramentas críticas: botão idêntico ao Criar Usuário -->
+      <button (click)="openCriticalTools()" class="action-button secondary-button" [disabled]="!currentUser || currentUser.role !== 'admin'">
+        <span class="button-icon">🛠️</span>
+        Ferramentas
+      </button>
     </div>
 
     <!-- Change Password Form -->

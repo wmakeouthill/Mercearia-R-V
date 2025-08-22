@@ -48,7 +48,8 @@ public class SecurityConfig {
                         // preview/download without needing JWT
                         .requestMatchers(HttpMethod.GET, "/api/checkout/*/nota").permitAll()
                         // Keep other checkout operations protected
-                        .requestMatchers(PRODUTOS_ALL, "/api/vendas/**", "/api/caixa/**", "/api/checkout/**")
+                        .requestMatchers(PRODUTOS_ALL, "/api/vendas/**", "/api/caixa/**", "/api/checkout/**",
+                                "/api/admin/**")
                         .authenticated()
                         .anyRequest().permitAll())
                 .httpBasic(Customizer.withDefaults());

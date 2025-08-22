@@ -1,0 +1,256 @@
+package com.example.backendspring.admin;
+
+import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
+import org.springframework.core.io.PathResource;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.io.IOException;
+import java.nio.file.*;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
+
+@Service
+@RequiredArgsConstructor
+public class AdminService {
+
+    private static final Logger log = LoggerFactory.getLogger(AdminService.class);
+
+    private final JdbcTemplate jdbcTemplate;
+
+    @Value("${app.backupDir:backups}")
+    private String backupDirConfig;
+
+    @Value("${app.pgDumpPath:pg_dump}")
+    private String pgDumpPath;
+
+    @Value("${app.pgRestorePath:pg_restore}")
+    private String pgRestorePath;
+
+    @Value("${spring.datasource.url:}")
+    private String datasourceUrl;
+
+    @Value("${spring.datasource.username:}")
+    private String datasourceUser;
+
+    @Value("${spring.datasource.password:}")
+    private String datasourcePass;
+
+    @Value("${app.enableDatabaseReset:false}")
+    private boolean enableDatabaseReset;
+
+    private Path backupDir;
+
+    private static final DateTimeFormatter TS = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss").withZone(ZoneOffset.UTC);
+
+    @EventListener(ApplicationReadyEvent.class)
+    public void init() throws IOException {
+        backupDir = Paths.get(backupDirConfig);
+        Files.createDirectories(backupDir);
+        log.info("AdminService backups directory: {}", backupDir.toAbsolutePath());
+    }
+
+    public Map<String, Object> createBackup(String format) throws IOException, InterruptedException {
+        if (datasourceUrl == null || datasourceUrl.isBlank()) {
+            throw new IllegalStateException("Datasource URL não configurada; não é possível criar backup");
+        }
+
+        // determinar nome do banco a partir da URL jdbc:postgresql://host:port/dbname
+        String dbName = extractDatabaseName(datasourceUrl);
+        if (dbName == null)
+            throw new IllegalStateException("Não foi possível extrair o nome do banco da URL");
+
+        String ts = TS.format(Instant.now());
+        String filename = String.format("db-%s.%s", ts, "dump");
+        Path out = backupDir.resolve(filename);
+
+        // format: 'custom' -> -F c ; 'plain' -> -F p
+        String formatFlag = "c".equalsIgnoreCase(format) || "custom".equalsIgnoreCase(format) ? "c" : "p";
+
+        List<String> cmd = new ArrayList<>();
+        cmd.add(pgDumpPath);
+        cmd.add("-F");
+        cmd.add(formatFlag);
+        cmd.add("-b");
+        cmd.add("-v");
+        cmd.add("-f");
+        cmd.add(out.toString());
+        cmd.add(dbName);
+
+        ProcessBuilder pb = new ProcessBuilder(cmd);
+        Map<String, String> env = pb.environment();
+        // extrair host/port e usar variáveis de ambiente para credenciais
+        Map<String, String> conn = parseJdbcUrl(datasourceUrl);
+        if (conn.containsKey("host"))
+            env.put("PGHOST", conn.get("host"));
+        if (conn.containsKey("port"))
+            env.put("PGPORT", conn.get("port"));
+        if (datasourceUser != null && !datasourceUser.isBlank())
+            env.put("PGUSER", datasourceUser);
+        if (datasourcePass != null && !datasourcePass.isBlank())
+            env.put("PGPASSWORD", datasourcePass);
+
+        pb.redirectErrorStream(true);
+        log.info("Executando pg_dump: {} -> {}", dbName, out.toAbsolutePath());
+        Process p = pb.start();
+        int code = p.waitFor();
+        if (code != 0) {
+            String msg = String.format("pg_dump retornou código %d", code);
+            log.error(msg);
+            throw new IllegalStateException(msg);
+        }
+
+        return Map.of("filename", out.getFileName().toString(), "path", out.toString());
+    }
+
+    public List<Map<String, Object>> listBackups() throws IOException {
+        if (!Files.exists(backupDir))
+            return List.of();
+        try (DirectoryStream<Path> ds = Files.newDirectoryStream(backupDir)) {
+            List<Map<String, Object>> out = new ArrayList<>();
+            for (Path p : ds) {
+                if (!Files.isRegularFile(p))
+                    continue;
+                BasicFileAttributes attr = Files.readAttributes(p, BasicFileAttributes.class);
+                out.add(Map.of("name", p.getFileName().toString(), "createdAt", attr.creationTime().toString()));
+            }
+            out.sort(Comparator.comparing(m -> (String) m.get("name"), Comparator.reverseOrder()));
+            return out;
+        }
+    }
+
+    public Path getBackupPathSanitized(String name) {
+        String safe = Paths.get(name).getFileName().toString();
+        return backupDir.resolve(safe);
+    }
+
+    public PathResource getBackupResource(String name) {
+        Path p = getBackupPathSanitized(name);
+        if (!Files.exists(p))
+            throw new IllegalArgumentException("Backup não encontrado");
+        return new PathResource(p);
+    }
+
+    public boolean isResetEnabled() {
+        return enableDatabaseReset;
+    }
+
+    public void restoreBackup(String name) throws IOException, InterruptedException {
+        Path p = getBackupPathSanitized(name);
+        if (!Files.exists(p))
+            throw new IllegalArgumentException("Backup não encontrado");
+        if (datasourceUrl == null || datasourceUrl.isBlank())
+            throw new IllegalStateException("Datasource URL não configurada; não é possível restaurar backup");
+
+        String dbName = extractDatabaseName(datasourceUrl);
+        Map<String, String> conn = parseJdbcUrl(datasourceUrl);
+
+        List<String> cmd = new ArrayList<>();
+        cmd.add(pgRestorePath);
+        cmd.add("-d");
+        cmd.add(dbName);
+        cmd.add(p.toString());
+
+        ProcessBuilder pb = new ProcessBuilder(cmd);
+        Map<String, String> env = pb.environment();
+        if (conn.containsKey("host"))
+            env.put("PGHOST", conn.get("host"));
+        if (conn.containsKey("port"))
+            env.put("PGPORT", conn.get("port"));
+        if (datasourceUser != null && !datasourceUser.isBlank())
+            env.put("PGUSER", datasourceUser);
+        if (datasourcePass != null && !datasourcePass.isBlank())
+            env.put("PGPASSWORD", datasourcePass);
+
+        pb.redirectErrorStream(true);
+        log.info("Executando pg_restore: {}", p.toAbsolutePath());
+        Process pr = pb.start();
+        int code = pr.waitFor();
+        if (code != 0)
+            throw new IllegalStateException("pg_restore retornou codigo " + code);
+    }
+
+    @Transactional
+    public void resetDatabase(boolean exceptProducts) {
+        if (!enableDatabaseReset) {
+            throw new IllegalStateException("Database reset is disabled on this instance");
+        }
+        // Buscar todas as tabelas do schema public
+        List<String> tables = jdbcTemplate.queryForList(
+                "select table_name from information_schema.tables where table_schema = 'public' and table_type='BASE TABLE'",
+                String.class);
+        // tabelas a excluir do truncate
+        Set<String> excluded = new HashSet<>(List.of("databasechangelog", "databasechangeloglock"));
+        if (exceptProducts)
+            excluded.add("produtos");
+
+        List<String> toTruncate = new ArrayList<>();
+        for (String t : tables) {
+            if (!excluded.contains(t.toLowerCase())) {
+                toTruncate.add("\"" + t + "\"");
+            }
+        }
+
+        if (toTruncate.isEmpty())
+            return;
+
+        String sql = "TRUNCATE " + String.join(", ", toTruncate) + " RESTART IDENTITY CASCADE";
+        log.info("Executando reset de banco (truncate): {}", sql);
+        jdbcTemplate.execute(sql);
+    }
+
+    private String extractDatabaseName(String jdbcUrl) {
+        try {
+            String u = jdbcUrl;
+            if (u.startsWith("jdbc:"))
+                u = u.substring(5);
+            // agora postgres://host:port/dbname
+            int slash = u.indexOf('/', u.indexOf("://") + 3);
+            if (slash < 0)
+                return null;
+            String after = u.substring(slash + 1);
+            int q = after.indexOf('?');
+            if (q >= 0)
+                after = after.substring(0, q);
+            return after;
+        } catch (Exception e) {
+            log.warn("Falha ao extrair nome do DB da URL: {} -> {}", jdbcUrl, e.getMessage());
+            return null;
+        }
+    }
+
+    private Map<String, String> parseJdbcUrl(String jdbcUrl) {
+        Map<String, String> out = new HashMap<>();
+        try {
+            String u = jdbcUrl;
+            if (u.startsWith("jdbc:"))
+                u = u.substring(5);
+            // postgres://host:port/db
+            int p1 = u.indexOf("://");
+            if (p1 >= 0) {
+                String hostPortAndRest = u.substring(p1 + 3);
+                int slash = hostPortAndRest.indexOf('/');
+                String hostPort = slash >= 0 ? hostPortAndRest.substring(0, slash) : hostPortAndRest;
+                if (hostPort.contains(":")) {
+                    String[] parts = hostPort.split(":", 2);
+                    out.put("host", parts[0]);
+                    out.put("port", parts[1]);
+                } else {
+                    out.put("host", hostPort);
+                }
+            }
+        } catch (Exception e) {
+            log.debug("parseJdbcUrl falhou: {}", e.getMessage());
+        }
+        return out;
+    }
+}

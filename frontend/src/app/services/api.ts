@@ -12,6 +12,8 @@ import { BackendDetectorService } from './backend-detector';
 })
 export class ApiService {
   private baseUrl = environment.apiUrl;
+  private readonly blobResponseType = 'blob' as const;
+  private readonly textResponseType = 'text' as const;
   private readonly backendUrlSubject = new BehaviorSubject<string>(environment.apiUrl);
   private isDetecting = false;
   private readonly connectionStatus = new BehaviorSubject<boolean>(true);
@@ -314,7 +316,7 @@ export class ApiService {
   // Obter PDF da nota como blob
   getNotaPdf(orderId: number) {
     return this.makeRequest(
-      () => this.http.get(`${this.baseUrl}/checkout/${orderId}/nota`, { responseType: 'blob' as 'blob' }),
+      () => this.http.get(`${this.baseUrl}/checkout/${orderId}/nota`, { responseType: this.blobResponseType }),
       'GET_NOTA_PDF'
     );
   }
@@ -322,7 +324,7 @@ export class ApiService {
   // Obter HTML da nota (para preview mais confiável no modal)
   getNotaHtml(orderId: number) {
     return this.makeRequest(
-      () => this.http.get(`${this.baseUrl}/checkout/${orderId}/nota/html`, { responseType: 'text' as 'text' }),
+      () => this.http.get(`${this.baseUrl}/checkout/${orderId}/nota/html`, { responseType: this.textResponseType }),
       'GET_NOTA_HTML'
     );
   }
@@ -533,6 +535,49 @@ export class ApiService {
     return this.makeRequest<any>(
       () => this.http.post<any>(`${this.baseUrl}/auth/change-password`, passwordData),
       'CHANGE_PASSWORD'
+    );
+  }
+
+  // BACKUPS E FERRAMENTAS CRÍTICAS
+  createBackup(payload: { format?: 'custom' | 'plain' } = {}): Observable<{ filename: string }> {
+    return this.makeRequest(
+      () => this.http.post<{ filename: string }>(`${this.baseUrl}/admin/backups`, payload),
+      'CREATE_BACKUP'
+    );
+  }
+
+  listBackups(): Observable<{ name: string; createdAt: string }[]> {
+    return this.makeRequest(
+      () => this.http.get<{ name: string; createdAt: string }[]>(`${this.baseUrl}/admin/backups`),
+      'LIST_BACKUPS'
+    );
+  }
+
+  downloadBackup(name: string): Observable<Blob> {
+    return this.makeRequest(
+      () => this.http.get(`${this.baseUrl}/admin/backups/${encodeURIComponent(name)}/download`, { responseType: this.blobResponseType }),
+      'DOWNLOAD_BACKUP'
+    );
+  }
+
+  restoreBackup(name: string): Observable<any> {
+    return this.makeRequest(
+      () => this.http.post<any>(`${this.baseUrl}/admin/backups/${encodeURIComponent(name)}/restore`, {}),
+      'RESTORE_BACKUP'
+    );
+  }
+
+  resetDatabase(payload: { mode: 'ALL' | 'EXCEPT_PRODUCTS'; confirmationPhrase: string }): Observable<any> {
+    return this.makeRequest(
+      () => this.http.post<any>(`${this.baseUrl}/admin/reset-database`, payload),
+      'RESET_DATABASE'
+    );
+  }
+
+  getAuditLogs(): Observable<any[]> {
+    return this.makeRequest(
+      () => this.http.get<any[]>(`${this.baseUrl}/admin/audit-logs`),
+      'GET_AUDIT_LOGS'
     );
   }
 

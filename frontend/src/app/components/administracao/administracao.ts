@@ -313,4 +313,109 @@ export class AdministracaoComponent implements OnInit {
     this.error = '';
     this.success = '';
   }
+
+  // --- Ferramentas críticas (backup / reset) ---
+  showCriticalTools = false;
+  // Confirmação exata (case sensitive)
+  readonly resetConfirmationPhrase = "Desejo com certeza, apagar todos os dados do banco de dados e fazer um reset geral dos dados do aplicativo.";
+  criticalConfirmationInput = '';
+  backupLoading = false;
+  backups: { name: string; createdAt: string }[] = [];
+  resetMode: 'ALL' | 'EXCEPT_PRODUCTS' = 'ALL';
+
+  openCriticalTools(): void {
+    if (!this.currentUser || this.currentUser.role !== 'admin') {
+      this.error = 'Acesso negado: somente administradores podem acessar ferramentas críticas.';
+      return;
+    }
+    // navegar para a tela de ferramentas
+    this.router.navigate(['/administracao/ferramentas']);
+  }
+
+  closeCriticalTools(): void {
+    this.showCriticalTools = false;
+  }
+
+  createBackup(format: 'custom' | 'plain' = 'custom'): void {
+    this.backupLoading = true;
+    this.apiService.createBackup({ format }).subscribe({
+      next: (res) => {
+        this.backupLoading = false;
+        this.success = `Backup criado: ${res.filename}`;
+        this.loadBackups();
+      },
+      error: (err) => {
+        this.backupLoading = false;
+        this.error = err.error?.error || 'Erro ao criar backup';
+      }
+    });
+  }
+
+  loadBackups(): void {
+    this.apiService.listBackups().subscribe({
+      next: (list) => {
+        this.backups = list;
+      },
+      error: (err) => {
+        // não interrompe o uso do modal
+      }
+    });
+  }
+
+  downloadBackup(name: string): void {
+    this.apiService.downloadBackup(name).subscribe({
+      next: (blob) => {
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = name;
+        a.click();
+        window.URL.revokeObjectURL(url);
+      },
+      error: (err) => {
+        this.error = err.error?.error || 'Erro ao baixar backup';
+      }
+    });
+  }
+
+  restoreBackup(name: string): void {
+    if (!confirm(`Restaurar backup '${name}' irá sobrescrever o banco de dados atual. Deseja prosseguir?`)) {
+      return;
+    }
+    this.backupLoading = true;
+    this.apiService.restoreBackup(name).subscribe({
+      next: () => {
+        this.backupLoading = false;
+        this.success = `Backup '${name}' restaurado com sucesso. Reinicie a aplicação se necessário.`;
+      },
+      error: (err) => {
+        this.backupLoading = false;
+        this.error = err.error?.error || 'Erro ao restaurar backup';
+      }
+    });
+  }
+
+  confirmAndReset(): void {
+    if (this.criticalConfirmationInput !== this.resetConfirmationPhrase) {
+      this.error = 'A frase de confirmação não corresponde exatamente.';
+      return;
+    }
+    if (!confirm('Confirma executar o reset selecionado? Esta ação é irreversível.')) {
+      return;
+    }
+    this.loading = true;
+    this.apiService.resetDatabase({ mode: this.resetMode, confirmationPhrase: this.criticalConfirmationInput }).subscribe({
+      next: () => {
+        this.loading = false;
+        this.success = 'Reset executado com sucesso.';
+        this.showCriticalTools = false;
+        // Opcional: forçar recarregamento da aplicação
+        setTimeout(() => window.location.reload(), 1500);
+      },
+      error: (err) => {
+        this.loading = false;
+        this.error = err.error?.error || 'Erro ao executar reset';
+      }
+    });
+  }
 }

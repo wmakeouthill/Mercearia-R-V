@@ -1,0 +1,93 @@
+<div class="admin-container">
+  <div class="admin-header">
+    <div class="header-content">
+      <div class="title-section">
+        <div class="title-info">
+          <h1>Ferramentas Críticas</h1>
+          <p>Backup, restauração e reset do banco de dados (apenas administradores)</p>
+        </div>
+      </div>
+      <div class="user-info header-actions">
+        <div style="flex:1"></div>
+        <span class="current-user">{{ currentUser?.username }}</span>
+        <span class="user-badge">Administrador</span>
+        <button (click)="$any(router).navigate(['/administracao'])" class="btn-voltar">← Voltar</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="admin-content">
+    @if (error) {<div class="message error-message"><span class="message-icon">⚠️</span><span>{{ error }}</span></div>}
+    @if (success) {<div class="message success-message"><span class="message-icon">✅</span><span>{{ success }}</span></div>}
+
+    <div class="tools-vertical">
+      <div class="card reset-card">
+        <h3>Reset do Banco</h3>
+        <p>Resetar dados do sistema. Esta ação é irreversível.</p>
+
+        <div class="form-row">
+          <label><input type="radio" name="resetMode" [(ngModel)]="resetMode" [value]="'ALL'"> Resetar tudo</label>
+          <label><input type="radio" name="resetMode" [(ngModel)]="resetMode" [value]="'EXCEPT_PRODUCTS'"> Resetar exceto produtos</label>
+        </div>
+
+        <div class="confirm-box full-width">
+          <p>Para confirmar, digite exatamente a frase abaixo (case sensitive):</p>
+          <pre>{{ resetConfirmationPhrase }}</pre>
+          <div class="confirm-row">
+            <input class="full-input" type="text" [(ngModel)]="confirmationInput" placeholder="Digite a frase de confirmação" />
+            <input class="full-input" type="text" [(ngModel)]="observationInput" placeholder="Observação (opcional)" />
+          </div>
+          <div class="actions">
+            <button (click)="confirmAndReset()" class="danger-button" [disabled]="confirmationInput !== resetConfirmationPhrase">Confirmar Reset</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card backups-card">
+        <div class="backups-left">
+          <h3>Backups</h3>
+          <p>Crie e gerencie backups do banco de dados.</p>
+          <div class="actions">
+            <button (click)="createBackup('custom')" class="action-button">Criar Backup (compactado)</button>
+            <button (click)="createBackup('plain')" class="action-button">Criar Backup (SQL)</button>
+          </div>
+
+          <div class="backups-list compact">
+            <h4>Backups disponíveis</h4>
+            @if (backups.length === 0) {<div>Nenhum backup encontrado</div>} @else {<ul>
+              @for (b of backups; track b.name) {<li>
+                <span class="backup-name">{{ b.name }}</span>
+                <div class="backup-actions">
+                  <button (click)="downloadBackup(b.name)">Baixar</button>
+                  <button (click)="restoreBackup(b.name)">Restaurar</button>
+                </div>
+              </li>}
+            </ul>}
+          </div>
+        </div>
+
+        <div class="backups-right logs-right">
+          <h4>Logs de Auditoria</h4>
+          <p class="muted">Últimas entradas do aplicativo</p>
+          <div class="logs-table compact">
+            <table>
+              <thead>
+                <tr><th>Usuário</th><th>Ação</th><th>Observação</th><th>Timestamp</th></tr>
+              </thead>
+              <tbody>
+                @for (logEntry of (logs || []); track logEntry.timestamp + logEntry.logger) {<tr>
+                  <td>{{ logEntry.user || '-' }}</td>
+                  <td>{{ logEntry.level }}</td>
+                  <td class="msg-cell">{{ logEntry.observation || (logEntry.message.length > 80 ? (logEntry.message.substring(0, 77) + '...') : logEntry.message) }}</td>
+                  <td>{{ logEntry.timestamp }}</td>
+                </tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
