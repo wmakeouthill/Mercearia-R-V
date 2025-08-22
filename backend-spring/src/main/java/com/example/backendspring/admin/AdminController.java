@@ -64,19 +64,21 @@ public class AdminController {
 
     @PostMapping("/backups/{name}/restore")
     @PreAuthorize(ROLE_ADMIN)
-    public ResponseEntity<Map<String, Object>> restoreBackup(@PathVariable String name)
-            throws IOException, InterruptedException {
-        adminService.restoreBackup(name);
+    public ResponseEntity<Map<String, Object>> restoreBackup(@PathVariable String name,
+            @RequestBody(required = false) Map<String, String> body) throws IOException, InterruptedException {
+        String observation = body == null ? "" : body.getOrDefault("observation", "");
         String username = "";
         try {
             var auth = SecurityContextHolder.getContext().getAuthentication();
             if (auth != null && auth.getName() != null)
                 username = auth.getName();
         } catch (Exception e) {
-            /* ignore */ }
-        org.slf4j.LoggerFactory.getLogger(AdminController.class).info("ADMIN_TOOL action=restore filename={} user={}",
-                name, username);
-        adminService.recordAdminAction(username, "restore", "", name);
+            /* ignore */
+        }
+        org.slf4j.LoggerFactory.getLogger(AdminController.class)
+                .info("ADMIN_TOOL action=restore filename={} user={} observation={}", name, username, observation);
+        adminService.recordAdminAction(username, "restore", observation, name);
+        adminService.restoreBackup(name);
         return ResponseEntity.ok(Map.of(KEY_MESSAGE, "restore_started"));
     }
 
@@ -212,5 +214,31 @@ public class AdminController {
     public ResponseEntity<List<Map<String, Object>>> listAdminActions() {
         var rows = adminService.listAdminActions();
         return ResponseEntity.ok(rows);
+    }
+
+    @PostMapping("/backups/{name}/delete")
+    @PreAuthorize(ROLE_ADMIN)
+    public ResponseEntity<Map<String, Object>> deleteBackup(@PathVariable String name,
+            @RequestBody(required = false) Map<String, String> body) {
+        String observation = body == null ? "" : body.getOrDefault("observation", "");
+        boolean deleted = adminService.deleteBackupFile(name);
+        String username = "";
+        try {
+            var auth = SecurityContextHolder.getContext().getAuthentication();
+            if (auth != null && auth.getName() != null)
+                username = auth.getName();
+        } catch (Exception e) {
+            /* ignore */ }
+        org.slf4j.LoggerFactory.getLogger(AdminController.class).info(
+                "ADMIN_TOOL action=delete filename={} user={} observation={}", name,
+                username, observation);
+        adminService.recordAdminAction(username, "delete_backup", observation, name);
+        return ResponseEntity.ok(Map.of(KEY_MESSAGE, deleted ? "deleted" : "not_found"));
+    }
+
+    @GetMapping("/tools/status")
+    @PreAuthorize(ROLE_ADMIN)
+    public ResponseEntity<Map<String, Object>> toolsStatus() {
+        return ResponseEntity.ok(adminService.checkToolStatus());
     }
 }

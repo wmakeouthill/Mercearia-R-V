@@ -133,6 +133,51 @@ public class AdminService {
         }
     }
 
+    public boolean deleteBackupFile(String name) {
+        try {
+            Path p = getBackupPathSanitized(name);
+            return Files.deleteIfExists(p);
+        } catch (Exception e) {
+            log.warn("Failed to delete backup {}: {}", name, e.getMessage());
+            return false;
+        }
+    }
+
+    public Map<String, Object> checkToolStatus() {
+        Map<String, Object> out = new HashMap<>();
+        boolean dumpOk = false;
+        boolean restoreOk = false;
+        try {
+            ProcessBuilder pb = new ProcessBuilder(pgDumpPath, "--version");
+            pb.redirectErrorStream(true);
+            Process p = pb.start();
+            int code = p.waitFor();
+            dumpOk = code == 0;
+        } catch (Exception e) {
+            dumpOk = false;
+        }
+        try {
+            ProcessBuilder pb2 = new ProcessBuilder(pgRestorePath, "--version");
+            pb2.redirectErrorStream(true);
+            Process p2 = pb2.start();
+            int code2 = p2.waitFor();
+            restoreOk = code2 == 0;
+        } catch (Exception e) {
+            restoreOk = false;
+        }
+        boolean backupDirWritable = false;
+        try {
+            backupDirWritable = Files.isWritable(backupDir);
+        } catch (Exception e) {
+            backupDirWritable = false;
+        }
+        out.put("pgDump", dumpOk);
+        out.put("pgRestore", restoreOk);
+        out.put("backupDirWritable", backupDirWritable);
+        out.put("backupDir", backupDir.toString());
+        return out;
+    }
+
     public List<Map<String, Object>> listBackups() throws IOException {
         if (!Files.exists(backupDir))
             return List.of();

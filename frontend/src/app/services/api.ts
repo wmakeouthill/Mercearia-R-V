@@ -560,10 +560,24 @@ export class ApiService {
     );
   }
 
-  restoreBackup(name: string): Observable<any> {
+  restoreBackup(name: string, payload: { observation?: string } = {}): Observable<any> {
     return this.makeRequest(
-      () => this.http.post<any>(`${this.baseUrl}/admin/backups/${encodeURIComponent(name)}/restore`, {}),
+      () => this.http.post<any>(`${this.baseUrl}/admin/backups/${encodeURIComponent(name)}/restore`, payload),
       'RESTORE_BACKUP'
+    );
+  }
+
+  deleteBackup(name: string, payload: { observation?: string } = {}): Observable<any> {
+    return this.makeRequest(
+      () => this.http.post<any>(`${this.baseUrl}/admin/backups/${encodeURIComponent(name)}/delete`, payload),
+      'DELETE_BACKUP'
+    );
+  }
+
+  getToolStatus(): Observable<any> {
+    return this.makeRequest(
+      () => this.http.get<any>(`${this.baseUrl}/admin/tools/status`),
+      'GET_TOOL_STATUS'
     );
   }
 

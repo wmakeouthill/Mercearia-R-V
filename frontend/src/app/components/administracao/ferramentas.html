@@ -16,6 +16,42 @@
     </div>
   </div>
 
+@if (showRestoreModal) {<div class="modal-overlay">
+  <div class="modal-card">
+    <h3>Confirmar Restauração</h3>
+    <p>Você está prestes a restaurar o backup:</p>
+    <p><strong>{{ restoreTarget?.name }}</strong></p>
+    <p>Criado em: {{ restoreTarget?.createdAt }}</p>
+    <label for="restoreObs">Observação (opcional)</label>
+    <input id="restoreObs" type="text" [(ngModel)]="restoreInput" placeholder="Informe observação" />
+    <div class="modal-actions">
+      <button (click)="cancelRestore()" class="cancel-button">Cancelar</button>
+      <button (click)="confirmRestore()" class="action-button primary-button">Confirmar Restauração</button>
+    </div>
+  </div>
+</div>}
+
+@if (showDeleteModal) {<div class="modal-overlay">
+  <div class="modal-card">
+    <h3>Confirmar Exclusão</h3>
+    <p>Você está prestes a apagar o backup:</p>
+    <p><strong>{{ deleteTarget?.name }}</strong></p>
+    <label for="deleteObs">Observação (opcional)</label>
+    <input id="deleteObs" type="text" [(ngModel)]="deleteInput" placeholder="Informe observação" />
+    <div class="modal-actions">
+      <button (click)="cancelDelete()" class="cancel-button">Cancelar</button>
+      <button (click)="confirmDelete()" class="action-button primary-button">Confirmar Exclusão</button>
+    </div>
+  </div>
+</div>}
+
+@if (showBackupModal) {<div class="modal-overlay">
+  <div class="modal-card">
+    <h3>Aguarde</h3>
+    <p>{{ backupModalMessage }}</p>
+  </div>
+</div>}
+
   <div class="admin-content">
     @if (error) {<div class="message error-message"><span class="message-icon">⚠️</span><span>{{ error }}</span></div>}
     @if (success) {<div class="message success-message"><span class="message-icon">✅</span><span>{{ success }}</span></div>}
@@ -64,6 +100,7 @@
                   <div class="backup-actions">
                     <button (click)="downloadBackup(b.name)">Baixar</button>
                     <button (click)="openRestoreConfirm(b)" class="restore-inline">Restaurar</button>
+                    <button (click)="openDeleteConfirm(b)" class="restore-inline" style="margin-left:8px">Apagar</button>
                   </div>
                 </div>
               </li>}

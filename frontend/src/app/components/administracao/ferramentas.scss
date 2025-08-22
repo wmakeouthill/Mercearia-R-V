@@ -1,5 +1,10 @@
 .admin-container {
-  /* reuse existing admin styles */
+  background: var(--white);
+}
+
+/* force content area white to avoid header gradient bleeding */
+.admin-container, .admin-content, .tools-vertical, .card {
+  background: var(--white) !important;
 }
 .tools-vertical {
   display: grid;
@@ -7,14 +12,16 @@
   gap: 20px;
   max-width: 1000px;
   margin: 0 auto;
+  margin-top: 20px; /* separate from header */
 }
 .card {
   background: #fff;
   padding: 16px;
   border-radius: 6px;
   box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  color: var(--dark-gray);
 }
-.reset-card { grid-column: 1 / -1; }
+.reset-card { grid-column: 1 / -1; margin-top: 5px; }
 .backups-card { display: grid; grid-template-columns: 1fr 420px; gap: 16px; align-items: start; }
 .backups-left { padding-right: 8px; }
 .backups-right { padding-left: 8px; }
@@ -30,6 +37,13 @@
 .backup-actions button { margin-left: 6px; }
 .backups-list.compact li:hover .backup-row { background: rgba(0,0,0,0.02); transform: translateY(-1px); }
 .restore-inline { background:#fff; color:#b71c1c; border:1px solid rgba(183,28,28,0.12); padding:6px 8px; border-radius:6px; }
+
+/* Modal */
+.modal-overlay { position:fixed; inset:0; background: rgba(0,0,0,0.4); display:flex; align-items:center; justify-content:center; z-index:2000; }
+.modal-card { background:#fff; padding:20px; border-radius:8px; width:520px; max-width:92%; box-shadow:0 8px 32px rgba(0,0,0,0.2); }
+.modal-card h3 { margin:0 0 8px 0; }
+.modal-card .modal-actions { display:flex; gap:12px; justify-content:flex-end; margin-top:12px; }
+.modal-card input { width:100%; padding:8px 10px; border:1px solid var(--light-gray); border-radius:6px; }
 .logs-table.compact table { font-size: 12px; }
 .logs-table.compact .msg-cell { max-width: 300px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
@@ -52,6 +66,8 @@
   padding: 24px 0;
   margin-bottom: 32px;
   box-shadow: 0 4px 20px rgba(0, 46, 89, 0.2);
+  position: relative;
+  z-index: 10;
 
   .header-content {
     max-width: 1400px;
@@ -126,10 +142,24 @@
   }
 }
 
+/* Ensure content below header stays white and not painted by header styles */
+.admin-header + .admin-content,
+.admin-container .admin-content,
+.admin-content {
+  background: var(--white) !important;
+  z-index: 1;
+  position: relative;
+}
+
+.admin-content { max-width: 1400px; margin: 0 auto; padding: 0 24px 40px; color: var(--dark-gray); background: var(--white); }
+
 @media (max-width: 900px) {
   .backups-card { grid-template-columns: 1fr; }
   .tools-vertical { padding: 0 12px; }
 }
+
+.card h3 { color: var(--primary-blue); margin: 0 0 8px 0; }
+.card p { color: var(--dark-gray); margin: 0 0 12px 0; }
 .confirm-box pre { background:#f8f8f8; padding:8px; border-radius:4px; }
 .danger-button { background:#d9534f; color:white; border:none; padding:8px 12px; border-radius:4px; }
 .logs-table table { width: 100%; border-collapse: collapse; }
