@@ -1,7 +1,10 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { CaixaService } from '../../services/caixa.service';
+import { Subject, Subscription } from 'rxjs';
+import { debounceTime } from 'rxjs/operators';
 import { ApiService } from '../../services/api';
 import { AuthService } from '../../services/auth';
 import { StatusCaixa } from '../../models';
@@ -9,9 +12,9 @@ import { StatusCaixa } from '../../models';
 @Component({
   selector: 'app-caixa-sessoes',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, FormsModule],
   templateUrl: './sessoes-caixa.html',
-  styleUrls: ['./caixa.scss']
+  styleUrls: ['./caixa.scss', './sessoes-caixa.scss']
 })
 export class SessoesCaixaComponent implements OnInit {
   status: StatusCaixa | null = null;
@@ -23,6 +26,18 @@ export class SessoesCaixaComponent implements OnInit {
   hasNext = false;
   page = 1;
   size = 20;
+  // filtros
+  filtroPeriodoInicio: string | null = null;
+  filtroPeriodoFim: string | null = null;
+  filtroMes: string | null = null;
+  filtroUsuarioAbertura: string | null = null;
+  filtroUsuarioFechamento: string | null = null;
+  filtroStatus: string | null = '';
+  jumpPage = 1;
+  // subjects for debounced user input
+  private filtroUsuarioAbertura$ = new Subject<string>();
+  private filtroUsuarioFechamento$ = new Subject<string>();
+  private subscriptions: Subscription[] = [];
   get lastPage(): number { return Math.max(1, Math.ceil((this.total || 0) / (this.size || 1))); }
 
   get totalPages(): number {
@@ -318,28 +333,134 @@ export class SessoesCaixaComponent implements OnInit {
   }
 
   ngOnInit(): void {
+    // subscribe to debounced user filters
+    this.subscriptions.push(
+      this.filtroUsuarioAbertura$.pipe(debounceTime(500)).subscribe(val => {
+        this.filtroUsuarioAbertura = val || null;
+        this.page = 1;
+        this.loadPage(this.page);
+      })
+    );
+    this.subscriptions.push(
+      this.filtroUsuarioFechamento$.pipe(debounceTime(500)).subscribe(val => {
+        this.filtroUsuarioFechamento = val || null;
+        this.page = 1;
+        this.loadPage(this.page);
+      })
+    );
+
     this.loadPage(1);
+  }
+
+  ngOnDestroy(): void {
+    for (const s of this.subscriptions) s.unsubscribe();
+    this.filtroUsuarioAbertura$.complete();
+    this.filtroUsuarioFechamento$.complete();
   }
 
   loadPage(page: number): void {
     this.loading = true;
     this.error = '';
-    this.caixaService.listarSessoes({ page, size: this.size }).subscribe({
+    const params: any = { page, size: this.size };
+    if (this.filtroPeriodoInicio) params.periodo_inicio = this.filtroPeriodoInicio;
+    if (this.filtroPeriodoFim) params.periodo_fim = this.filtroPeriodoFim;
+    if (this.filtroMes) params.mes = this.normalizeMesInput(this.filtroMes);
+    if (this.filtroUsuarioAbertura) params.aberto_por = this.filtroUsuarioAbertura;
+    if (this.filtroUsuarioFechamento) params.fechado_por = this.filtroUsuarioFechamento;
+    if (this.filtroStatus) params.status = this.filtroStatus;
+
+    this.caixaService.listarSessoes(params).subscribe({
       next: s => {
-        this.items = s.items || [];
+        let items = s.items || [];
         this.total = s.total || 0;
         this.hasNext = s.hasNext || false;
         this.page = s.page || page;
         // normalize usernames for display
-        this.items = this.items.map((it: any) => ({
+        items = items.map((it: any) => ({
           ...it,
           aberto_por: it.aberto_por_username || it.aberto_por || null,
           fechado_por: it.fechado_por_username || it.fechado_por || null
         }));
+
+        // apply client-side filters as a fallback when backend doesn't filter fully
+        this.items = this.applyClientFilters(items);
         this.loading = false;
       },
       error: e => { this.error = 'Falha ao carregar sessões'; this.loading = false; }
     });
+  }
+
+  private applyClientFilters(items: any[]): any[] {
+    return items.filter(it => {
+      // filtro periodo (by data_abertura)
+      if (this.filtroPeriodoInicio) {
+        const inicio = new Date(this.filtroPeriodoInicio);
+        const d = new Date(it.data_abertura);
+        if (d < inicio) return false;
+      }
+      if (this.filtroPeriodoFim) {
+        const fim = new Date(this.filtroPeriodoFim);
+        const d = new Date(it.data_abertura);
+        // include whole day
+        fim.setHours(23, 59, 59, 999);
+        if (d > fim) return false;
+      }
+      // filtro mes (YYYY-MM)
+      if (this.filtroMes) {
+        const [y, m] = this.filtroMes.split('-').map(Number);
+        const d = new Date(it.data_abertura);
+        if (d.getFullYear() !== y || (d.getMonth() + 1) !== m) return false;
+      }
+      // filtro usuario abertura
+      if (this.filtroUsuarioAbertura) {
+        const q = String(this.filtroUsuarioAbertura).toLowerCase();
+        if (!String(it.aberto_por || '').toLowerCase().includes(q)) return false;
+      }
+      // filtro usuario fechamento
+      if (this.filtroUsuarioFechamento) {
+        const q = String(this.filtroUsuarioFechamento).toLowerCase();
+        if (!String(it.fechado_por || '').toLowerCase().includes(q)) return false;
+      }
+      // filtro status
+      if (this.filtroStatus) {
+        if (this.filtroStatus === 'aberto' && !it.aberto) return false;
+        if (this.filtroStatus === 'fechado' && it.aberto) return false;
+      }
+      return true;
+    });
+  }
+
+  onSizeChange(): void {
+    this.page = 1;
+    this.loadPage(this.page);
+  }
+
+  onFiltroUsuarioAberturaChange(value: string): void {
+    this.filtroUsuarioAbertura$.next(value || '');
+  }
+
+  onFiltroUsuarioFechamentoChange(value: string): void {
+    this.filtroUsuarioFechamento$.next(value || '');
+  }
+
+  toNumber(v: any): number { return Number(v); }
+
+  aplicarFiltros(): void {
+    this.page = 1;
+    this.loadPage(this.page);
+  }
+
+  limparFiltros(): void {
+    this.filtroPeriodoInicio = null; this.filtroPeriodoFim = null; this.filtroMes = null; this.filtroUsuarioAbertura = null; this.filtroUsuarioFechamento = null; this.filtroStatus = '';
+    this.page = 1;
+    this.loadPage(this.page);
+  }
+
+  // helpers for filters: normalize month input (YYYY-MM) to API-friendly format (YYYY-MM)
+  private normalizeMesInput(mes: string | null): string | null {
+    if (!mes) return null;
+    // already in YYYY-MM from <input type="month">
+    return mes;
   }
 
   voltar(): void { this.router.navigate(['/caixa']); }

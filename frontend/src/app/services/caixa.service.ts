@@ -95,10 +95,16 @@ export class CaixaService {
     return this.makeRequest('LISTAR_MOVIMENTACOES', () => this.http.get<any>(url));
   }
 
-  listarSessoes(params: { page?: number; size?: number } = {}): Observable<{ items: any[]; total: number; hasNext: boolean; page: number; size: number }> {
+  listarSessoes(params: { page?: number; size?: number; periodo_inicio?: string; periodo_fim?: string; mes?: string; aberto_por?: string; fechado_por?: string; status?: string } = {}): Observable<{ items: any[]; total: number; hasNext: boolean; page: number; size: number }> {
     const queryParams: string[] = [];
     if (params.page != null) queryParams.push(`page=${params.page}`);
     if (params.size != null) queryParams.push(`size=${params.size}`);
+    if (params.periodo_inicio) queryParams.push(`periodo_inicio=${encodeURIComponent(params.periodo_inicio)}`);
+    if (params.periodo_fim) queryParams.push(`periodo_fim=${encodeURIComponent(params.periodo_fim)}`);
+    if (params.mes) queryParams.push(`mes=${encodeURIComponent(params.mes)}`);
+    if (params.aberto_por) queryParams.push(`aberto_por=${encodeURIComponent(params.aberto_por)}`);
+    if (params.fechado_por) queryParams.push(`fechado_por=${encodeURIComponent(params.fechado_por)}`);
+    if (params.status) queryParams.push(`status=${encodeURIComponent(params.status)}`);
     const query = queryParams.length ? `?${queryParams.join('&')}` : '';
     const url = `${this.baseUrl}/caixa/sessoes${query}`;
     return this.makeRequest('LISTAR_SESSOES', () => this.http.get<any>(url));
