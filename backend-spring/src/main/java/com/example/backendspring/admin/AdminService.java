@@ -59,6 +59,23 @@ public class AdminService {
         log.info("AdminService backups directory: {}", backupDir.toAbsolutePath());
     }
 
+    private boolean waitForTcpConnect(String host, int port, int attempts, long millisBetween) {
+        for (int i = 0; i < attempts; i++) {
+            try (java.net.Socket s = new java.net.Socket()) {
+                s.connect(new java.net.InetSocketAddress(host, port), (int) millisBetween);
+                return true;
+            } catch (Exception e) {
+                try {
+                    Thread.sleep(millisBetween);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    return false;
+                }
+            }
+        }
+        return false;
+    }
+
     public Map<String, Object> createBackup(String format) throws IOException, InterruptedException {
         // Resolve effective pg_dump/pg_restore paths (prefers configured property,
         // then repo stubs, then system binaries)
@@ -124,13 +141,39 @@ public class AdminService {
             env.put("PGHOST", conn.get("host"));
         if (conn.containsKey("port"))
             env.put("PGPORT", conn.get("port"));
+
+        // Wait for the Postgres process to be actually accepting TCP connections
+        if (conn.containsKey("host") && conn.containsKey("port")) {
+            try {
+                String host = conn.get("host");
+                int port = Integer.parseInt(conn.get("port"));
+                boolean ok = waitForTcpConnect(host, port, 8, 250);
+                if (!ok) {
+                    String msg = String.format("Timeout waiting for Postgres to accept connections at %s:%d", host,
+                            port);
+                    log.error(msg);
+                    throw new IllegalStateException(msg);
+                }
+            } catch (NumberFormatException nfe) {
+                log.debug("Invalid port number parsed from JDBC URL: {}", conn.get("port"));
+            }
+        }
         if (datasourceUser != null && !datasourceUser.isBlank())
             env.put("PGUSER", datasourceUser);
+        else
+            // When running with embedded Postgres, datasourceUser may be empty; default to
+            // 'postgres'
+            env.put("PGUSER", "postgres");
         if (datasourcePass != null && !datasourcePass.isBlank())
             env.put("PGPASSWORD", datasourcePass);
 
         pb.redirectErrorStream(true);
-        log.info("Executando pg_dump: {} -> {}", dbName, out.toAbsolutePath());
+        // Log connection info just before running pg_dump to help debugging races
+        String dbgHost = env.getOrDefault("PGHOST", "");
+        String dbgPort = env.getOrDefault("PGPORT", "");
+        String dbgUser = env.getOrDefault("PGUSER", "");
+        log.info("Executando pg_dump: {} -> {} (effectiveUrl={} host={} port={} user={})", dbName,
+                out.toAbsolutePath(), effectiveUrl, dbgHost, dbgPort, dbgUser);
         Process p = pb.start();
         int code = p.waitFor();
         String procOut = "";
@@ -397,9 +440,9 @@ public class AdminService {
 
     private void resolvePgBinPaths() {
         try {
-            // If user configured explicit paths via properties, keep them
+            // If user configured explicit paths via properties and it's not the default
+            // keep them (but still allow packaged checks).
             if (pgDumpPath != null && !pgDumpPath.equalsIgnoreCase("pg_dump")) {
-                // If running packaged, ensure the configured path exists
                 String packaged = System.getenv("APP_PACKAGED");
                 if (packaged != null && packaged.equalsIgnoreCase("true")) {
                     Path p = Paths.get(pgDumpPath);
@@ -409,6 +452,37 @@ public class AdminService {
                 }
                 return;
             }
+
+            // Prefer actual system-installed pg_dump/pg_restore on PATH when available
+            boolean dumpOnPath = false;
+            boolean restoreOnPath = false;
+            try {
+                ProcessBuilder pb = new ProcessBuilder("pg_dump", "--version");
+                pb.redirectErrorStream(true);
+                Process p = pb.start();
+                int code = p.waitFor();
+                dumpOnPath = code == 0;
+            } catch (Exception ignored) {
+                dumpOnPath = false;
+            }
+            try {
+                ProcessBuilder pb2 = new ProcessBuilder("pg_restore", "--version");
+                pb2.redirectErrorStream(true);
+                Process p2 = pb2.start();
+                int code2 = p2.waitFor();
+                restoreOnPath = code2 == 0;
+            } catch (Exception ignored) {
+                restoreOnPath = false;
+            }
+
+            if (dumpOnPath && restoreOnPath) {
+                pgDumpPath = "pg_dump";
+                pgRestorePath = "pg_restore";
+                log.info("Using system pg_dump/pg_restore from PATH");
+                return;
+            }
+
+            // If system binaries not found, fall back to repo stubs if present
             String os = System.getProperty("os.name").toLowerCase();
             String platform = os.contains("win") ? "win" : (os.contains("mac") ? "mac" : "linux");
             Path repoPgDir = Paths.get("pg").toAbsolutePath();
