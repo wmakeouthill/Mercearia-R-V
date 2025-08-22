@@ -98,9 +98,9 @@
                     <small class="backup-ts">{{ b.createdAt }}</small>
                   </div>
                   <div class="backup-actions">
-                    <button (click)="downloadBackup(b.name)">Baixar</button>
+                    <button (click)="downloadBackup(b.name)" class="restore-inline download-inline">Baixar</button>
                     <button (click)="openRestoreConfirm(b)" class="restore-inline">Restaurar</button>
-                    <button (click)="openDeleteConfirm(b)" class="restore-inline" style="margin-left:8px">Apagar</button>
+                    <button (click)="openDeleteConfirm(b)" class="restore-inline delete-inline" aria-label="Apagar" style="margin-left:8px">🗑️</button>
                   </div>
                 </div>
               </li>}

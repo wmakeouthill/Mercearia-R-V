@@ -37,6 +37,15 @@
 .backup-actions button { margin-left: 6px; }
 .backups-list.compact li:hover .backup-row { background: rgba(0,0,0,0.02); transform: translateY(-1px); }
 .restore-inline { background:#fff; color:#b71c1c; border:1px solid rgba(183,28,28,0.12); padding:6px 8px; border-radius:6px; }
+.restore-inline:hover { background: rgba(183,28,28,0.03); transform: translateY(-1px); }
+
+/* Download button: same visual style as restore but light gray background */
+.backup-actions .download-inline { background: #f5f5f5; color: #333; border:1px solid rgba(0,0,0,0.06); padding:6px 8px; border-radius:6px; }
+.backup-actions .download-inline:hover { background: #ececec; }
+
+/* Delete shown as trash icon but keep restore-inline styling for danger color */
+.backup-actions .delete-inline { background:#fff; color:#b71c1c; border:1px solid rgba(183,28,28,0.12); padding:6px 8px; border-radius:6px; }
+.backup-actions .delete-inline:hover { background: rgba(183,28,28,0.03); }
 
 /* Modal */
 .modal-overlay { position:fixed; inset:0; background: rgba(0,0,0,0.4); display:flex; align-items:center; justify-content:center; z-index:2000; }
