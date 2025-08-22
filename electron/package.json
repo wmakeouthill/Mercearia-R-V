@@ -73,6 +73,26 @@
                 "to": "backend-spring/uploads/produtos"
             },
             {
+                "from": "../backend-spring/pg",
+                "to": "backend-spring/pg",
+                "filter": ["**/*"]
+            },
+            {
+                "from": "../resources/pg/win",
+                "to": "pg/win",
+                "filter": ["**/*"]
+            },
+            {
+                "from": "../resources/pg/linux",
+                "to": "pg/linux",
+                "filter": ["**/*"]
+            },
+            {
+                "from": "../resources/pg/mac",
+                "to": "pg/mac",
+                "filter": ["**/*"]
+            },
+            {
                 "from": "../frontend/dist/sistema-estoque/browser",
                 "to": "frontend",
                 "filter": [

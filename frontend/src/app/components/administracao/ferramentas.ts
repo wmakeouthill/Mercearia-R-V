@@ -70,16 +70,24 @@ export class FerramentasComponent implements OnInit {
   }
 
   createBackup(format: 'custom' | 'plain' = 'custom'): void {
+    // abrir modal de confirmação simples
+    if (!confirm('Tem certeza que deseja criar um backup agora?')) return;
     this.backupLoading = true;
     this.showBackupModal = true;
     this.backupModalMessage = 'Criando backup... aguarde';
+    const start = Date.now();
     this.apiService.createBackup({ format }).subscribe({
       next: (res) => {
-        this.backupLoading = false;
-        this.backupModalMessage = `Backup criado: ${res.filename}`;
-        this.success = `Backup criado: ${res.filename}`;
-        this.loadBackups();
-        setTimeout(() => { this.showBackupModal = false; this.backupModalMessage = ''; }, 1200);
+        // garantir ao menos 800ms de feedback visual para o usuário
+        const elapsed = Date.now() - start;
+        const remaining = Math.max(0, 800 - elapsed);
+        setTimeout(() => {
+          this.backupLoading = false;
+          this.backupModalMessage = `Backup criado: ${res.filename}`;
+          this.success = `Backup criado: ${res.filename}`;
+          this.loadBackups();
+          setTimeout(() => { this.showBackupModal = false; this.backupModalMessage = ''; }, 1200);
+        }, remaining);
       },
       error: (err) => {
         this.backupLoading = false;

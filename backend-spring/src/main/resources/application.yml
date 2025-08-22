@@ -3,7 +3,9 @@ server:
 
 spring:
   config:
-    import: optional:file:./secrets/application-secrets.yml,optional:file:./secrets/application-secrets.properties
+    # tentar carregar secrets do filesystem durante desenvolvimento e, quando empacotado,
+    # permitir fallback para classpath (ex: recursos embutidos em produção/electron)
+    import: optional:file:./secrets/application-secrets.yml,optional:file:./secrets/application-secrets.properties,optional:classpath:application-secrets.yml
   datasource:
     url: ${DB_URL:}
     username: ${DB_USERNAME:}

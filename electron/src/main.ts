@@ -1137,19 +1137,32 @@ function createMenu(): void {
 async function preparePgData(): Promise<{ userDataDir: string; userPgDir: string; embeddedPgDir?: string }> {
     const userDataDir = app.getPath('userData');
     const resourceBase = process.resourcesPath ? process.resourcesPath : path.join(__dirname, '../resources');
-    const embeddedPgDir = path.join(resourceBase, 'backend-spring', 'data', 'pg');
+    // Explicit requirement: embedded PG data must live under resources/backend-spring/pg
+    const embeddedPgDir = path.join(resourceBase, 'backend-spring', 'pg');
 
-    // If embedded packaged data exists (installed in INSTALLDIR), use it directly
-    if (fs.existsSync(embeddedPgDir)) {
-        console.log('📦 Using embedded Postgres data directory directly as runtime PG_DATA_DIR:', embeddedPgDir);
-        return { userDataDir, userPgDir: embeddedPgDir, embeddedPgDir };
+    // Ensure directory exists (create if missing). In packaged apps extraResources will
+    // provide this directory; here we create it if absent so installers can populate later.
+    try {
+        if (!fs.existsSync(embeddedPgDir)) {
+            fs.mkdirSync(embeddedPgDir, { recursive: true });
+            console.log('📦 Created embedded Postgres directory at', embeddedPgDir);
+        }
+    } catch (e) {
+        console.error('❌ Cannot ensure embedded PG directory at', embeddedPgDir, ':', (e as Error)?.message || e);
+        throw new Error(`Embedded Postgres data directory not available: ${embeddedPgDir}`);
     }
 
-    // Fallback: use a writable directory under userData and let embedded Postgres init a new cluster there
-    const userPgDir = path.join(userDataDir, 'data', 'pg');
-    console.log('⚠️ Embedded Postgres data not packaged; will initialize a new cluster in userData at', userPgDir);
-    if (!fs.existsSync(userPgDir)) fs.mkdirSync(userPgDir, { recursive: true });
-    return { userDataDir, userPgDir };
+    // Verify writability. If not writable, fail early — per your requirement we do NOT
+    // fallback to userData; installer must ensure resources/backend-spring/pg is writable.
+    try {
+        fs.accessSync(embeddedPgDir, fs.constants.W_OK);
+    } catch (e) {
+        console.error('❌ Embedded PG directory exists but is not writable:', embeddedPgDir);
+        throw new Error(`Embedded Postgres data directory exists but is not writable: ${embeddedPgDir}`);
+    }
+
+    console.log('✅ Using embedded Postgres data directory at', embeddedPgDir);
+    return { userDataDir, userPgDir: embeddedPgDir, embeddedPgDir };
 }
 
 function buildEnvForBackend(userDataDir: string, userPgDir: string): NodeJS.ProcessEnv {
@@ -1161,6 +1174,57 @@ function buildEnvForBackend(userDataDir: string, userPgDir: string): NodeJS.Proc
         PERSIST_EMBEDDED_PG: 'true',
         LOG_FILE: path.join(userDataDir, 'backend.log')
     } as NodeJS.ProcessEnv;
+}
+
+// Ajusta e injeta caminhos de pg_dump/pg_restore empacotados (ou do sistema em dev)
+function injectPgBinPaths(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+    try {
+        const resourceBase = process.resourcesPath ? process.resourcesPath : path.join(__dirname, '../resources');
+        const platform = process.platform; // 'win32' | 'linux' | 'darwin'
+        const exeName = platform === 'win32' ? 'pg_dump.exe' : 'pg_dump';
+        const restoreExeName = platform === 'win32' ? 'pg_restore.exe' : 'pg_restore';
+
+        // Possible locations where pg binaries may be packaged. We support both
+        // top-level `pg/...` and `backend-spring/pg/...` so you can put them next to the backend.
+        const candidateDirs = [
+            path.join(resourceBase, 'pg'),
+            path.join(resourceBase, 'backend-spring', 'pg'),
+            path.join(resourceBase, 'backend-spring', 'resources', 'pg')
+        ];
+
+        let foundDump: string | null = null;
+        let foundRestore: string | null = null;
+        for (const d of candidateDirs) {
+            const dd = path.join(d, platform === 'win32' ? 'win' : platform === 'darwin' ? 'mac' : 'linux');
+            const tryDump = path.join(dd, exeName);
+            const tryRestore = path.join(dd, restoreExeName);
+            if (!foundDump && fs.existsSync(tryDump)) foundDump = tryDump;
+            if (!foundRestore && fs.existsSync(tryRestore)) foundRestore = tryRestore;
+            if (foundDump && foundRestore) break;
+        }
+
+        // Se não encontrou binários empacotados, procurar por diretório direto (support older layout)
+        if (!foundDump) {
+            const flatTry = path.join(resourceBase, 'pg', exeName);
+            if (fs.existsSync(flatTry)) foundDump = flatTry;
+        }
+        if (!foundRestore) {
+            const flatTryR = path.join(resourceBase, 'pg', restoreExeName);
+            if (fs.existsSync(flatTryR)) foundRestore = flatTryR;
+        }
+
+        const dumpPath = foundDump || 'pg_dump';
+        const restorePath = foundRestore || 'pg_restore';
+
+        // Injetar via SPRING_APPLICATION_JSON para que o Spring Boot receba as propriedades
+        const springJson = { ...(env.SPRING_APPLICATION_JSON ? JSON.parse(env.SPRING_APPLICATION_JSON) : {}), app: { ...(env.SPRING_APPLICATION_JSON ? JSON.parse(env.SPRING_APPLICATION_JSON).app || {} : {}), pgDumpPath: dumpPath, pgRestorePath: restorePath } };
+        env.SPRING_APPLICATION_JSON = JSON.stringify(springJson);
+        console.log('🔧 Injetado SPRING_APPLICATION_JSON.app.pgDumpPath =', dumpPath);
+        console.log('🔧 Injetado SPRING_APPLICATION_JSON.app.pgRestorePath =', restorePath);
+    } catch (e) {
+        console.warn('⚠️ Falha ao injetar caminhos de pg_dump/pg_restore:', (e as Error)?.message || e);
+    }
+    return env;
 }
 
 async function launchBackendProcess(jarPath: string, userDataDir: string, env: NodeJS.ProcessEnv): Promise<void> {
@@ -1303,7 +1367,8 @@ async function startBackend(): Promise<void> {
     try {
         const { userDataDir, userPgDir } = await preparePgData();
         sendSplashStatus('Iniciando banco de dados embutido...', 25);
-        const env = buildEnvForBackend(userDataDir, userPgDir);
+        let env = buildEnvForBackend(userDataDir, userPgDir);
+        env = injectPgBinPaths(env);
         await launchBackendProcess(jarPath, userDataDir, env);
     } catch (error) {
         console.error('❌ Erro ao iniciar backend:', error);

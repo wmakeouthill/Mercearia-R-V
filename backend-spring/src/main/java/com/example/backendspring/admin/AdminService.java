@@ -60,12 +60,29 @@ public class AdminService {
     }
 
     public Map<String, Object> createBackup(String format) throws IOException, InterruptedException {
-        if (datasourceUrl == null || datasourceUrl.isBlank()) {
+        // datasourceUrl pode não estar setada quando usamos embedded postgres.
+        // Nesse caso tentamos extrair informações a partir da jdbcUrl do DataSource
+        String effectiveUrl = datasourceUrl;
+        if (effectiveUrl == null || effectiveUrl.isBlank()) {
+            try {
+                var ds = jdbcTemplate.getDataSource();
+                if (ds != null) {
+                    // tentar obter connection metadata
+                    try (var conn = ds.getConnection()) {
+                        effectiveUrl = conn.getMetaData().getURL();
+                    }
+                }
+            } catch (Exception e) {
+                log.debug("Não foi possível obter URL do DataSource via metadata: {}", e.getMessage());
+            }
+        }
+
+        if (effectiveUrl == null || effectiveUrl.isBlank()) {
             throw new IllegalStateException("Datasource URL não configurada; não é possível criar backup");
         }
 
         // determinar nome do banco a partir da URL jdbc:postgresql://host:port/dbname
-        String dbName = extractDatabaseName(datasourceUrl);
+        String dbName = extractDatabaseName(effectiveUrl);
         if (dbName == null)
             throw new IllegalStateException("Não foi possível extrair o nome do banco da URL");
 
@@ -89,7 +106,7 @@ public class AdminService {
         ProcessBuilder pb = new ProcessBuilder(cmd);
         Map<String, String> env = pb.environment();
         // extrair host/port e usar variáveis de ambiente para credenciais
-        Map<String, String> conn = parseJdbcUrl(datasourceUrl);
+        Map<String, String> conn = parseJdbcUrl(effectiveUrl);
         if (conn.containsKey("host"))
             env.put("PGHOST", conn.get("host"));
         if (conn.containsKey("port"))
@@ -151,8 +168,13 @@ public class AdminService {
             ProcessBuilder pb = new ProcessBuilder(pgDumpPath, "--version");
             pb.redirectErrorStream(true);
             Process p = pb.start();
-            int code = p.waitFor();
-            dumpOk = code == 0;
+            try {
+                int code = p.waitFor();
+                dumpOk = code == 0;
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                dumpOk = false;
+            }
         } catch (Exception e) {
             dumpOk = false;
         }
@@ -160,8 +182,13 @@ public class AdminService {
             ProcessBuilder pb2 = new ProcessBuilder(pgRestorePath, "--version");
             pb2.redirectErrorStream(true);
             Process p2 = pb2.start();
-            int code2 = p2.waitFor();
-            restoreOk = code2 == 0;
+            try {
+                int code2 = p2.waitFor();
+                restoreOk = code2 == 0;
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                restoreOk = false;
+            }
         } catch (Exception e) {
             restoreOk = false;
         }
@@ -214,11 +241,26 @@ public class AdminService {
         Path p = getBackupPathSanitized(name);
         if (!Files.exists(p))
             throw new IllegalArgumentException("Backup não encontrado");
-        if (datasourceUrl == null || datasourceUrl.isBlank())
+        // mesma lógica do createBackup: quando usamos embedded, tentar obter URL via DataSource
+        String effectiveUrl = datasourceUrl;
+        if (effectiveUrl == null || effectiveUrl.isBlank()) {
+            try {
+                var ds = jdbcTemplate.getDataSource();
+                if (ds != null) {
+                    try (var connc = ds.getConnection()) {
+                        effectiveUrl = connc.getMetaData().getURL();
+                    }
+                }
+            } catch (Exception e) {
+                log.debug("Não foi possível obter URL do DataSource via metadata: {}", e.getMessage());
+            }
+        }
+
+        if (effectiveUrl == null || effectiveUrl.isBlank())
             throw new IllegalStateException("Datasource URL não configurada; não é possível restaurar backup");
 
-        String dbName = extractDatabaseName(datasourceUrl);
-        Map<String, String> conn = parseJdbcUrl(datasourceUrl);
+        String dbName = extractDatabaseName(effectiveUrl);
+        Map<String, String> conn = parseJdbcUrl(effectiveUrl);
 
         List<String> cmd = new ArrayList<>();
         cmd.add(pgRestorePath);
