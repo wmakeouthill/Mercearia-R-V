@@ -137,45 +137,128 @@
      @if (!movimentacoes || movimentacoes.length === 0) {<div class="vazia">Sem movimentações</div>}
      @if (movimentacoes && movimentacoes.length > 0) {
       <div class="tabela-wrapper">
-        <div class="tabela-cabecalho">
-          <button class="th tipo sort" (click)="setSort('tipo')">Tipo</button>
-          <div class="th produto">Produto</div>
-          <button class="th valor sort" (click)="setSort('valor')">Valor</button>
-          <div class="th descricao">Descrição</div>
-          <button class="th metodo sort" (click)="setSort('metodo')">Método</button>
-          <div class="th usuario">Usuário</div>
-          <button class="th data sort" (click)="setSort('data')">Data/Hora</button>
-          <div class="th id">Id</div>
-          <div class="th acao">Ação</div>
-        </div>
-        @for (m of movimentacoes; track $index) {
-          <div class="item">
-            <div class="col tipo">
-              <span class="badge" [ngClass]="{entrada: m.tipo === 'entrada', retirada: m.tipo === 'retirada', venda: m.tipo === 'venda'}">
-                @if (m.tipo === 'entrada') {<span class="icon">➕</span>}
-                @if (m.tipo === 'retirada') {<span class="icon">➖</span>}
-                @if (m.tipo === 'venda') {<span class="icon">🛒</span>}
-                <span class="label">{{ m.tipo }}</span>
-              </span>
-            </div>
-            <div class="col produto">{{ m.produto_nome || '-' }}</div>
-            <div class="col valor">R$ {{ m.valor | number:'1.2-2' }}</div>
-            <div class="col descricao">{{ m.descricao || '-' }}</div>
-            <div class="col metodo metodo-multi">
-              @for (b of getMetodoBadges(m); track $index) {
-                <span class="metodo-badge">{{ b }}</span>
-              }
-            </div>
-            <div class="col usuario">{{ m.usuario || '-' }}</div>
-            <div class="col data">{{ m.data_movimento | date:'dd/MM/yyyy HH:mm' }}</div>
-            <div class="col id">{{ m.caixa_status_id || (m.caixa_status ? m.caixa_status.id : '-') }}</div>
-            <div class="col acao">
-              <!-- Apenas permitir exclusão de movimentações manuais (entrada/retirada). Não permitir em vendas -->
-              <button *ngIf="m.tipo !== 'venda'" type="button" (click)="$event.stopPropagation(); onMovBtnClickLog(m.id); onDeleteMovClick($event, m.id)" class="btn-excluir" [class.disabled]="!authService.isAdmin()" [attr.title]="!authService.isAdmin() ? 'Somente administradores podem excluir movimentações' : 'Excluir movimentação'">🗑️</button>
-              <div *ngIf="m.tipo === 'venda'" style="color:var(--medium-gray); font-size:0.9rem">—</div>
-            </div>
-          </div>
-        }
+        <table class="movs-table">
+          <colgroup>
+            <col style="width:120px" />
+            <col style="width:260px" />
+            <col style="width:120px" />
+            <col />
+            <col style="width:160px" />
+            <col style="width:160px" />
+            <col style="width:200px" />
+            <col style="width:80px" />
+            <col style="width:80px" />
+          </colgroup>
+          <thead>
+            <tr>
+              <th class="center">Tipo</th>
+              <th>Produto</th>
+              <th class="center">Valor</th>
+              <th>Descrição</th>
+              <th class="center">Método</th>
+              <th class="center">Usuário</th>
+              <th class="center">Data/Hora</th>
+              <th class="center">Id</th>
+              <th class="center">Ação</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let m of movimentacoes">
+              <td class="center">
+                <span class="badge" [ngClass]="{entrada: m.tipo === 'entrada', retirada: m.tipo === 'retirada', venda: m.tipo === 'venda'}">
+                  <span *ngIf="m.tipo === 'entrada'" class="icon">➕</span>
+                  <span *ngIf="m.tipo === 'retirada'" class="icon">➖</span>
+                  <span *ngIf="m.tipo === 'venda'" class="icon">🛒</span>
+                  <span class="label">{{ m.tipo }}</span>
+                </span>
+              </td>
+              <td class="produto">{{ m.produto_nome || '-' }}</td>
+              <td class="center">R$ {{ m.valor | number:'1.2-2' }}</td>
+              <td class="descricao">{{ m.descricao || '-' }}</td>
+              <td class="center metodo">
+                <div class="metodo-multi">
+                  <span *ngFor="let b of getMetodoBadges(m)" class="metodo-badge">{{ b }}</span>
+                </div>
+              </td>
+              <td class="center">{{ m.usuario || '-' }}</td>
+              <td class="center">{{ m.data_movimento | date:'dd/MM/yyyy HH:mm' }}</td>
+              <td class="center">{{ m.caixa_status_id || (m.caixa_status ? m.caixa_status.id : '-') }}</td>
+              <td class="center">
+                <button *ngIf="m.tipo !== 'venda'" type="button" (click)="$event.stopPropagation(); onMovBtnClickLog(m.id); onDeleteMovClick($event, m.id)" class="btn-excluir" [class.disabled]="!authService.isAdmin()" [attr.title]="!authService.isAdmin() ? 'Somente administradores podem excluir movimentações' : 'Excluir movimentação'">🗑️</button>
+                <div *ngIf="m.tipo === 'venda'" style="color:var(--medium-gray); font-size:0.9rem">—</div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      \n+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
          <div class="paginacao">
            <div class="pagination-left">
              <button class="btn-page btn-ghost" (click)="goToFirstPage()" [disabled]="page<=1" title="Primeira">«</button>
