@@ -149,6 +149,14 @@ export class CaixaService {
   }
 
   /**
+   * Exclui uma movimentação manual (entrada/retirada) pelo id. Apenas admin.
+   */
+  deleteMovimentacao(id: number): Observable<{ message?: string }> {
+    const url = `${this.baseUrl}/caixa/movimentacoes/${id}`;
+    return this.makeRequest('DELETE_MOVIMENTACAO', () => this.http.delete<any>(url));
+  }
+
+  /**
    * Configura horários obrigatórios (apenas admin)
    */
   configurarHorarios(horarios: {

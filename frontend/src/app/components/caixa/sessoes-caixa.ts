@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 import { CaixaService } from '../../services/caixa.service';
 import { ApiService } from '../../services/api';
+import { AuthService } from '../../services/auth';
 import { StatusCaixa } from '../../models';
 
 @Component({
@@ -60,7 +61,30 @@ export class SessoesCaixaComponent implements OnInit {
   goToFirstPage(): void { this.goToPage(1); }
   goToLastPage(): void { this.goToPage(this.totalPages); }
 
-  constructor(private readonly caixaService: CaixaService, private readonly router: Router, private readonly api: ApiService) { }
+  constructor(private readonly caixaService: CaixaService, private readonly router: Router, private readonly api: ApiService, public readonly authService: AuthService) { }
+
+  // excluir sessão (cliente): pede confirmação e chama API
+  onDeleteSessionClick(sessionId: number): void {
+    console.debug('SessoesCaixaComponent.onDeleteSessionClick', { sessionId });
+    if (!sessionId) return;
+    if (!this.authService.isAdmin()) { alert('Somente administradores podem excluir sessões'); console.warn('delete session: perm denied'); return; }
+    if (!confirm('Confirma exclusão desta sessão? Esta ação removerá apenas o registro da sessão.')) return;
+    this.api.deleteAny(`/caixa/sessoes/${sessionId}`).subscribe({
+      next: () => {
+        console.info('Sessão excluída', sessionId);
+        // remover otimisticamente da lista para refletir imediatamente na UI
+        this.items = this.items.filter(i => i.id !== sessionId);
+        // recarregar página atual para garantir consistência
+        this.loadPage(this.page);
+      },
+      error: (err) => { console.error('Erro ao excluir sessão', err); alert('Erro ao excluir sessão: ' + (err?.error?.error || err?.message || 'desconhecido')); }
+    });
+  }
+
+  // helper to log click from template (avoid using console in template)
+  onSessBtnClickLog(id: number | undefined): void {
+    console.debug('sessao-btn-click', { id });
+  }
 
   // modal state
   modalOpen = false;

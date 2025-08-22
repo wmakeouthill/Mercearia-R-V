@@ -8,6 +8,10 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.OffsetDateTime;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import java.util.Map;
 import java.util.LinkedHashMap;
 
@@ -16,11 +20,15 @@ import java.util.LinkedHashMap;
 @RequiredArgsConstructor
 public class CaixaController {
 
+    private static final Logger log = LoggerFactory.getLogger(CaixaController.class);
+
     private final CaixaStatusRepository caixaStatusRepository;
     private final CaixaMovimentacaoRepository movimentacaoRepository;
     private final UserRepository userRepository;
     private final com.example.backendspring.sale.SaleRepository saleRepository;
     private final com.example.backendspring.sale.SaleOrderRepository saleOrderRepository;
+    @PersistenceContext
+    private EntityManager em;
 
     private static final String KEY_ERROR = "error";
     private static final String KEY_MESSAGE = "message";
@@ -285,6 +293,59 @@ public class CaixaController {
         } catch (Exception e) {
             return ResponseEntity.status(500).body(java.util.Map.of("items", java.util.List.of(), "total", 0,
                     "hasNext", false, "page", 1, "size", 20));
+        }
+    }
+
+    @DeleteMapping("/sessoes/{id}")
+    @Transactional
+    public ResponseEntity<Map<String, Object>> deleteSessao(
+            @RequestAttribute(name = "userId", required = false) Long userId,
+            @PathVariable("id") Long id) {
+        if (userId == null)
+            return ResponseEntity.status(401).body(Map.of(KEY_ERROR, MSG_NAO_AUTENTICADO));
+        var u = userRepository.findById(userId).orElse(null);
+        if (u == null || u.getRole() == null || !u.getRole().equals("admin")) {
+            return ResponseEntity.status(403).body(Map.of(KEY_ERROR, "Permissão negada"));
+        }
+        try {
+            // Use pessimistic lock to avoid concurrent modifications
+            var opt = caixaStatusRepository.findByIdForUpdate(id);
+            if (opt.isEmpty())
+                return ResponseEntity.status(404).body(Map.of(KEY_ERROR, "Sessão não encontrada"));
+            var sess = opt.get();
+            // para segurança, não permitir exclusão de sessão aberta
+            if (Boolean.TRUE.equals(sess.getAberto()))
+                return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, "Não é possível excluir sessão aberta"));
+
+            // verificar dependências: movimentações e ordens vinculadas
+            long movCount = movimentacaoRepository.findAllOrderByData().stream()
+                    .filter(m -> m.getCaixaStatus() != null && id.equals(m.getCaixaStatus().getId())).count();
+            long orderCount = saleOrderRepository.findAllOrderByData().stream()
+                    .filter(o -> o.getCaixaStatus() != null && id.equals(o.getCaixaStatus().getId())).count();
+            if (movCount > 0 || orderCount > 0) {
+                return ResponseEntity.badRequest().body(Map.of(KEY_ERROR,
+                        String.format(
+                                "Existem %d movimentações e %d vendas vinculadas a esta sessão. Remova ou desvincule antes de excluir.",
+                                movCount, orderCount)));
+            }
+
+            // remove via entity to ensure proper JPA lifecycle handling
+            caixaStatusRepository.delete(sess);
+            try {
+                caixaStatusRepository.flush();
+            } catch (Exception ex) {
+                log.error("deleteSessao: flush exception for {}", id, ex);
+                return ResponseEntity.status(500)
+                        .body(Map.of(KEY_ERROR, "Falha ao excluir sessão (flush): " + ex.getMessage()));
+            }
+            if (caixaStatusRepository.existsById(id)) {
+                log.warn("deleteSessao: existsById still true after delete for {}", id);
+                return ResponseEntity.status(500).body(Map.of(KEY_ERROR, "Falha ao excluir sessão (persistência)"));
+            }
+            return ResponseEntity.ok(Map.of(KEY_MESSAGE, "Sessão excluída com sucesso"));
+        } catch (Exception e) {
+            log.error("deleteSessao: exception deleting {}", id, e);
+            return ResponseEntity.status(500).body(Map.of(KEY_ERROR, "Falha ao excluir sessão"));
         }
     }
 
@@ -941,4 +1002,86 @@ public class CaixaController {
         private String descricao;
         private String motivo;
     }
+
+    @DeleteMapping("/movimentacoes/{id}")
+    @Transactional
+    public ResponseEntity<Map<String, Object>> deleteMovimentacao(
+            @RequestAttribute(name = "userId", required = false) Long userId,
+            @PathVariable("id") Long id) {
+        if (userId == null)
+            return ResponseEntity.status(401).body(Map.of(KEY_ERROR, MSG_NAO_AUTENTICADO));
+        var u = userRepository.findById(userId).orElse(null);
+        if (u == null || u.getRole() == null || !u.getRole().equals("admin")) {
+            return ResponseEntity.status(403).body(Map.of(KEY_ERROR, "Permissão negada"));
+        }
+        try {
+            var movOpt = movimentacaoRepository.findById(id);
+            if (movOpt.isEmpty())
+                return ResponseEntity.status(404).body(Map.of(KEY_ERROR, "Movimentação não encontrada"));
+            movimentacaoRepository.deleteById(id);
+            return ResponseEntity.ok(Map.of(KEY_MESSAGE, "Movimentação excluída com sucesso"));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of(KEY_ERROR, "Falha ao excluir movimentação"));
+        }
+    }
+
+    /**
+     * Force delete: desvincula movimentacoes e vendas da sessao e exclui a sessao.
+     * Apenas admin. Use com cuidado (reescrever histórico de sessão).
+     */
+    @PostMapping("/sessoes/{id}/force-delete")
+    @Transactional
+    public ResponseEntity<Map<String, Object>> forceDeleteSessao(
+            @RequestAttribute(name = "userId", required = false) Long userId,
+            @PathVariable("id") Long id) {
+        if (userId == null)
+            return ResponseEntity.status(401).body(Map.of(KEY_ERROR, MSG_NAO_AUTENTICADO));
+        var u = userRepository.findById(userId).orElse(null);
+        if (u == null || u.getRole() == null || !u.getRole().equals("admin")) {
+            return ResponseEntity.status(403).body(Map.of(KEY_ERROR, "Permissão negada"));
+        }
+        try {
+            var opt = caixaStatusRepository.findById(id);
+            if (opt.isEmpty())
+                return ResponseEntity.status(404).body(Map.of(KEY_ERROR, "Sessão não encontrada"));
+            var sess = opt.get();
+            if (Boolean.TRUE.equals(sess.getAberto()))
+                return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, "Não é possível excluir sessão aberta"));
+
+            log.info("forceDeleteSessao: unlinking dependents for session {} by user {}", id, userId);
+            int movUnlinked = em
+                    .createNativeQuery(
+                            "UPDATE caixa_movimentacoes SET caixa_status_id = NULL WHERE caixa_status_id = ?")
+                    .setParameter(1, id).executeUpdate();
+            int ordersUnlinked = em
+                    .createNativeQuery("UPDATE venda_cabecalho SET caixa_status_id = NULL WHERE caixa_status_id = ?")
+                    .setParameter(1, id).executeUpdate();
+            log.info("forceDeleteSessao: unlinked movimentacoes={}, orders={}", movUnlinked, ordersUnlinked);
+
+            // audit: record who requested the force delete and timestamp
+            em.createNativeQuery(
+                    "INSERT INTO admin_audit(action, target_table, target_id, performed_by, details, created_at) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)")
+                    .setParameter(1, "force_delete_session")
+                    .setParameter(2, "status_caixa")
+                    .setParameter(3, id)
+                    .setParameter(4, userId)
+                    .setParameter(5,
+                            "unlinked_mov=" + movUnlinked + ", unlinked_orders=" + ordersUnlinked)
+                    .executeUpdate();
+
+            caixaStatusRepository.deleteById(id);
+            em.flush();
+            if (caixaStatusRepository.existsById(id)) {
+                log.warn("forceDeleteSessao: still exists after delete {}", id);
+                return ResponseEntity.status(500).body(Map.of(KEY_ERROR, "Falha ao excluir sessão (persistência)"));
+            }
+            return ResponseEntity.ok(Map.of(KEY_MESSAGE, "Sessão excluída com sucesso", "mov_unlinked", movUnlinked,
+                    "orders_unlinked", ordersUnlinked));
+        } catch (Exception e) {
+            log.error("forceDeleteSessao: exception deleting {}", id, e);
+            return ResponseEntity.status(500).body(Map.of(KEY_ERROR, "Falha ao excluir sessão: " + e.getMessage()));
+        }
+    }
+
+    // NOTE: dbg-delete removed from production. Keep force-delete for admin use.
 }

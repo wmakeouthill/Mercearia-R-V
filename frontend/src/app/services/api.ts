@@ -460,6 +460,13 @@ export class ApiService {
     return this.makeRequest(() => this.http.delete<any>(`${this.baseUrl}/clientes/${id}`), 'DELETE_CLIENTE');
   }
 
+  // Generic delete helper for endpoints not yet wrapped
+  deleteAny(path: string): Observable<any> {
+    // path should start with '/'
+    const url = `${this.baseUrl}${path}`;
+    return this.makeRequest(() => this.http.delete<any>(url), `DELETE_${path.replace(/\W+/g, '_').toUpperCase()}`);
+  }
+
   createCliente(cliente: any): Observable<any> {
     return this.makeRequest(() => this.http.post<any>(`${this.baseUrl}/clientes`, cliente), 'CREATE_CLIENTE');
   }

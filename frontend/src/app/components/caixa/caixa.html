@@ -120,6 +120,18 @@
     @if (success) {<div class="sucesso" (click)="success = ''" (keydown.enter)="success = ''" (keydown.space)="success = ''">{{ success }}</div>}
   </div>
 
+  <!-- Modal de confirmação customizado (reaproveitado para exclusão de movimentação) -->
+  <div *ngIf="showConfirmModal" class="confirm-overlay">
+    <div class="confirm-dialog">
+      <h3>{{ confirmTitle }}</h3>
+      <p>{{ confirmMessage }}</p>
+      <div class="confirm-actions">
+        <button class="btn-cancel" (click)="confirmModalCancel()">Cancelar</button>
+        <button class="btn-confirm" (click)="confirmModalConfirm()">Confirmar</button>
+      </div>
+    </div>
+  </div>
+
   <div class="lista">
     <h3>Movimentações do dia</h3>
      @if (!movimentacoes || movimentacoes.length === 0) {<div class="vazia">Sem movimentações</div>}
@@ -134,6 +146,7 @@
           <div class="th usuario">Usuário</div>
           <button class="th data sort" (click)="setSort('data')">Data/Hora</button>
           <div class="th id">Id</div>
+          <div class="th acao">Ação</div>
         </div>
         @for (m of movimentacoes; track $index) {
           <div class="item">
@@ -156,6 +169,11 @@
             <div class="col usuario">{{ m.usuario || '-' }}</div>
             <div class="col data">{{ m.data_movimento | date:'dd/MM/yyyy HH:mm' }}</div>
             <div class="col id">{{ m.caixa_status_id || (m.caixa_status ? m.caixa_status.id : '-') }}</div>
+            <div class="col acao">
+              <!-- Apenas permitir exclusão de movimentações manuais (entrada/retirada). Não permitir em vendas -->
+              <button *ngIf="m.tipo !== 'venda'" type="button" (click)="$event.stopPropagation(); onMovBtnClickLog(m.id); onDeleteMovClick($event, m.id)" class="btn-excluir" [class.disabled]="!authService.isAdmin()" [attr.title]="!authService.isAdmin() ? 'Somente administradores podem excluir movimentações' : 'Excluir movimentação'">🗑️</button>
+              <div *ngIf="m.tipo === 'venda'" style="color:var(--medium-gray); font-size:0.9rem">—</div>
+            </div>
           </div>
         }
          <div class="paginacao">

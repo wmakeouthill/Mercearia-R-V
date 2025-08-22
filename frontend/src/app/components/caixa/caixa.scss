@@ -204,7 +204,7 @@
   .tabela-cabecalho {
     display: grid;
     /* adicionada última coluna para 'Id' */
-    grid-template-columns: 120px 220px 120px 1fr 160px 160px 200px 80px;
+    grid-template-columns: 120px 220px 120px 1fr 160px 160px 200px 80px 80px;
     gap: 12px;
     padding: 6px 16px;
     border-bottom: 2px solid var(--light-gray);
@@ -216,7 +216,7 @@
     letter-spacing: .5px;
     align-items: center;
     .th { display: flex; align-items: center; }
-    .th.tipo, .th.valor, .th.metodo, .th.usuario, .th.data { justify-content: center; text-align: center; }
+    .th.tipo, .th.valor, .th.metodo, .th.usuario, .th.data, .th.acao { justify-content: center; text-align: center; }
     .th.produto, .th.descricao { justify-content: flex-start; text-align: left; }
     .th.sort {
       background: transparent;
@@ -235,7 +235,7 @@
   .item {
     display: grid;
     /* espelhando o cabeçalho: última coluna é para 'Id' */
-    grid-template-columns: 120px 220px 120px 1fr 160px 160px 200px 80px;
+    grid-template-columns: 120px 220px 120px 1fr 160px 160px 200px 80px 80px;
     gap: 12px;
     padding: 6px 16px;
     border-bottom: 1px solid var(--light-gray);
@@ -243,9 +243,32 @@
   }
   .item:last-child { border-bottom: none; }
   .item .tipo { display: flex; align-items: center; }
+  /* centralizar verticalmente todas as colunas por padrão */
   .item .col { display: flex; align-items: center; justify-content: center; }
   .item .col.produto, .item .col.descricao { justify-content: flex-start; }
-  .item .col.id, .tabela-cabecalho .th.id { justify-content: center; text-align: center; }
+  /* garantir colunas 'usuario' e 'id' centralizadas verticalmente */
+  .item .col.usuario, .item .col.id, .tabela-cabecalho .th.usuario, .tabela-cabecalho .th.id {
+    justify-content: center; text-align: center; align-items: center;
+  }
+  .item .col.acao, .tabela-cabecalho .th.acao { justify-content: center; text-align: center; align-items: center; }
+
+  /* alinhar botão de excluir centralizado verticalmente */
+  .item .col.acao .btn-excluir {
+    height: 36px;
+    width: 36px;
+    border-radius: 8px;
+    border: none;
+    background: #fdecea;
+    color: #c53030;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    vertical-align: middle;
+  }
+
+  /* forçar centralização vertical da célula do id e do usuário em telas pequenas */
+  .item .col.id, .item .col.usuario { height: 48px; }
   .badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 999px; font-weight: 600; font-size: 12px; }
   .badge .icon { font-size: 14px; line-height: 1; }
   .badge.entrada { background: rgba(22,163,74,0.12); color: #166534; border: 1px solid rgba(22,163,74,0.3); }
@@ -324,6 +347,82 @@
 .modal-actions .btn { height: 40px; padding: 0 12px; border-radius:8px; font-weight:700; }
 .modal-actions .btn-primary { background: var(--primary-blue); color: var(--white); }
 .modal-actions .btn-secondary { background: #ef4444; color: var(--white); }
+
+/* Confirmation modal used in caixa component */
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0.45);
+  z-index: 2147483646 !important; /* sit above most UI layers */
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+.confirm-dialog {
+  background: var(--white);
+  border-radius: 12px;
+  padding: 16px;
+  width: 420px;
+  max-width: calc(100% - 48px);
+  box-shadow: 0 18px 48px rgba(0,0,0,0.28);
+  border: 2px solid rgba(0,0,0,0.06);
+  z-index: 2147483647 !important; /* topmost */
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+/* match site typography and button styles for the confirmation modal */
+.confirm-dialog h3 {
+  margin: 0 0 8px 0;
+  font-size: 16px;
+  color: var(--primary-blue);
+  font-weight: 800;
+}
+.confirm-dialog p {
+  margin: 0 0 16px 0;
+  color: var(--dark-gray);
+  font-size: 14px;
+  line-height: 1.35;
+}
+.confirm-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  align-items: center;
+}
+.confirm-actions .btn-cancel,
+.confirm-actions .btn-confirm {
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 8px;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.confirm-actions .btn-cancel {
+  background: transparent;
+  border: 2px solid rgba(0,0,0,0.06);
+  color: var(--primary-blue);
+}
+.confirm-actions .btn-confirm {
+  background: var(--primary-blue);
+  color: var(--white);
+}
+
+/* small screens */
+@media (max-width: 480px) {
+  .confirm-dialog { width: calc(100% - 32px); padding: 12px; }
+  .confirm-dialog h3 { font-size: 15px; }
+  .confirm-dialog p { font-size: 13px; }
+  .confirm-actions { flex-direction: column-reverse; gap: 10px; }
+  .confirm-actions .btn-cancel, .confirm-actions .btn-confirm { width: 100%; }
+}
 
 /* Sale tooltip */
 .sale-tooltip { position: fixed; z-index: 2147483647 !important; pointer-events: auto; }

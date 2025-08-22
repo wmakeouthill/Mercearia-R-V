@@ -49,12 +49,92 @@ export class CaixaComponent implements OnInit {
   constructor(
     private readonly api: ApiService,
     private readonly caixaService: CaixaService,
-    private readonly authService: AuthService,
+    public readonly authService: AuthService,
     public readonly router: Router,
   ) { }
 
+  // confirmação customizada para exclusão de movimentação
+  showConfirmModal = false;
+  confirmTitle = '';
+  confirmMessage = '';
+  pendingDeleteMovId: number | null = null;
+
   ngOnInit(): void {
     this.loadResumoEMovimentacoes();
+  }
+
+  // handler chamado pelo template para excluir movimentação
+  onDeleteMovClick(event: Event, id: number | undefined): void {
+    event.stopPropagation();
+    logger.debug('CAIXA_COMPONENT', 'DELETE_MOV_CLICK', 'onDeleteMovClick called', { id });
+    if (!id) return;
+    if (!this.authService.isAdmin()) { this.error = 'Permissão negada'; logger.info('CAIXA_COMPONENT', 'DELETE_MOV_CLICK', 'perm denied'); return; }
+
+    // abrir modal customizado de confirmação (sempre)
+    this.pendingDeleteMovId = id;
+    this.confirmTitle = 'Confirmar exclusão';
+    this.confirmMessage = 'Deseja realmente excluir esta movimentação? Esta ação não pode ser desfeita.';
+    this.showConfirmModal = true;
+    logger.debug('CAIXA_COMPONENT', 'DELETE_MOV_MODAL_OPENED', 'showConfirmModal set to true', { id, showConfirmModal: this.showConfirmModal });
+
+    // Fallback: if the custom modal isn't rendered (CSS/template issues), open native confirm after short delay
+    // This ensures a network call happens even if UI modal is not visible for some reason.
+    setTimeout(() => {
+      try {
+        const dlg = document.querySelector('.confirm-dialog');
+        logger.debug('CAIXA_COMPONENT', 'DELETE_MOV_MODAL_DOM_CHECK', 'checking for modal DOM node', { id, exists: !!dlg, showConfirmModal: this.showConfirmModal });
+        if (!dlg) {
+          logger.warn('CAIXA_COMPONENT', 'DELETE_MOV_FALLBACK', 'custom modal not found, using native confirm', { id });
+          const ok = window.confirm(this.confirmMessage || 'Confirmar exclusão?');
+          if (ok) {
+            this.confirmModalConfirm();
+          } else {
+            this.confirmModalCancel();
+          }
+        }
+      } catch (e) {
+        // ignore DOM access errors; don't block flow
+        logger.warn('CAIXA_COMPONENT', 'DELETE_MOV_FALLBACK_ERR', 'error checking modal DOM', e);
+      }
+    }, 200);
+  }
+
+  confirmModalCancel(): void {
+    this.showConfirmModal = false;
+    this.pendingDeleteMovId = null;
+  }
+
+  confirmModalConfirm(): void {
+    this.showConfirmModal = false;
+    if (!this.pendingDeleteMovId) return;
+    const id = this.pendingDeleteMovId;
+    this.pendingDeleteMovId = null;
+    logger.debug('CAIXA_COMPONENT', 'DELETE_MOV_CONFIRM', 'calling deleteMovimentacao', { id });
+    // log token presence for debugging (do not log token value in production)
+    try {
+      const token = this.authService.getToken();
+      logger.debug('CAIXA_COMPONENT', 'DELETE_MOV_CONFIRM', 'auth token present?', { hasToken: !!token });
+    } catch (e) {
+      logger.warn('CAIXA_COMPONENT', 'DELETE_MOV_CONFIRM', 'failed to read token', e);
+    }
+
+    this.caixaService.deleteMovimentacao(id).subscribe({
+      next: () => {
+        logger.info('CAIXA_COMPONENT', 'DELETE_MOV_SUCCESS', 'movimentacao deleted', { id });
+        this.movimentacoes = this.movimentacoes.filter(m => m.id !== id);
+        this.success = 'Movimentação excluída com sucesso';
+      },
+      error: (err) => {
+        logger.error('CAIXA_COMPONENT', 'DELETE_MOV_ERROR', 'Erro ao excluir movimentação', err);
+        // show detailed error for debugging (admin can later remove)
+        this.error = err?.error?.error || err?.message || 'Erro ao excluir movimentação';
+      }
+    });
+  }
+
+  // helper to log click from template (avoid using console in template)
+  onMovBtnClickLog(id: number | undefined): void {
+    console.debug('mov-btn-click', { id });
   }
 
   voltarAoDashboard(): void {

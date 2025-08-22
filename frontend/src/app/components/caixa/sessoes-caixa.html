@@ -58,7 +58,12 @@
               <td class="right">R$&nbsp;{{ it.variacao | number:'1.2-2' }}</td>
               <td class="right">R$&nbsp;{{ it.cumulative_variacao_before | number:'1.2-2' }}</td>
               <td class="right">R$&nbsp;{{ it.cumulative_variacao_all | number:'1.2-2' }}</td>
-              <td class="center"><button class="btn-primary btn-registro" (click)="openReconciliation(it.id)">Relatório</button></td>
+              <td class="center">
+                <div style="display:flex; gap:8px; align-items:center; justify-content:center">
+                  <button class="btn-primary btn-registro" (click)="openReconciliation(it.id)">Relatório</button>
+                  <button class="btn-secondary btn-registro" type="button" (click)="$event.stopPropagation(); onSessBtnClickLog(it.id); onDeleteSessionClick(it.id)" [disabled]="!authService.isAdmin() || !it?.id" [attr.title]="!authService.isAdmin() ? 'Somente administradores' : 'Excluir sessão'">🗑️</button>
+                </div>
+              </td>
             </tr>
           </tbody>
         </table>
