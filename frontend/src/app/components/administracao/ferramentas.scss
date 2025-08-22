@@ -137,5 +137,16 @@
 .confirm-box.full-width p { margin: 0; }
 .logs-right .msg-cell { max-width: 340px; }
 
+/* Reset options: spacing and critical look */
+.reset-card .form-row { display: flex; gap: 16px; margin: 12px 0 8px 0; align-items: center; }
+.reset-card .form-row label { display: inline-flex; align-items: center; gap: 8px; padding: 10px 14px; border-radius: 10px; font-weight: 700; color: #7a0b12; background: rgba(122,11,18,0.05); border: 1px solid rgba(122,11,18,0.12); }
+.reset-card .form-row input[type="radio"] { accent-color: #7a0b12; width: 18px; height: 18px; }
+.reset-card .form-row label:hover { background: rgba(122,11,18,0.08); transform: translateY(-1px); }
+
+@media (max-width: 600px) {
+  .reset-card .form-row { flex-direction: column; align-items: stretch; }
+  .confirm-box.full-width .confirm-row { flex-direction: column; }
+}
+
 
 
