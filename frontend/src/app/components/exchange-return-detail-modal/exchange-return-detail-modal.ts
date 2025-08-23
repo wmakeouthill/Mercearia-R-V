@@ -1,0 +1,67 @@
+import { Component, Input, Output, EventEmitter, OnInit } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { ApiService } from '../../services/api';
+
+@Component({
+    selector: 'app-exchange-return-detail-modal',
+    standalone: true,
+    imports: [CommonModule, FormsModule],
+    templateUrl: './exchange-return-detail-modal.html',
+    styleUrls: ['./exchange-return-detail-modal.scss']
+})
+export class ExchangeReturnDetailModalComponent implements OnInit {
+    @Input() saleSummary: any;
+    @Output() close = new EventEmitter<void>();
+
+    saleDetails: any = null;
+    selections: { [itemId: number]: 'none' | 'return' | 'exchange' } = {};
+    replacementProductIds: { [itemId: number]: number | null } = {};
+    quantities: { [itemId: number]: number } = {};
+
+    loading = false;
+
+    constructor(private readonly api: ApiService) { }
+
+    ngOnInit(): void {
+        this.loadDetails();
+    }
+
+    loadDetails(): void {
+        this.loading = true;
+        this.api.getOrderById(this.saleSummary.id).subscribe({
+            next: (r) => {
+                this.saleDetails = r;
+                (r.itens || []).forEach((it: any) => { this.selections[it.produto_id] = 'none'; this.quantities[it.produto_id] = it.quantidade; this.replacementProductIds[it.produto_id] = null; });
+                this.loading = false;
+            }, error: () => { this.loading = false; }
+        });
+    }
+
+    confirmActions(): void {
+        // for each selected item, call API
+        const selected = Object.keys(this.selections).filter(k => this.selections[+k] !== 'none');
+        const calls: any[] = [];
+        for (const key of selected) {
+            const itemId = Number(key);
+            const action = this.selections[itemId];
+            const qty = this.quantities[itemId] || 1;
+            if (action === 'return') {
+                calls.push(this.api.postSaleAdjustment(this.saleDetails.id, { type: 'return', saleItemId: itemId, quantity: qty, paymentMethod: 'dinheiro' }));
+            } else if (action === 'exchange') {
+                const replacementId = this.replacementProductIds[itemId];
+                calls.push(this.api.postSaleAdjustment(this.saleDetails.id, { type: 'exchange', saleItemId: itemId, quantity: qty, replacementProductId: replacementId, paymentMethod: 'dinheiro' }));
+            }
+        }
+
+        if (calls.length === 0) { alert('Nenhuma ação selecionada'); return; }
+
+        // execute sequentially
+        const obs = calls.reduce((prev, cur) => prev.then(() => cur.toPromise().catch(() => null)), Promise.resolve());
+        obs.then(() => { alert('Ações processadas'); this.close.emit(); }).catch(() => { alert('Erro ao processar ações'); });
+    }
+
+    cancel(): void { this.close.emit(); }
+}
+
+

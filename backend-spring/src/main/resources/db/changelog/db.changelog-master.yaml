@@ -482,3 +482,71 @@ databaseChangeLog:
         - dropTable:
             tableName: admin_actions
             ifExists: true
+
+  - changeSet:
+      id: 20250823-create-sale-adjustments
+      author: assistant
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - tableExists:
+                tableName: sale_adjustments
+      changes:
+        - createTable:
+            tableName: sale_adjustments
+            ifNotExists: true
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: sale_order_id
+                  type: BIGINT
+              - column:
+                  name: sale_item_id
+                  type: BIGINT
+              - column:
+                  name: type
+                  type: VARCHAR(50)
+                  remarks: "return | exchange"
+              - column:
+                  name: quantity
+                  type: INTEGER
+              - column:
+                  name: replacement_product_id
+                  type: BIGINT
+              - column:
+                  name: price_difference
+                  type: numeric(18,2)
+              - column:
+                  name: payment_method
+                  type: VARCHAR(50)
+              - column:
+                  name: operator_username
+                  type: VARCHAR(255)
+              - column:
+                  name: notes
+                  type: TEXT
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+        - addForeignKeyConstraint:
+            baseTableName: sale_adjustments
+            baseColumnNames: sale_order_id
+            referencedTableName: venda_cabecalho
+            referencedColumnNames: id
+            constraintName: fk_sale_adjustments_order
+        - addForeignKeyConstraint:
+            baseTableName: sale_adjustments
+            baseColumnNames: sale_item_id
+            referencedTableName: venda_itens
+            referencedColumnNames: id
+            constraintName: fk_sale_adjustments_item
+      rollback:
+        - dropTable:
+            tableName: sale_adjustments
+            ifExists: true

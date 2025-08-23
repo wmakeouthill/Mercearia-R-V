@@ -2,6 +2,7 @@ import { Component, OnInit, OnDestroy, HostListener, ElementRef, Renderer2, View
 import { EnviarNotaModalComponent } from '../enviar-nota-modal/enviar-nota-modal';
 import { ConfirmModalComponent } from '../confirm-modal/confirm-modal';
 import { ExchangeReturnModalComponent } from '../exchange-return-modal/exchange-return-modal';
+import { ExchangeReturnListComponent } from '../exchange-return-list/exchange-return-list';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -17,7 +18,7 @@ import { logger } from '../../utils/logger';
 @Component({
   selector: 'app-ponto-venda',
   standalone: true,
-  imports: [CommonModule, FormsModule, EnviarNotaModalComponent, ConfirmModalComponent, ExchangeReturnModalComponent],
+  imports: [CommonModule, FormsModule, EnviarNotaModalComponent, ConfirmModalComponent, ExchangeReturnModalComponent, ExchangeReturnListComponent],
   templateUrl: './ponto-venda.html',
   styleUrl: './ponto-venda.scss'
 })
@@ -168,9 +169,15 @@ export class PontoVendaComponent implements OnInit, OnDestroy {
 
   // Exchange/Return modal state
   showExchangeReturnModal = false;
+  showExchangeList = false;
 
   openExchangeReturnModal(): void {
     this.showExchangeReturnModal = true;
+  }
+
+  openExchangeList(): void {
+    // navigate to dedicated page
+    try { this.router.navigate(['/troca-devolucao']); } catch (e) { this.showExchangeList = true; }
   }
 
   closeExchangeReturnModal(): void {

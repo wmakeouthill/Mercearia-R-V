@@ -1,0 +1,70 @@
+<div class="exchange-list">
+  <div class="filters">
+    <input type="text" placeholder="Pesquisar (id, cliente, item)" [(ngModel)]="q" class="input-filtro-busca">
+    <select [(ngModel)]="operatorFilter" class="select-filtro-operator">
+      <option value="">Todos Operadores</option>
+      <option *ngFor="let op of operators" [value]="op.username">{{ op.username }}</option>
+    </select>
+    <input type="date" [(ngModel)]="from">
+    <input type="date" [(ngModel)]="to">
+    <label>Linhas:
+      <select [(ngModel)]="size" (change)="loadPage(0)">
+        <option [ngValue]="5">5</option>
+        <option [ngValue]="10">10</option>
+        <option [ngValue]="20">20</option>
+      </select>
+    </label>
+    <button class="btn-limpar-filtro" (click)="q=''; operatorFilter=''; from=''; to=''; loadPage(0)">Limpar</button>
+    <button class="btn-filtrar" (click)="loadPage(0)">🔍 Buscar</button>
+  </div>
+
+  <div *ngIf="loading">Carregando...</div>
+  <table *ngIf="!loading">
+    <thead>
+      <tr><th>ID</th><th>Data</th><th>Cliente</th><th>Operador</th><th>Itens</th><th>Ações</th></tr>
+    </thead>
+    <tbody>
+      <tr *ngFor="let it of items">
+        <td>{{ it.id }}</td>
+        <td>{{ formatDate(it.data_venda) }}</td>
+        <td>{{ it.customer_name || '-' }}</td>
+        <td>{{ it.operator || '-' }}</td>
+        <td>{{ it.itens_count }}</td>
+        <td><button class="btn-detalhar" (click)="openSaleDetail(it)">Detalhar</button></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="paginacao">
+    <div class="pagination-left">
+      <button class="btn-page btn-ghost" (click)="goToFirstPage()" [disabled]="page<=0">«</button>
+      <button class="btn-page btn-ghost" (click)="goBy(-10)" [disabled]="page<=0">«10</button>
+      <button class="btn-page btn-ghost" (click)="goBy(-5)" [disabled]="page<=0">«5</button>
+      <button class="btn-page btn-ghost" (click)="prevPage()" [disabled]="page<=0">‹</button>
+    </div>
+    <div class="pagination-center">
+      <ng-container *ngFor="let p of paginationItems">
+        <span *ngIf="p === '…'" class="ellipsis">…</span>
+        <button *ngIf="p !== '…'" class="btn-page" [class.active]="p === (page+1)" (click)="onClickPage(p)">{{ p }}</button>
+      </ng-container>
+    </div>
+    <div class="pagination-right">
+      <button class="btn-page btn-ghost" (click)="nextPage()" [disabled]="(page+1)*size >= total">›</button>
+      <button class="btn-page btn-ghost" (click)="goBy(5)" [disabled]="(page+1)*size >= total">5»</button>
+      <button class="btn-page btn-ghost" (click)="goToLastPage()" [disabled]="(page+1)*size >= total">»</button>
+    </div>
+    <div class="pagination-jump">
+      <label>
+        Ir para
+        <input type="number" min="1" [max]="totalPages" [(ngModel)]="jumpPage" (keyup.enter)="loadPage(jumpPage-1)" />
+      </label>
+      <button class="btn-go" (click)="loadPage(jumpPage-1)">Ir</button>
+    </div>
+  </div>
+
+
+
+  <app-exchange-return-detail-modal *ngIf="selectedSale" [saleSummary]="selectedSale" (close)="closeDetail()"></app-exchange-return-detail-modal>
+</div>
+
+

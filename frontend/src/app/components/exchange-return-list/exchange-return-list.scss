@@ -1,0 +1,12 @@
+.exchange-list { padding: 12px; }
+.filters { display:flex; gap:8px; margin-bottom:8px; align-items:center; }
+.input-filtro-busca { width: 420px; padding:8px 10px; border-radius:8px; border:1px solid #ddd; }
+.select-filtro-operator { padding:8px; border-radius:6px; border:1px solid #ddd; }
+.btn-filtrar { background: linear-gradient(135deg, var(--primary-blue) 0%, #2d6fb2 100%); border:none; padding:8px 12px; border-radius:8px; cursor:pointer; font-weight:700; color: #fff; }
+.btn-limpar-filtro { background: #f0f0f0; border:1px solid #ddd; padding:8px 12px; border-radius:8px; cursor:pointer; margin-right:6px; }
+table { width:100%; border-collapse: collapse; }
+td, th { border:1px solid #ddd; padding:6px; }
+.pagination { margin-top:8px; display:flex; gap:8px; align-items:center; }
+.btn-detalhar { background: linear-gradient(135deg, var(--primary-blue) 0%, #1f5fa0 100%); border:none; padding:6px 10px; border-radius:8px; cursor:pointer; font-weight:700; color:#fff; }
+
+

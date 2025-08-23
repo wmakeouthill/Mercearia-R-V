@@ -90,6 +90,17 @@
     }
 }
 
+.btn-troca-devolucao {
+    background: linear-gradient(135deg, #f0f4ff 0%, #e6f0ff 100%);
+    color: var(--primary-blue);
+    border: 1px solid rgba(0,46,89,0.08);
+    padding: 10px 16px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-weight: 700;
+    margin-right: 12px;
+}
+
 .error-message {
     background: linear-gradient(135deg, #fee 0%, #fdd 100%);
     color: var(--danger);

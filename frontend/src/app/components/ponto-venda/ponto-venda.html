@@ -2,8 +2,8 @@
     <div class="ponto-venda-header">
         <h1>Ponto de Venda</h1>
         <div class="header-actions">
+            <button (click)="openExchangeList()" class="btn-troca-devolucao">🔁 Troca/Devolução</button>
             <button (click)="voltarAoDashboard()" class="btn-voltar">← Voltar ao Dashboard</button>
-            <button (click)="openExchangeReturnModal()" class="btn-troca-devolucao">🔁 Troca/Devolução</button>
         </div>
     </div>
 
@@ -221,3 +221,4 @@
 }
 
 @if (showExchangeReturnModal) {<app-exchange-return-modal (close)="closeExchangeReturnModal()"></app-exchange-return-modal>}
+@if (showExchangeList) {<app-exchange-return-list (close)="showExchangeList=false"></app-exchange-return-list>}

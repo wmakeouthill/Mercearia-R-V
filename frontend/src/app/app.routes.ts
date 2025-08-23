@@ -42,6 +42,11 @@ export const routes: Routes = [
         canActivate: [AuthGuard, CaixaGuard]
     },
     {
+        path: 'troca-devolucao',
+        loadComponent: () => import('./components/exchange-return-page/exchange-return-page').then(m => m.ExchangeReturnPageComponent),
+        canActivate: [AuthGuard, CaixaGuard]
+    },
+    {
         path: 'relatorios',
         loadComponent: async () => {
             try {

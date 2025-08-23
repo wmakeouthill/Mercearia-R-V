@@ -285,6 +285,20 @@ export class ApiService {
     return this.makeRequest(() => this.http.get<any>(url), 'GET_VENDAS_DETALHADAS');
   }
 
+  // Search sales for exchange/return modal (backend: /api/sales/search)
+  searchSales(page: number = 0, size: number = 5, from?: string, to?: string, q?: string) {
+    let url = `${this.baseUrl}/sales/search?page=${page}&size=${size}`;
+    if (from) url += `&from=${encodeURIComponent(from)}`;
+    if (to) url += `&to=${encodeURIComponent(to)}`;
+    if (q) url += `&q=${encodeURIComponent(q)}`;
+    return this.makeRequest(() => this.http.get<any>(url), 'SEARCH_SALES');
+  }
+
+  // Post adjustment (return/exchange)
+  postSaleAdjustment(saleId: number, payload: any) {
+    return this.makeRequest(() => this.http.post<any>(`${this.baseUrl}/sales/${saleId}/adjustments`, payload), 'POST_SALE_ADJUSTMENT');
+  }
+
   private postVenda(payload: any): Observable<Venda> {
     return this.makeRequest(
       () => this.http.post<Venda>(`${this.baseUrl}/vendas`, payload),
