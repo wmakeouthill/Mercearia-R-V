@@ -126,14 +126,15 @@
           <div class="logs-table compact">
             <table>
               <thead>
-                <tr><th>Usuário</th><th>Ação</th><th>Observação</th><th>Timestamp</th></tr>
+                <tr><th>Usuário</th><th>Ação</th><th>Observação</th><th>Timestamp</th><th></th></tr>
               </thead>
               <tbody>
                 @for (logEntry of (logsPageItems || []); track logEntry.timestamp + logEntry.logger) {<tr>
                   <td>{{ logEntry.user || '-' }}</td>
                   <td>{{ logEntry.level }}</td>
                   <td class="msg-cell">{{ logEntry.observation || (logEntry.message.length > 80 ? (logEntry.message.substring(0, 77) + '...') : logEntry.message) }}</td>
-                  <td>{{ logEntry.timestamp }}</td>
+                  <td>{{ formatTimestamp(logEntry.timestamp) }}</td>
+                  <td class="acoes-col"><button class="btn-trash" title="Apagar" (click)="logEntry.id && deleteLogEntry(logEntry.id)">🗑️</button></td>
                 </tr>}
               </tbody>
             </table>

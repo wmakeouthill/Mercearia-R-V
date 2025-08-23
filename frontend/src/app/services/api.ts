@@ -469,6 +469,12 @@ export class ApiService {
     return this.makeRequest(() => this.http.delete<any>(url), `DELETE_${path.replace(/\W+/g, '_').toUpperCase()}`);
   }
 
+  // Generic post helper for endpoints not yet wrapped (useful for endpoints that use POST for actions)
+  postAny(path: string, payload: any = {}): Observable<any> {
+    const url = `${this.baseUrl}${path}`;
+    return this.makeRequest(() => this.http.post<any>(url, payload), `POST_${path.replace(/\W+/g, '_').toUpperCase()}`);
+  }
+
   createCliente(cliente: any): Observable<any> {
     return this.makeRequest(() => this.http.post<any>(`${this.baseUrl}/clientes`, cliente), 'CREATE_CLIENTE');
   }

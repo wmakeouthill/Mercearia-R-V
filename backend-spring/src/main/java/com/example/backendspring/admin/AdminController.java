@@ -216,6 +216,24 @@ public class AdminController {
         return ResponseEntity.ok(rows);
     }
 
+    @DeleteMapping("/actions/{id}")
+    @PreAuthorize(ROLE_ADMIN)
+    public ResponseEntity<Map<String, Object>> deleteAdminAction(@PathVariable long id) {
+        boolean ok = adminService.deleteAdminAction(id);
+        if (ok)
+            return ResponseEntity.ok(Map.of(KEY_MESSAGE, "deleted"));
+        return ResponseEntity.status(404).body(Map.of("error", "not_found"));
+    }
+
+    @PostMapping("/actions/{id}/delete")
+    @PreAuthorize(ROLE_ADMIN)
+    public ResponseEntity<Map<String, Object>> deleteAdminActionPost(@PathVariable long id) {
+        boolean ok = adminService.deleteAdminAction(id);
+        if (ok)
+            return ResponseEntity.ok(Map.of(KEY_MESSAGE, "deleted"));
+        return ResponseEntity.status(404).body(Map.of("error", "not_found"));
+    }
+
     @PostMapping("/backups/{name}/delete")
     @PreAuthorize(ROLE_ADMIN)
     public ResponseEntity<Map<String, Object>> deleteBackup(@PathVariable String name,

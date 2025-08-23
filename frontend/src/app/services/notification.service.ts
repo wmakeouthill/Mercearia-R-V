@@ -5,10 +5,10 @@ export interface AppNotification { type: 'success' | 'info' | 'error'; message: 
 
 @Injectable({ providedIn: 'root' })
 export class NotificationService {
-    private subject = new Subject<AppNotification>();
+    private readonly subject = new Subject<AppNotification>();
 
     notify(n: AppNotification): void {
-        try { this.subject.next(n); } catch (e) { /* ignore */ }
+        this.subject.next(n);
     }
 
     onNotify(): Observable<AppNotification> {

@@ -231,6 +231,16 @@ public class AdminService {
         }
     }
 
+    public boolean deleteAdminAction(long id) {
+        try {
+            int updated = jdbcTemplate.update("DELETE FROM admin_actions WHERE id = ?", id);
+            return updated > 0;
+        } catch (Exception e) {
+            log.warn("Failed to delete admin action {}: {}", id, e.getMessage());
+            return false;
+        }
+    }
+
     public boolean deleteBackupFile(String name) {
         try {
             Path p = getBackupPathSanitized(name);

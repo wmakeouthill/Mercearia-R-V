@@ -4,6 +4,8 @@ import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ApiService } from '../../services/api';
 import { AuthService } from '../../services/auth';
+import { NotificationService } from '../../services/notification.service';
+import { formatDateBR } from '../../utils/date-utils';
 
 @Component({
   selector: 'app-ferramentas',
@@ -26,7 +28,7 @@ export class FerramentasComponent implements OnInit {
 
   backups: { name: string; createdAt: string }[] = [];
   backupLoading = false;
-  logs: { timestamp: string; level: string; logger: string; message: string; user?: string; observation?: string }[] = [];
+  logs: { id?: number; timestamp: string; level: string; logger: string; message: string; user?: string; observation?: string }[] = [];
   // pagination for audit logs
   logsPage = 1;
   logsPageSize: 3 | 5 = 3;
@@ -74,7 +76,12 @@ export class FerramentasComponent implements OnInit {
   showBackupModal = false;
   backupModalMessage = '';
 
-  constructor(private readonly apiService: ApiService, private readonly authService: AuthService, public readonly router: Router) { }
+  constructor(
+    private readonly apiService: ApiService,
+    private readonly authService: AuthService,
+    private readonly notificationService: NotificationService,
+    public readonly router: Router
+  ) { }
 
   ngOnInit(): void {
     this.currentUser = this.authService.getCurrentUser();
@@ -97,6 +104,7 @@ export class FerramentasComponent implements OnInit {
     this.apiService.getAuditLogs().subscribe({
       next: (list) => {
         const mapped = (list || []).map((l: any) => ({
+          id: l.id || l.ID || undefined,
           timestamp: (l.created_at || l.createdAt || l.timestamp) || '',
           level: l.action || l.level || '',
           logger: l.username || l.logger || '',
@@ -128,7 +136,7 @@ export class FerramentasComponent implements OnInit {
         setTimeout(() => {
           this.backupLoading = false;
           this.backupModalMessage = `Backup criado: ${res.filename}`;
-          this.success = `Backup criado: ${res.filename}`;
+          this.notificationService.notify({ type: 'success', message: `Backup ${res.filename} criado.` });
           this.loadBackups();
           setTimeout(() => { this.showBackupModal = false; this.backupModalMessage = ''; }, 1200);
         }, remaining);
@@ -137,7 +145,8 @@ export class FerramentasComponent implements OnInit {
         this.backupLoading = false;
         this.showBackupModal = false;
         this.backupModalMessage = '';
-        this.error = err.error?.error || 'Erro ao criar backup';
+        const msg = err.error?.error || 'Erro ao criar backup';
+        this.notificationService.notify({ type: 'error', message: msg });
       }
     });
   }
@@ -152,7 +161,7 @@ export class FerramentasComponent implements OnInit {
         a.click();
         window.URL.revokeObjectURL(url);
       },
-      error: (err) => { this.error = err.error?.error || 'Erro ao baixar backup'; }
+      error: (err) => { this.notificationService.notify({ type: 'error', message: err.error?.error || 'Erro ao baixar backup' }); }
     });
   }
 
@@ -176,8 +185,8 @@ export class FerramentasComponent implements OnInit {
     if (this.restoreInput && this.restoreInput.trim().length > 0) payload.observation = this.restoreInput.trim();
     this.backupLoading = true;
     this.apiService.restoreBackup(this.restoreTarget.name, payload).subscribe({
-      next: () => { this.backupLoading = false; this.success = `Backup ${this.restoreTarget.name} restaurado.`; this.showRestoreModal = false; this.loadBackups(); },
-      error: (err) => { this.backupLoading = false; this.error = err.error?.error || 'Erro ao restaurar backup'; this.showRestoreModal = false; }
+      next: () => { this.backupLoading = false; this.notificationService.notify({ type: 'success', message: `Backup ${this.restoreTarget.name} restaurado.` }); this.showRestoreModal = false; this.loadBackups(); },
+      error: (err) => { this.backupLoading = false; const msg = err.error?.error || 'Erro ao restaurar backup'; this.notificationService.notify({ type: 'error', message: msg }); this.showRestoreModal = false; }
     });
   }
 
@@ -199,8 +208,8 @@ export class FerramentasComponent implements OnInit {
     if (this.deleteInput && this.deleteInput.trim().length > 0) payload.observation = this.deleteInput.trim();
     this.backupLoading = true;
     this.apiService.deleteBackup(this.deleteTarget.name, payload).subscribe({
-      next: () => { this.backupLoading = false; this.success = `Backup ${this.deleteTarget.name} apagado.`; this.showDeleteModal = false; this.loadBackups(); },
-      error: (err) => { this.backupLoading = false; this.error = err.error?.error || 'Erro ao apagar backup'; this.showDeleteModal = false; }
+      next: () => { this.backupLoading = false; this.notificationService.notify({ type: 'success', message: `Backup ${this.deleteTarget.name} apagado.` }); this.showDeleteModal = false; this.loadBackups(); },
+      error: (err) => { this.backupLoading = false; const msg = err.error?.error || 'Erro ao apagar backup'; this.notificationService.notify({ type: 'error', message: msg }); this.showDeleteModal = false; }
     });
   }
 
@@ -210,9 +219,18 @@ export class FerramentasComponent implements OnInit {
     this.deleteInput = '';
   }
 
+  deleteLogEntry(id: number): void {
+    if (!confirm('Deseja apagar esta entrada de auditoria?')) return;
+    // Use POST delete endpoint (some setups route static resources and block DELETE requests)
+    this.apiService.postAny(`/admin/actions/${id}/delete`).subscribe({
+      next: () => { this.notificationService.notify({ type: 'success', message: `Entrada de auditoria ${id} apagada.` }); this.loadAuditLogs(); },
+      error: (err) => { const msg = err.error?.error || 'Erro ao apagar entrada'; this.notificationService.notify({ type: 'error', message: msg }); }
+    });
+  }
+
   confirmAndReset(): void {
     if (this.confirmationInput !== this.resetConfirmationPhrase) {
-      this.error = 'A frase de confirmação não corresponde exatamente.';
+      this.notificationService.notify({ type: 'error', message: 'A frase de confirmação não corresponde exatamente.' });
       return;
     }
     if (!confirm('Confirma executar o reset selecionado? Esta ação é irreversível.')) return;
@@ -221,9 +239,14 @@ export class FerramentasComponent implements OnInit {
     if (this.observationInput && this.observationInput.trim().length > 0) payload.observation = this.observationInput.trim();
 
     this.apiService.resetDatabase(payload).subscribe({
-      next: () => { this.loading = false; this.success = 'Reset executado com sucesso.'; setTimeout(() => window.location.reload(), 1500); },
-      error: (err) => { this.loading = false; this.error = err.error?.error || 'Erro ao executar reset'; }
+      next: () => { this.loading = false; this.notificationService.notify({ type: 'success', message: 'Reset executado com sucesso.' }); setTimeout(() => window.location.reload(), 1500); },
+      error: (err) => { this.loading = false; const msg = err.error?.error || 'Erro ao executar reset'; this.notificationService.notify({ type: 'error', message: msg }); }
     });
+  }
+
+  formatTimestamp(ts: string): string {
+    if (!ts) return '';
+    return formatDateBR(ts, true);
   }
 }
 
