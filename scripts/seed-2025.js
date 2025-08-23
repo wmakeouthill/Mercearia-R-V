@@ -282,7 +282,6 @@ async function runPgMode() {
   await client.connect();
 
   try {
-    // ensure tables exist (we assume Liquibase already ran)
     // fetch products
     const prodRes = await client.query('SELECT id, preco_venda, quantidade_estoque FROM produtos');
     let products = prodRes.rows;
@@ -302,30 +301,80 @@ async function runPgMode() {
       products = prodRes2.rows;
     }
 
+    // ensure some users exist
+    const userNames = ['Wesley', 'Vera', 'Fabiano'];
+    const userRows = await client.query('SELECT id, username FROM usuarios WHERE username = ANY($1)', [userNames]);
+    const existing = {};
+    (userRows.rows || []).forEach(r => { existing[r.username] = r.id; });
+    for (const uname of userNames) {
+      if (!existing[uname]) {
+        const res = await client.query('INSERT INTO usuarios(username, password, role, pode_controlar_caixa) VALUES($1,$2,$3,$4) RETURNING id', [uname, 'seeded', 'user', false]);
+        existing[uname] = res.rows[0].id;
+      }
+    }
+    const userIds = Object.values(existing).filter(Boolean);
+
+    // ensure there are at least 30 caixa sessions in August 2025 and collect their ranges
+    const caixaRes = await client.query("SELECT id, data_abertura, data_fechamento FROM status_caixa WHERE date_part('year', data_abertura) = 2025 AND date_part('month', data_abertura) = 8");
+    let caixaSessions = (caixaRes.rows || []).map(r => ({ id: r.id, aberturaTs: r.data_abertura ? new Date(r.data_abertura).getTime() : null, fechamentoTs: r.data_fechamento ? new Date(r.data_fechamento).getTime() : null }));
+    const need = Math.max(0, 30 - caixaSessions.length);
+    const augustStart = Date.parse('2025-08-01T00:00:00Z');
+    const augustEnd = Date.parse('2025-08-31T23:59:59Z');
+    for (let s = 0; s < need; s++) {
+      // abertura random in August
+      const aberturaTs = randInt(augustStart, augustEnd);
+      // fechamento within same day between 30 minutes and 12 hours after abertura, clamp to augustEnd
+      const fechamentoTs = Math.min(augustEnd, aberturaTs + randInt(30 * 60 * 1000, 12 * 60 * 60 * 1000));
+      const abertoFlag = false;
+      const openedBy = userIds.length > 0 ? userIds[randInt(0, userIds.length - 1)] : null;
+      const closedBy = openedBy;
+      const abertura = new Date(aberturaTs).toISOString();
+      const fechamento = new Date(fechamentoTs).toISOString();
+      const now = new Date().toISOString();
+      const ins = await client.query('INSERT INTO status_caixa(aberto, horario_abertura_obrigatorio, horario_fechamento_obrigatorio, aberto_por, fechado_por, data_abertura, data_fechamento, criado_em, atualizado_em, saldo_inicial, saldo_esperado, terminal_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id', [abertoFlag ? true : false, null, null, openedBy, closedBy, abertura, fechamento, now, now, 0.0, 0.0, null]);
+      caixaSessions.push({ id: ins.rows[0].id, aberturaTs: aberturaTs, fechamentoTs: fechamentoTs });
+    }
+
+    // helper to pick random date inside a session
+    function randomDateInsideSession(sess) {
+      const a = sess.aberturaTs || augustStart;
+      const f = sess.fechamentoTs || Math.min(a + 8 * 60 * 60 * 1000, augustEnd);
+      const t = randInt(a, f);
+      return new Date(t).toISOString();
+    }
+
+    // insert records linking vendas to operador and one of the August sessions
     for (let i = 0; i < NUM_RECORDS; i++) {
       const doSale = Math.random() < 0.7;
-      const dt = randomDateIn2025();
       if (doSale) {
+        const sess = caixaSessions[randInt(0, caixaSessions.length - 1)];
+        const dt = randomDateInsideSession(sess);
         const p = products[randInt(0, products.length - 1)];
         const qty = randInt(1, Math.max(1, Math.min(10, p.quantidade_estoque || 10)));
         const unit = p.preco_venda || 1;
         const price = Number((unit * qty).toFixed(2));
         const metodo = ['dinheiro', 'cartao_credito', 'cartao_debito', 'pix'][randInt(0, 3)];
-        // create order (venda_cabecalho) + item + single payment instead of legacy vendas
-        const orderRes = await client.query('INSERT INTO venda_cabecalho(data_venda, subtotal, desconto, acrescimo, total_final, operador_id, caixa_status_id) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id', [dt, price, 0.0, 0.0, price, null, null]);
+        const operadorId = userIds.length > 0 ? userIds[randInt(0, userIds.length - 1)] : null;
+        const orderCaixaId = sess.id;
+        const orderRes = await client.query('INSERT INTO venda_cabecalho(data_venda, subtotal, desconto, acrescimo, total_final, operador_id, caixa_status_id) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id', [dt, price, 0.0, 0.0, price, operadorId, orderCaixaId]);
         const vendaId = orderRes.rows && orderRes.rows[0] && orderRes.rows[0].id ? orderRes.rows[0].id : null;
         if (vendaId) {
           await client.query('INSERT INTO venda_itens(venda_id, produto_id, quantidade, preco_unitario, preco_total) VALUES($1,$2,$3,$4,$5)', [vendaId, p.id, qty, unit, price]);
-          await client.query('INSERT INTO venda_pagamentos(venda_id, metodo, valor, troco, caixa_status_id) VALUES($1,$2,$3,$4,$5)', [vendaId, metodo, price, 0.0, null]);
+          await client.query('INSERT INTO venda_pagamentos(venda_id, metodo, valor, troco, caixa_status_id) VALUES($1,$2,$3,$4,$5)', [vendaId, metodo, price, 0.0, orderCaixaId]);
         }
       } else {
+        const sess = caixaSessions[randInt(0, caixaSessions.length - 1)];
+        const dt = randomDateInsideSession(sess);
         const tipo = Math.random() < 0.5 ? 'entrada' : 'retirada';
         const valor = Number((Math.random() * 200 + 1).toFixed(2));
-        await client.query('INSERT INTO caixa_movimentacoes(tipo, valor, descricao, usuario_id, operador_id, caixa_status_id, motivo, aprovado_por, data_movimento, criado_em, atualizado_em) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)', [tipo, valor, 'Seed ' + tipo, null, null, null, null, null, dt, dt, dt]);
+        const usuarioId = userIds.length > 0 ? userIds[randInt(0, userIds.length - 1)] : null;
+        const operadorId = userIds.length > 0 ? userIds[randInt(0, userIds.length - 1)] : null;
+        const caixaStatusId = sess.id;
+        await client.query('INSERT INTO caixa_movimentacoes(tipo, valor, descricao, usuario_id, operador_id, caixa_status_id, motivo, aprovado_por, data_movimento, criado_em, atualizado_em) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)', [tipo, valor, 'Seed ' + tipo, usuarioId, operadorId, caixaStatusId, null, null, dt, dt, dt]);
       }
     }
 
-    console.log('Inserted', NUM_RECORDS, 'records into Postgres');
+    console.log('Inserted', NUM_RECORDS, 'records into Postgres (with operador and caixa links where possible)');
   } finally {
     await client.end();
   }

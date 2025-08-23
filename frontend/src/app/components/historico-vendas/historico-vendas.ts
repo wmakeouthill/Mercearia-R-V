@@ -8,7 +8,7 @@ import { ImageService } from '../../services/image.service';
 import { extractLocalDate, formatDateBR, parseDate } from '../../utils/date-utils';
 import { Venda, MetodoPagamento } from '../../models';
 import { forkJoin, of } from 'rxjs';
-import { catchError } from 'rxjs/operators';
+import { catchError, map } from 'rxjs/operators';
 import { logger } from '../../utils/logger';
 
 @Component({
@@ -23,6 +23,8 @@ export class HistoricoVendasComponent implements OnInit {
   private vendasLegado: Venda[] = [];
   private vendasCheckout: Venda[] = [];
   vendasFiltradas: any[] = [];
+  // when we fetch all pages for aggregates we store them here
+  vendasFiltradasAll: any[] | null = null;
   expandedRows = new Set<string>();
   dataFiltro = '';
   produtoFiltro = '';
@@ -52,7 +54,9 @@ export class HistoricoVendasComponent implements OnInit {
   page = 1;
   pageSize: 20 | 50 | 100 = 20;
   jumpPage: number | null = null;
-  get total(): number { return this.vendasFiltradas.length; }
+  // when using server pagination we keep totalCount from server; fallback to local length
+  totalCount = 0;
+  get total(): number { return Number(this.totalCount || this.vendasFiltradas.length); }
   get totalPages(): number {
     const totalItems = Number(this.total || 0);
     const perPage = Number(this.pageSize || 1);
@@ -79,7 +83,8 @@ export class HistoricoVendasComponent implements OnInit {
   goToPage(targetPage: number): void {
     const page = Math.max(1, Math.min(this.totalPages, Math.floor(Number(targetPage) || 1)));
     if (page === this.page) return;
-    this.page = page;
+    // fetch the requested page from server
+    this.loadPage(page);
   }
   nextPage() { if (this.page < this.totalPages) this.goToPage(this.page + 1); }
   prevPage() { if (this.page > 1) this.goToPage(this.page - 1); }
@@ -98,8 +103,26 @@ export class HistoricoVendasComponent implements OnInit {
   }
 
   get vendasPagina(): any[] {
+    // If backend is providing paged results (totalCount > vendasFiltradas.length)
+    // then vendasFiltradas already contains only the current page items.
+    if (this.totalCount && this.totalCount > (this.vendasFiltradas?.length || 0)) {
+      return this.vendasFiltradas || [];
+    }
     const start = (this.page - 1) * Number(this.pageSize || 1);
     return this.vendasFiltradas.slice(start, start + Number(this.pageSize || 1));
+  }
+
+  getRowNumber(venda: any, indexOnPage: number): number {
+    // Prefer using the full cached dataset to compute stable global index
+    const source = Array.isArray(this.vendasFiltradasAll) ? this.vendasFiltradasAll : (Array.isArray(this.vendasFiltradas) ? this.vendasFiltradas : []);
+    if (Array.isArray(source) && source.length > 0) {
+      const idx = source.findIndex((s: any) => (s && venda) ? (s.id === venda.id) : false);
+      if (idx >= 0) return idx + 1;
+    }
+    // Fallback: derive from current page and pageSize, but invert so oldest sale is #1
+    const total = Number(this.total || (Array.isArray(this.vendasFiltradas) ? this.vendasFiltradas.length : 0));
+    const globalIndexZeroBased = (this.page - 1) * Number(this.pageSize || 1) + indexOnPage;
+    return Math.max(1, total - globalIndexZeroBased);
   }
 
   private loadAllVendas(): void {
@@ -112,6 +135,12 @@ export class HistoricoVendasComponent implements OnInit {
     this.page = pageNum;
     this.apiService.getVendasDetalhadas(pageNum - 1, this.pageSize).subscribe({
       next: (resp: any) => {
+        // If server returned paging metadata, use it
+        if (resp && typeof resp.total === 'number') {
+          this.totalCount = resp.total;
+        } else {
+          this.totalCount = 0;
+        }
         const items = Array.isArray(resp?.items) ? resp.items : [];
         // Garantir que o resumo de pagamentos e metodos_multi estejam presentes
         const mapped = (items || []).map((v: any, idx: number) => {
@@ -134,6 +163,44 @@ export class HistoricoVendasComponent implements OnInit {
         });
         this.vendas = mapped;
         this.vendasFiltradas = mapped;
+        // reset cached full dataset when filters/page size change
+        this.vendasFiltradasAll = null;
+        // if server reports more items than this page, fetch all pages to compute aggregate cards
+        if (resp && typeof resp.total === 'number' && resp.total > items.length) {
+          const total = resp.total;
+          const pageCount = Math.ceil(total / Number(this.pageSize || 1));
+          const requests = [] as any[];
+          for (let p = 0; p < pageCount; p++) {
+            requests.push(this.apiService.getVendasDetalhadas(p, this.pageSize).pipe(
+              map((r: any) => Array.isArray(r?.items) ? r.items : []),
+              catchError(() => of([]))
+            ));
+          }
+          forkJoin(requests).subscribe((pages: any[]) => {
+            const all = ([] as any[]).concat(...pages);
+            const mappedAll = all.map((v: any, idx: number) => {
+              const row: any = { ...v };
+              const pagamentosArr = Array.isArray(v?.pagamentos) ? v.pagamentos : (Array.isArray(v?.pagamentos_list) ? v.pagamentos_list : []);
+              if (Array.isArray(pagamentosArr) && pagamentosArr.length > 0) {
+                try {
+                  row.pagamentos_resumo = this.buildPagamentoResumo(pagamentosArr.map((p: any) => ({ metodo: p.metodo, valor: p.valor })));
+                } catch (e) {
+                  row.pagamentos_resumo = '';
+                }
+                const metodosSet = new Set<string>();
+                for (const p of pagamentosArr) if (p?.metodo) metodosSet.add(p.metodo);
+                row.metodos_multi = Array.from(metodosSet);
+              }
+              row.row_id = row.row_id || `hist-${row.id ?? idx}`;
+              return row;
+            });
+            this.vendasFiltradasAll = mappedAll.sort((a: any, b: any) => {
+              const timeDiff = (parseDate(a.data_venda).getTime() - parseDate(b.data_venda).getTime());
+              if (timeDiff !== 0) return timeDiff;
+              return (a.id || 0) - (b.id || 0);
+            });
+          });
+        }
         this.loading = false;
       },
       error: (err) => {
@@ -146,9 +213,9 @@ export class HistoricoVendasComponent implements OnInit {
   private mergeAndFilter(): void {
     // Mesclar as duas fontes e ordenar
     this.vendas = [...(this.vendasCheckout || []), ...(this.vendasLegado || [])].sort((a, b) => {
-      const timeDiff = (parseDate(b.data_venda).getTime() - parseDate(a.data_venda).getTime());
+      const timeDiff = (parseDate(a.data_venda).getTime() - parseDate(b.data_venda).getTime());
       if (timeDiff !== 0) return timeDiff;
-      return (b.id || 0) - (a.id || 0);
+      return (a.id || 0) - (b.id || 0);
     });
     this.filterVendas();
   }
@@ -344,22 +411,25 @@ export class HistoricoVendasComponent implements OnInit {
   }
 
   getReceitaTotal(): number {
-    if (!Array.isArray(this.vendasFiltradas)) return 0;
-    return this.vendasFiltradas.reduce((total, venda) => {
+    const source = Array.isArray(this.vendasFiltradasAll) ? this.vendasFiltradasAll : this.vendasFiltradas;
+    if (!Array.isArray(source)) return 0;
+    return source.reduce((total, venda) => {
       return total + (venda?.preco_total || 0);
     }, 0);
   }
 
   getQuantidadeTotal(): number {
-    if (!Array.isArray(this.vendasFiltradas)) return 0;
-    return this.vendasFiltradas.reduce((total, venda) => {
+    const source = Array.isArray(this.vendasFiltradasAll) ? this.vendasFiltradasAll : this.vendasFiltradas;
+    if (!Array.isArray(source)) return 0;
+    return source.reduce((total, venda) => {
       return total + (venda?.quantidade_vendida || 0);
     }, 0);
   }
 
   getTicketMedio(): number {
-    if (!Array.isArray(this.vendasFiltradas) || this.vendasFiltradas.length === 0) return 0;
-    return this.getReceitaTotal() / this.vendasFiltradas.length;
+    const source = Array.isArray(this.vendasFiltradasAll) ? this.vendasFiltradasAll : this.vendasFiltradas;
+    if (!Array.isArray(source) || source.length === 0) return 0;
+    return this.getReceitaTotal() / source.length;
   }
 
   voltarAoDashboard(): void {

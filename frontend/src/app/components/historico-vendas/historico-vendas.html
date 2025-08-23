@@ -18,7 +18,7 @@
             <div class="card-icon">📊</div>
             <div class="card-content">
                 <h3>Total de Vendas</h3>
-                <p class="estatistica-valor">{{ vendasFiltradas.length }}</p>
+                <p class="estatistica-valor">{{ total }}</p>
             </div>
         </div>
         <div class="estatistica-card">
@@ -127,7 +127,7 @@
                 </thead>
                 <tbody>
                     @for (venda of vendasPagina; track venda.row_id; let i = $index) {<tr class="venda-row">
-                        <td class="venda-numero">{{ (page-1)*pageSize + (i+1) }}</td>
+                        <td class="venda-numero">{{ getRowNumber(venda, i) }}</td>
                         <td class="produto-info">
                             <div class="produto-nome com-imagem">
                                 <img class="produto-thumb-inline" [src]="getImageUrl(venda.produto_imagem)" [alt]="venda.produto_nome" (error)="onImageError($event)">
