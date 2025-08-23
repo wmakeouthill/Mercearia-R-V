@@ -1,0 +1,41 @@
+<div class="modal-overlay" (click)="onOverlayClick($event)">
+  <div class="modal-content">
+    <h3>Troca / Devolução</h3>
+    <div class="modes">
+      <button (click)="mode='devolucao'" [class.active]="mode==='devolucao'">Devolução</button>
+      <button (click)="mode='troca'" [class.active]="mode==='troca'">Troca</button>
+    </div>
+
+    <div class="form-row">
+      <label>Item (index)</label>
+      <input type="number" [(ngModel)]="selectedLineIndex" min="0">
+    </div>
+
+    <div class="form-row">
+      <label>Quantidade</label>
+      <input type="number" [(ngModel)]="returnQuantity" min="1">
+    </div>
+
+    <div *ngIf="mode==='troca'" class="form-row">
+      <label>Produto Substituto (productId)</label>
+      <input type="number" [(ngModel)]="replacementProductId">
+    </div>
+
+    <div class="form-row">
+      <label>Diferença a pagar / receber</label>
+      <input type="number" [(ngModel)]="additionalPayment" step="0.01">
+    </div>
+
+    <div class="form-row">
+      <label>Observações</label>
+      <textarea [(ngModel)]="notes"></textarea>
+    </div>
+
+    <div class="actions">
+      <button (click)="confirm()" class="btn-confirm">Confirmar</button>
+      <button (click)="cancel()" class="btn-cancel">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+

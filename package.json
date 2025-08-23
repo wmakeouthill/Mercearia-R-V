@@ -20,10 +20,10 @@
         "dist": "npm run build:prod && cd electron && npm run dist",
         "dist:win": "npm run build:prod && cd electron && npm run dist:win",
         "dist:standalone": "npx ts-node scripts/build-standalone.ts",
-    "dev": "concurrently -k -s first \"cd backend-spring && mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=3000 --define spring.devtools.restart.enabled=false\" \"node scripts/wait-and-start-frontend.js -- network\" \"node scripts/wait-and-start-electron.js\"",
-    "dev:https": "concurrently -k -s first \"cd backend-spring && mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=3000 --define spring.devtools.restart.enabled=false\" \"node scripts/wait-and-start-frontend.js -- https network\" \"node scripts/wait-and-start-electron.js\"",
-    "dev:lan": "concurrently -k -s first \"cd backend-spring && mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=3000 --define spring.devtools.restart.enabled=false -Dspring-boot.run.profiles=lan\" \"node scripts/wait-and-start-frontend.js -- network\" \"node scripts/wait-and-start-electron.js\"",
-    "dev:lan:https": "concurrently -k -s first \"cd backend-spring && mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=3000 --define spring.devtools.restart.enabled=false -Dspring-boot.run.profiles=lan\" \"node scripts/wait-and-start-frontend.js -- https network lan\" \"node scripts/wait-and-start-electron.js\"",
+        "dev": "concurrently -k -s first \"cd backend-spring && mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=3000 --define spring.devtools.restart.enabled=false\" \"node scripts/wait-and-start-frontend.js -- network\" \"node scripts/wait-and-start-electron.js\"",
+        "dev:https": "concurrently -k -s first \"cd backend-spring && mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=3000 --define spring.devtools.restart.enabled=false\" \"node scripts/wait-and-start-frontend.js -- https network\" \"node scripts/wait-and-start-electron.js\"",
+        "dev:lan": "concurrently -k -s first \"cd backend-spring && mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=3000 --define spring.devtools.restart.enabled=false -Dspring-boot.run.profiles=lan\" \"node scripts/wait-and-start-frontend.js -- network\" \"node scripts/wait-and-start-electron.js\"",
+        "dev:lan:https": "concurrently -k -s first \"cd backend-spring && mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=3000 --define spring.devtools.restart.enabled=false -Dspring-boot.run.profiles=lan\" \"node scripts/wait-and-start-frontend.js -- https network lan\" \"node scripts/wait-and-start-electron.js\"",
         "dev:fast": "FAST_FRONTEND_START=true concurrently \"cd backend-spring && mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=3000\" \"node scripts/wait-and-start-frontend.js\" \"node scripts/wait-and-start-electron.js\"",
         "dev:fast:https": "FAST_FRONTEND_START=true concurrently -k -s first \"cd backend-spring && mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=3000 --define spring.devtools.restart.enabled=false\" \"node scripts/wait-and-start-frontend.js -- https network\" \"node scripts/wait-and-start-electron.js\"",
         "dev:fast:lan:https": "FAST_FRONTEND_START=true concurrently -k -s first \"cd backend-spring && mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=3000 --define spring.devtools.restart.enabled=false -Dspring-boot.run.profiles=lan\" \"node scripts/wait-and-start-frontend.js -- https network lan\" \"node scripts/wait-and-start-electron.js\"",
@@ -33,10 +33,10 @@
         "dev:backend": "cd backend-spring && mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=3000",
         "dev:frontend": "cd frontend && npm start",
         "dev:electron:delayed": "node -e \"setTimeout(() => require('child_process').exec('cd electron && npm run dev'), 8000)\"",
-    "start": "cd electron && npm start",
-    "cert:generate": "node scripts/generate-dev-cert.js",
-    "sync-db": "powershell -ExecutionPolicy Bypass -File ./scripts/sync-db.ps1",
-    "validate-dist": "node ./scripts/validate-dist.js"
+        "start": "cd electron && npm start",
+        "cert:generate": "node scripts/generate-dev-cert.js",
+        "sync-db": "powershell -ExecutionPolicy Bypass -File ./scripts/sync-db.ps1",
+        "validate-dist": "node ./scripts/validate-dist.js"
     },
     "keywords": [
         "electron",
@@ -51,5 +51,11 @@
         "@types/node": "^24.1.0",
         "concurrently": "^8.2.2",
         "typescript": "^5.3.3"
+    },
+    "dependencies": {
+        "axios": "^1.11.0",
+        "minimist": "^1.2.8",
+        "pg": "^8.16.3",
+        "sqlite3": "^5.1.7"
     }
 }

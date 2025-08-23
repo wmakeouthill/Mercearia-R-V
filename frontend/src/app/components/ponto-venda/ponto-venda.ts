@@ -1,6 +1,7 @@
 import { Component, OnInit, OnDestroy, HostListener, ElementRef, Renderer2, ViewChild, ChangeDetectorRef } from '@angular/core';
 import { EnviarNotaModalComponent } from '../enviar-nota-modal/enviar-nota-modal';
 import { ConfirmModalComponent } from '../confirm-modal/confirm-modal';
+import { ExchangeReturnModalComponent } from '../exchange-return-modal/exchange-return-modal';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -16,7 +17,7 @@ import { logger } from '../../utils/logger';
 @Component({
   selector: 'app-ponto-venda',
   standalone: true,
-  imports: [CommonModule, FormsModule, EnviarNotaModalComponent, ConfirmModalComponent],
+  imports: [CommonModule, FormsModule, EnviarNotaModalComponent, ConfirmModalComponent, ExchangeReturnModalComponent],
   templateUrl: './ponto-venda.html',
   styleUrl: './ponto-venda.scss'
 })
@@ -164,6 +165,17 @@ export class PontoVendaComponent implements OnInit, OnDestroy {
     private readonly notificationService: NotificationService,
     private readonly cdr: ChangeDetectorRef
   ) { }
+
+  // Exchange/Return modal state
+  showExchangeReturnModal = false;
+
+  openExchangeReturnModal(): void {
+    this.showExchangeReturnModal = true;
+  }
+
+  closeExchangeReturnModal(): void {
+    this.showExchangeReturnModal = false;
+  }
 
   onConfirmSend(): void {
     this.showConfirmModal = false;
