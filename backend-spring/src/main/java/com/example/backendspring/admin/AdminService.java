@@ -9,6 +9,7 @@ import org.springframework.context.event.EventListener;
 import org.springframework.core.io.PathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
@@ -419,12 +420,10 @@ public class AdminService {
         List<String> tables = jdbcTemplate.queryForList(
                 "select table_name from information_schema.tables where table_schema = 'public' and table_type='BASE TABLE'",
                 String.class);
-        // tabelas a excluir do truncate (não queremos apagar changelogs nem,
-        // opcionalmente, usuários)
-        Set<String> excluded = new HashSet<>(List.of("databasechangelog", "databasechangeloglock"));
-        if (excludeUsersOnRestore) {
-            excluded.add("usuarios");
-        }
+        // tabelas a excluir do truncate (não queremos apagar changelogs, usuários
+        // nem o log de admin actions)
+        Set<String> excluded = new HashSet<>(
+                List.of("databasechangelog", "databasechangeloglock", "usuarios", "admin_actions"));
         if (exceptProducts) {
             excluded.add("produtos");
         }
@@ -442,6 +441,25 @@ public class AdminService {
         String sql = "TRUNCATE " + String.join(", ", toTruncate) + " RESTART IDENTITY CASCADE";
         log.info("Executando reset de banco (truncate): {}", sql);
         jdbcTemplate.execute(sql);
+
+        // Garantir que exista ao menos um usuário admin após o reset. Se não
+        // existir, criar o admin padrão (username=admin,
+        // senha=DEFAULT_ADMIN_PASSWORD||admin123).
+        try {
+            Integer adminCount = jdbcTemplate.queryForObject(
+                    "select count(*) from usuarios where role = 'admin'", Integer.class);
+            if (adminCount == null || adminCount == 0) {
+                String defaultPass = System.getenv().getOrDefault("DEFAULT_ADMIN_PASSWORD", "admin123");
+                BCryptPasswordEncoder enc = new BCryptPasswordEncoder();
+                String hash = enc.encode(defaultPass);
+                jdbcTemplate.update(
+                        "insert into usuarios (username, password, role, pode_controlar_caixa) values (?, ?, ?, ?)",
+                        "admin", hash, "admin", true);
+                log.info("Admin default criado após reset (username=admin)");
+            }
+        } catch (Exception e) {
+            log.warn("Falha ao garantir admin pós-reset: {}", e.getMessage());
+        }
     }
 
     private String resolveEffectiveJdbcUrl() {
