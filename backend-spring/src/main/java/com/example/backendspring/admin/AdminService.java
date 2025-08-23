@@ -48,6 +48,9 @@ public class AdminService {
     @Value("${app.enableDatabaseReset:false}")
     private boolean enableDatabaseReset;
 
+    @Value("${app.excludeUsersOnRestore:true}")
+    private boolean excludeUsersOnRestore;
+
     private Path backupDir;
 
     private static final DateTimeFormatter TS = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss").withZone(ZoneOffset.UTC);
@@ -416,10 +419,15 @@ public class AdminService {
         List<String> tables = jdbcTemplate.queryForList(
                 "select table_name from information_schema.tables where table_schema = 'public' and table_type='BASE TABLE'",
                 String.class);
-        // tabelas a excluir do truncate
+        // tabelas a excluir do truncate (não queremos apagar changelogs nem,
+        // opcionalmente, usuários)
         Set<String> excluded = new HashSet<>(List.of("databasechangelog", "databasechangeloglock"));
-        if (exceptProducts)
+        if (excludeUsersOnRestore) {
+            excluded.add("usuarios");
+        }
+        if (exceptProducts) {
             excluded.add("produtos");
+        }
 
         List<String> toTruncate = new ArrayList<>();
         for (String t : tables) {
