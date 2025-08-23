@@ -24,14 +24,14 @@
             <div class="card-icon">💰</div>
             <div class="card-content">
                 <h3>Receita Total</h3>
-                <p class="estatistica-valor">R$ {{ receitaTotal.toFixed(2) }}</p>
+                <p class="estatistica-valor">R$ {{ receitaTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</p>
             </div>
         </div>
         <div class="estatistica-card">
             <div class="card-icon">📈</div>
             <div class="card-content">
                 <h3>Média por Venda</h3>
-                <p class="estatistica-valor">R$ {{ mediaVendas.toFixed(2) }}</p>
+                <p class="estatistica-valor">R$ {{ mediaVendas.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</p>
             </div>
         </div>
         <div class="estatistica-card">
@@ -39,7 +39,7 @@
             <div class="card-content">
                 <h3>Melhor Dia</h3>
                 <p class="estatistica-valor-pequeno">{{ formatarMelhorDia(melhorDia) }}</p>
-                <p class="estatistica-sub">R$ {{ melhorDiaReceita.toFixed(2) }}</p>
+                <p class="estatistica-sub">R$ {{ melhorDiaReceita.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</p>
             </div>
         </div>
     </div>

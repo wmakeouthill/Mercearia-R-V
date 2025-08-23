@@ -25,7 +25,7 @@
             <div class="card-icon">💰</div>
             <div class="card-content">
                 <h3>Receita Total</h3>
-                <p class="estatistica-valor">R$ {{ getReceitaTotal().toFixed(2) }}</p>
+                <p class="estatistica-valor">R$ {{ getReceitaTotal().toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</p>
             </div>
         </div>
         <div class="estatistica-card">
@@ -39,7 +39,7 @@
             <div class="card-icon">🎯</div>
             <div class="card-content">
                 <h3>Ticket Médio</h3>
-                <p class="estatistica-valor">R$ {{ getTicketMedio().toFixed(2) }}</p>
+                <p class="estatistica-valor">R$ {{ getTicketMedio().toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</p>
             </div>
         </div>
     </div>
