@@ -346,6 +346,8 @@ public class AdminService {
             throw new IllegalArgumentException("Backup não encontrado");
         // mesma lógica do createBackup: quando usamos embedded, tentar obter URL via
         // DataSource
+        // Ensure pg binaries resolved (prefer system, then repo stubs)
+        resolvePgBinPaths();
         String effectiveUrl = datasourceUrl;
         if (effectiveUrl == null || effectiveUrl.isBlank()) {
             try {
@@ -368,11 +370,41 @@ public class AdminService {
 
         List<String> cmd = new ArrayList<>();
         cmd.add(pgRestorePath);
+        // Prefer cleaning existing objects and avoid owner/privileges issues when
+        // restoring
+        cmd.add("--clean");
+        cmd.add("--if-exists");
+        cmd.add("--no-owner");
+        cmd.add("--no-privileges");
+        // force operations to run as postgres role inside the target DB
+        cmd.add("--role=postgres");
         cmd.add("-d");
         cmd.add(dbName);
         cmd.add(p.toString());
 
-        ProcessBuilder pb = new ProcessBuilder(cmd);
+        // build ProcessBuilder; on Windows, execute .bat via cmd /c to ensure
+        // batch files run correctly (same handling as createBackup)
+        ProcessBuilder pb;
+        boolean isWindows = System.getProperty("os.name").toLowerCase().contains("win");
+        if (isWindows && pgRestorePath.toLowerCase().endsWith(".bat")) {
+            StringBuilder sb = new StringBuilder();
+            if (pgRestorePath.contains(" "))
+                sb.append('"').append(pgRestorePath).append('"');
+            else
+                sb.append(pgRestorePath);
+            for (int i = 1; i < cmd.size(); i++) {
+                sb.append(' ');
+                String a = cmd.get(i);
+                if (a.contains(" "))
+                    sb.append('"').append(a.replace("\"", "\\\"")).append('"');
+                else
+                    sb.append(a);
+            }
+            String joined = sb.toString();
+            pb = new ProcessBuilder("cmd", "/c", joined);
+        } else {
+            pb = new ProcessBuilder(cmd);
+        }
         Map<String, String> env = pb.environment();
         if (conn.containsKey("host"))
             env.put("PGHOST", conn.get("host"));
