@@ -113,8 +113,27 @@ export class HistoricoVendasComponent implements OnInit {
     this.apiService.getVendasDetalhadas(pageNum - 1, this.pageSize).subscribe({
       next: (resp: any) => {
         const items = Array.isArray(resp?.items) ? resp.items : [];
-        this.vendas = items;
-        this.vendasFiltradas = items;
+        // Garantir que o resumo de pagamentos e metodos_multi estejam presentes
+        const mapped = (items || []).map((v: any, idx: number) => {
+          const row: any = { ...v };
+          // montar pagamentos_resumo se o backend retornou pagamentos
+          const pagamentosArr = Array.isArray(v?.pagamentos) ? v.pagamentos : (Array.isArray(v?.pagamentos_list) ? v.pagamentos_list : []);
+          if (Array.isArray(pagamentosArr) && pagamentosArr.length > 0) {
+            try {
+              row.pagamentos_resumo = this.buildPagamentoResumo(pagamentosArr.map((p: any) => ({ metodo: p.metodo, valor: p.valor })));
+            } catch (e) {
+              row.pagamentos_resumo = '';
+            }
+            const metodosSet = new Set<string>();
+            for (const p of pagamentosArr) if (p?.metodo) metodosSet.add(p.metodo);
+            row.metodos_multi = Array.from(metodosSet);
+          }
+          // garantir row_id para o trackBy do template
+          row.row_id = row.row_id || `hist-${row.id ?? idx}`;
+          return row;
+        });
+        this.vendas = mapped;
+        this.vendasFiltradas = mapped;
         this.loading = false;
       },
       error: (err) => {

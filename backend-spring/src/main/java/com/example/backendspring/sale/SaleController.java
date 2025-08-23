@@ -114,6 +114,17 @@ public class SaleController {
                     im.put("preco_total", it.getPrecoTotal());
                     return im;
                 }).toList();
+                // Incluir pagamentos (quando presentes) para que o frontend possa montar o
+                // resumo
+                var pagamentos = (o.getPagamentos() == null) ? java.util.List.of()
+                        : o.getPagamentos().stream().map(p -> {
+                            var pm = new java.util.LinkedHashMap<String, Object>();
+                            pm.put("metodo", p.getMetodo());
+                            pm.put("valor", p.getValor());
+                            pm.put("troco", p.getTroco());
+                            return pm;
+                        }).toList();
+                m.put("pagamentos", pagamentos);
                 m.put("itens", itens);
                 m.put("_isCheckout", true);
                 m.put("row_id", "checkout-" + o.getId());
