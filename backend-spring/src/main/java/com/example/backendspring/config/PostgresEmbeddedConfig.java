@@ -76,33 +76,18 @@ public class PostgresEmbeddedConfig {
     }
 
     private Path resolvePersistentDataDirectoryFromEnv() {
-        String pgDataDirEnv = System.getenv("PG_DATA_DIR");
-        if (pgDataDirEnv != null) {
-            // Trim whitespace and strip surrounding quotes if present
-            pgDataDirEnv = pgDataDirEnv.trim();
-            if (pgDataDirEnv.startsWith("\"") && pgDataDirEnv.endsWith("\"") && pgDataDirEnv.length() > 1) {
-                pgDataDirEnv = pgDataDirEnv.substring(1, pgDataDirEnv.length() - 1).trim();
-            }
-            if (!pgDataDirEnv.isBlank()) {
-                return Paths.get(pgDataDirEnv).toAbsolutePath();
-            }
+        // When packaged, prefer resources/backend-spring/data/pg inside the app bundle
+        String packaged = System.getenv("APP_PACKAGED");
+        if (packaged != null && packaged.equalsIgnoreCase("true")) {
+            Path packagedDir = Paths.get("resources", "backend-spring", "data", "pg").toAbsolutePath();
+            log.info("Packaged mode: using embedded Postgres data directory: {}", packagedDir);
+            return packagedDir;
         }
 
-        // Prefer local repo folder 'pg' only if it looks like a Postgres data dir
-        Path localPg = Paths.get("pg");
-        if (Files.exists(localPg)) {
-            // heuristic: a Postgres data directory usually contains a file named PG_VERSION
-            Path pgVersion = localPg.resolve("PG_VERSION");
-            Path baseDir = localPg.resolve("base");
-            if (Files.exists(pgVersion) || Files.exists(baseDir)) {
-                return localPg.toAbsolutePath();
-            }
-            // otherwise ignore this 'pg' directory (may contain binaries/stubs)
-            log.debug("Found 'pg' dir but it doesn't look like a data directory; ignoring");
-        }
-
-        // Fallback to data/pg
-        return Paths.get("data", "pg").toAbsolutePath();
+        // Otherwise force single data directory inside the repo/app working folder
+        Path forced = Paths.get("data", "pg").toAbsolutePath();
+        log.info("Forcing Embedded Postgres data directory to: {}", forced);
+        return forced;
     }
 
     private void ensureDirectory(Path dir) {
