@@ -109,15 +109,27 @@
         </div>
 
         <div class="backups-right logs-right">
-          <h4>Logs de Auditoria</h4>
-          <p class="muted">Últimas entradas do aplicativo</p>
+          <div class="logs-header-top">
+            <div class="logs-title">
+              <h4>Logs de Auditoria</h4>
+              <p class="muted">Últimas entradas do aplicativo</p>
+            </div>
+            <div class="logs-controls-top">
+              <label class="page-size-label">Linhas:
+                <select [(ngModel)]="logsPageSize" (change)="logsPage=1" class="select-filtro page-size-select">
+                  <option [ngValue]="3">3</option>
+                  <option [ngValue]="5">5</option>
+                </select>
+              </label>
+            </div>
+          </div>
           <div class="logs-table compact">
             <table>
               <thead>
                 <tr><th>Usuário</th><th>Ação</th><th>Observação</th><th>Timestamp</th></tr>
               </thead>
               <tbody>
-                @for (logEntry of (logs || []); track logEntry.timestamp + logEntry.logger) {<tr>
+                @for (logEntry of (logsPageItems || []); track logEntry.timestamp + logEntry.logger) {<tr>
                   <td>{{ logEntry.user || '-' }}</td>
                   <td>{{ logEntry.level }}</td>
                   <td class="msg-cell">{{ logEntry.observation || (logEntry.message.length > 80 ? (logEntry.message.substring(0, 77) + '...') : logEntry.message) }}</td>
@@ -125,6 +137,23 @@
                 </tr>}
               </tbody>
             </table>
+
+            <!-- pagination (reuse relatorio style) -->
+            @if (logsTotalPages >= 1) {<div class="paginacao small-pagination">
+               <div class="pagination-left">
+                 <button class="btn-page btn-ghost" (click)="logsGoToFirstPage()" [disabled]="logsPage<=1" title="Primeira">«</button>
+                 <button class="btn-page btn-ghost" (click)="logsGoBy(-1)" [disabled]="logsPage<=1" title="Anterior">‹</button>
+               </div>
+               <div class="pagination-center">
+                 @for (p of logsPaginationItems; track $index) {
+                   @if (p === '…') {<span class="ellipsis">…</span>} @else {<button class="btn-page" [class.active]="p === logsPage" (click)="logsOnClickPage(p)">{{ p }}</button>}
+                 }
+               </div>
+               <div class="pagination-right">
+                 <button class="btn-page btn-ghost" (click)="logsGoBy(1)" [disabled]="logsPage>=logsTotalPages" title="Próxima">›</button>
+                 <button class="btn-page btn-ghost" (click)="logsGoToLastPage()" [disabled]="logsPage>=logsTotalPages" title="Última">»</button>
+               </div>
+            </div>}
           </div>
         </div>
       </div>

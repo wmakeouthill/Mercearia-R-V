@@ -106,34 +106,8 @@ public class AdminService {
         cmd.add(out.toString());
         cmd.add(dbName);
 
-        // build ProcessBuilder; on Windows, execute .bat via cmd /c to ensure
-        // batch files run correctly
-        ProcessBuilder pb;
-        boolean isWindows = System.getProperty("os.name").toLowerCase().contains("win");
-        if (isWindows && pgDumpPath.toLowerCase().endsWith(".bat")) {
-            // Build a single command string for cmd /c and ensure full quoting of the
-            // batch path (handles spaces in paths like OneDrive folders).
-            StringBuilder sb = new StringBuilder();
-            // quote batch path if necessary
-            if (pgDumpPath.contains(" "))
-                sb.append('"').append(pgDumpPath).append('"');
-            else
-                sb.append(pgDumpPath);
-            // append remaining args (skip first which is batch path in cmd invocation)
-            for (int i = 1; i < cmd.size(); i++) {
-                sb.append(' ');
-                String a = cmd.get(i);
-                if (a.contains(" ")) {
-                    sb.append('"').append(a.replace("\"", "\\\"")).append('"');
-                } else {
-                    sb.append(a);
-                }
-            }
-            String joined = sb.toString();
-            pb = new ProcessBuilder("cmd", "/c", joined);
-        } else {
-            pb = new ProcessBuilder(cmd);
-        }
+        // build ProcessBuilder using the resolved pg_dump path directly (Windows-only)
+        ProcessBuilder pb = new ProcessBuilder(cmd);
         Map<String, String> env = pb.environment();
         // extrair host/port e usar variáveis de ambiente para credenciais
         Map<String, String> conn = parseJdbcUrl(effectiveUrl);
@@ -382,29 +356,9 @@ public class AdminService {
         cmd.add(dbName);
         cmd.add(p.toString());
 
-        // build ProcessBuilder; on Windows, execute .bat via cmd /c to ensure
-        // batch files run correctly (same handling as createBackup)
-        ProcessBuilder pb;
-        boolean isWindows = System.getProperty("os.name").toLowerCase().contains("win");
-        if (isWindows && pgRestorePath.toLowerCase().endsWith(".bat")) {
-            StringBuilder sb = new StringBuilder();
-            if (pgRestorePath.contains(" "))
-                sb.append('"').append(pgRestorePath).append('"');
-            else
-                sb.append(pgRestorePath);
-            for (int i = 1; i < cmd.size(); i++) {
-                sb.append(' ');
-                String a = cmd.get(i);
-                if (a.contains(" "))
-                    sb.append('"').append(a.replace("\"", "\\\"")).append('"');
-                else
-                    sb.append(a);
-            }
-            String joined = sb.toString();
-            pb = new ProcessBuilder("cmd", "/c", joined);
-        } else {
-            pb = new ProcessBuilder(cmd);
-        }
+        // build ProcessBuilder using the resolved pg_restore path directly
+        // (Windows-only)
+        ProcessBuilder pb = new ProcessBuilder(cmd);
         Map<String, String> env = pb.environment();
         if (conn.containsKey("host"))
             env.put("PGHOST", conn.get("host"));
@@ -412,15 +366,45 @@ public class AdminService {
             env.put("PGPORT", conn.get("port"));
         if (datasourceUser != null && !datasourceUser.isBlank())
             env.put("PGUSER", datasourceUser);
+        else
+            // default to postgres when embedded is used like in createBackup
+            env.put("PGUSER", "postgres");
         if (datasourcePass != null && !datasourcePass.isBlank())
             env.put("PGPASSWORD", datasourcePass);
+
+        // Wait for Postgres to accept TCP connections before attempting restore
+        if (conn.containsKey("host") && conn.containsKey("port")) {
+            try {
+                String host = conn.get("host");
+                int port = Integer.parseInt(conn.get("port"));
+                boolean ok = waitForTcpConnect(host, port, 8, 250);
+                if (!ok) {
+                    String msg = String.format("Timeout waiting for Postgres to accept connections at %s:%d", host,
+                            port);
+                    log.error(msg);
+                    throw new IllegalStateException(msg);
+                }
+            } catch (NumberFormatException nfe) {
+                log.debug("Invalid port number parsed from JDBC URL: {}", conn.get("port"));
+            }
+        }
 
         pb.redirectErrorStream(true);
         log.info("Executando pg_restore: {}", p.toAbsolutePath());
         Process pr = pb.start();
+        String procOut = "";
+        try {
+            procOut = new String(pr.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+            log.debug("pg_restore output: {}", procOut);
+        } catch (Exception e) {
+            log.debug("Falha ao ler output do pg_restore: {}", e.getMessage());
+        }
         int code = pr.waitFor();
-        if (code != 0)
-            throw new IllegalStateException("pg_restore retornou codigo " + code);
+        if (code != 0) {
+            String msg = "pg_restore retornou codigo " + code;
+            log.error("{} -- output: {}", msg, procOut);
+            throw new IllegalStateException(msg + "\npg_restore output:\n" + procOut);
+        }
     }
 
     @Transactional
@@ -518,14 +502,41 @@ public class AdminService {
             String os = System.getProperty("os.name").toLowerCase();
             String platform = os.contains("win") ? "win" : (os.contains("mac") ? "mac" : "linux");
             Path repoPgDir = Paths.get("pg").toAbsolutePath();
-            Path candidateDump = repoPgDir.resolve(platform).resolve(os.contains("win") ? "pg_dump.bat" : "pg_dump");
-            Path candidateRestore = repoPgDir.resolve(platform)
-                    .resolve(os.contains("win") ? "pg_restore.bat" : "pg_restore");
-            if (Files.exists(candidateDump) && Files.exists(candidateRestore)) {
-                pgDumpPath = candidateDump.toAbsolutePath().toString();
-                pgRestorePath = candidateRestore.toAbsolutePath().toString();
-                log.info("Dev: Using repo stubs for pg_dump/pg_restore: {} {}", pgDumpPath, pgRestorePath);
-                return;
+            // Prefer actual executables in the repo pg/<platform> when available (avoid
+            // quoting issues with .bat). On Windows require .exe or system PATH to be
+            // present
+            Path candidateDumpExe = repoPgDir.resolve(platform).resolve("pg_dump.exe");
+            Path candidateRestoreExe = repoPgDir.resolve(platform).resolve("pg_restore.exe");
+            if (os.contains("win")) {
+                if (Files.exists(candidateDumpExe) && Files.exists(candidateRestoreExe)) {
+                    pgDumpPath = candidateDumpExe.toAbsolutePath().toString();
+                    pgRestorePath = candidateRestoreExe.toAbsolutePath().toString();
+                    log.info("Dev: Using repo pg executables for pg_dump/pg_restore: {} {}", pgDumpPath, pgRestorePath);
+                    return;
+                }
+                // If system binaries are on PATH, use them
+                if (dumpOnPath && restoreOnPath) {
+                    pgDumpPath = "pg_dump";
+                    pgRestorePath = "pg_restore";
+                    log.info("Using system pg_dump/pg_restore from PATH (Windows)");
+                    return;
+                }
+                // no suitable windows binaries found: fail fast to avoid running .bat quoting
+                // issues
+                throw new IllegalStateException(
+                        "pg_dump/pg_restore not found. Place Windows pg_dump.exe and pg_restore.exe in backend-spring/pg/win/");
+            } else {
+                // non-windows behavior (legacy)
+                Path candidateDump = repoPgDir.resolve(platform)
+                        .resolve(os.contains("win") ? "pg_dump.bat" : "pg_dump");
+                Path candidateRestore = repoPgDir.resolve(platform)
+                        .resolve(os.contains("win") ? "pg_restore.bat" : "pg_restore");
+                if (Files.exists(candidateDump) && Files.exists(candidateRestore)) {
+                    pgDumpPath = candidateDump.toAbsolutePath().toString();
+                    pgRestorePath = candidateRestore.toAbsolutePath().toString();
+                    log.info("Dev: Using repo stubs for pg_dump/pg_restore: {} {}", pgDumpPath, pgRestorePath);
+                    return;
+                }
             }
             // fallback: leave defaults (pg_dump/pg_restore) so system PATH is used
         } catch (Exception e) {

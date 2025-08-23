@@ -27,6 +27,46 @@ export class FerramentasComponent implements OnInit {
   backups: { name: string; createdAt: string }[] = [];
   backupLoading = false;
   logs: { timestamp: string; level: string; logger: string; message: string; user?: string; observation?: string }[] = [];
+  // pagination for audit logs
+  logsPage = 1;
+  logsPageSize: 3 | 5 = 3;
+  logsTotal = 0;
+  get logsTotalPages(): number {
+    const total = Number(this.logsTotal || 0);
+    const perPage = Number(this.logsPageSize || 1);
+    return Math.max(1, Math.ceil(total / perPage));
+  }
+  get logsPageItems() {
+    const start = (this.logsPage - 1) * this.logsPageSize;
+    return (this.logs || []).slice(start, start + this.logsPageSize);
+  }
+  get logsPaginationItems(): Array<number | string> {
+    const total = this.logsTotalPages;
+    const current = this.logsPage;
+    const maxButtons = 4;
+    if (total <= maxButtons) return Array.from({ length: total }, (_, i) => i + 1);
+
+    // sliding window of up to maxButtons centered on current as possible
+    let start = Math.max(1, Math.min(current - Math.floor(maxButtons / 2), total - maxButtons + 1));
+    let end = start + maxButtons - 1;
+    // build items and add ellipsis markers when there are hidden pages
+    const items: Array<number | string> = [];
+    if (start > 1) items.push('…');
+    for (let i = start; i <= end; i++) items.push(i);
+    if (end < total) items.push('…');
+    return items;
+  }
+
+  logsGoBy(delta: number): void {
+    const next = this.logsPage + delta;
+    this.logsPage = Math.max(1, Math.min(this.logsTotalPages, next));
+  }
+
+  logsPrevPage(): void { this.logsGoBy(-1); }
+  logsNextPage(): void { this.logsGoBy(1); }
+  logsGoToFirstPage(): void { this.logsPage = 1; }
+  logsGoToLastPage(): void { this.logsPage = this.logsTotalPages; }
+  logsOnClickPage(p: number | string): void { if (typeof p === 'number') this.logsPage = p; }
   showRestoreModal = false;
   showDeleteModal = false;
   deleteTarget: any = null;
@@ -56,7 +96,7 @@ export class FerramentasComponent implements OnInit {
   loadAuditLogs(): void {
     this.apiService.getAuditLogs().subscribe({
       next: (list) => {
-        this.logs = (list || []).map((l: any) => ({
+        const mapped = (list || []).map((l: any) => ({
           timestamp: (l.created_at || l.createdAt || l.timestamp) || '',
           level: l.action || l.level || '',
           logger: l.username || l.logger || '',
@@ -64,6 +104,10 @@ export class FerramentasComponent implements OnInit {
           user: l.username || '',
           observation: l.observation || ''
         }));
+        this.logs = mapped;
+        this.logsTotal = mapped.length;
+        // ensure current page is within bounds
+        if (this.logsPage > this.logsTotalPages) this.logsPage = this.logsTotalPages;
       },
       error: () => { /* ignore */ }
     });
