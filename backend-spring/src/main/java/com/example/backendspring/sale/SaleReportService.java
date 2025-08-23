@@ -18,49 +18,30 @@ public class SaleReportService {
 
         public Map<String, Object> getResumoDia(LocalDate dia) {
                 Map<String, Object> result = new HashMap<>();
-                // Totais do legado (tabela vendas)
-                Long totalVendasLegado = jdbcTemplate.queryForObject(
-                                "SELECT COUNT(*) FROM vendas v WHERE DATE(v.data_venda) = ?", Long.class, dia);
-                Long qtdLegado = jdbcTemplate.queryForObject(
-                                "SELECT COALESCE(SUM(v.quantidade_vendida),0) FROM vendas v WHERE DATE(v.data_venda) = ?",
-                                Long.class, dia);
-                Double receitaLegado = jdbcTemplate.queryForObject(
-                                "SELECT COALESCE(SUM(v.preco_total),0) FROM vendas v WHERE DATE(v.data_venda) = ?",
-                                Double.class, dia);
 
-                // Totais do novo (venda_cabecalho)
-                Long totalVendasNovo = jdbcTemplate.queryForObject(
+                // Totais usando o modelo unificado (venda_cabecalho + venda_itens +
+                // venda_pagamentos)
+                Long totalVendas = jdbcTemplate.queryForObject(
                                 "SELECT COUNT(*) FROM venda_cabecalho vc WHERE DATE(vc.data_venda) = ?", Long.class,
                                 dia);
-                Double receitaNovo = jdbcTemplate.queryForObject(
-                                "SELECT COALESCE(SUM(vc.total_final),0) FROM venda_cabecalho vc WHERE DATE(vc.data_venda) = ?",
-                                Double.class, dia);
-                Long qtdNovo = jdbcTemplate.queryForObject(
+                Long qtdItens = jdbcTemplate.queryForObject(
                                 "SELECT COALESCE(SUM(vi.quantidade),0) FROM venda_itens vi JOIN venda_cabecalho vc ON vc.id = vi.venda_id WHERE DATE(vc.data_venda) = ?",
                                 Long.class, dia);
+                Double receitaTotal = jdbcTemplate.queryForObject(
+                                "SELECT COALESCE(SUM(vc.total_final),0) FROM venda_cabecalho vc WHERE DATE(vc.data_venda) = ?",
+                                Double.class, dia);
 
-                long totalVendas = (totalVendasLegado != null ? totalVendasLegado : 0L)
-                                + (totalVendasNovo != null ? totalVendasNovo : 0L);
-                long quantidadeVendida = (qtdLegado != null ? qtdLegado : 0L) + (qtdNovo != null ? qtdNovo : 0L);
-                double receitaTotal = (receitaLegado != null ? receitaLegado : 0.0)
-                                + (receitaNovo != null ? receitaNovo : 0.0);
+                totalVendas = totalVendas != null ? totalVendas : 0L;
+                long quantidadeVendida = qtdItens != null ? qtdItens : 0L;
+                receitaTotal = receitaTotal != null ? receitaTotal : 0.0;
 
-                // Breakdown por método (legado + novo)
                 Map<String, Double> porPagamento = new HashMap<>();
                 porPagamento.put("dinheiro", 0.0);
                 porPagamento.put("cartao_credito", 0.0);
                 porPagamento.put("cartao_debito", 0.0);
                 porPagamento.put("pix", 0.0);
 
-                jdbcTemplate.query(
-                                ("SELECT metodo_pagamento, COALESCE(SUM(preco_total),0) as " + ALIAS_VALOR
-                                                + " FROM vendas WHERE DATE(data_venda) = ? GROUP BY metodo_pagamento"),
-                                rs -> {
-                                        String metodo = rs.getString("metodo_pagamento");
-                                        double valor = rs.getDouble(ALIAS_VALOR);
-                                        porPagamento.merge(metodo, valor, Double::sum);
-                                }, dia);
-
+                // breakdown por método usando venda_pagamentos
                 jdbcTemplate.query(
                                 ("SELECT vp.metodo, COALESCE(SUM(vp.valor),0) as " + ALIAS_VALOR
                                                 + " FROM venda_pagamentos vp JOIN venda_cabecalho vc ON vc.id = vp.venda_id WHERE DATE(vc.data_venda) = ? GROUP BY vp.metodo"),

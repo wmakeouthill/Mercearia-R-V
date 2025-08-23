@@ -131,27 +131,140 @@ function runDbMode() {
           if (errCreate) return reject(errCreate);
           const productsList = finalProducts;
 
-          const insertSale = db.prepare('INSERT INTO vendas(produto_id, quantidade_vendida, preco_total, data_venda, metodo_pagamento, cliente_id, operador_id) VALUES (?, ?, ?, ?, ?, ?, ?)');
-          const insertMov = db.prepare('INSERT INTO caixa_movimentacoes(tipo, valor, descricao, usuario_id, operador_id, caixa_status_id, motivo, aprovado_por, data_movimento, criado_em, atualizado_em) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+          // Ensure some users exist so sales/movimentacoes can be linked to operadores
+          const userNames = ['Wesley', 'Vera', 'Fabiano'];
+          db.all('SELECT id, username FROM usuarios WHERE username IN (?,?,?)', userNames, (errUsers, rows) => {
+            if (errUsers) return reject(errUsers);
+            const existing = {};
+            (rows || []).forEach(r => { existing[r.username] = r.id; });
+            const toInsert = userNames.filter(u => !existing[u]);
 
-          for (let i = 0; i < NUM_RECORDS; i++) {
-            const doSale = Math.random() < 0.7;
-            const dt = randomDateIn2025();
-            if (doSale) {
-              const p = productsList[randInt(0, productsList.length - 1)];
-              const qty = randInt(1, Math.max(1, Math.min(10, p.quantidade_estoque || 10)));
-              const price = Number(((p.preco_venda || 1) * qty).toFixed(2));
-              const metodo = ['dinheiro', 'cartao_credito', 'cartao_debito', 'pix'][randInt(0, 3)];
-              insertSale.run(p.id, qty, price, dt, metodo, null, null);
-            } else {
-              const tipo = Math.random() < 0.5 ? 'entrada' : 'retirada';
-              const valor = Number((Math.random() * 200 + 1).toFixed(2));
-              insertMov.run(tipo, valor, 'Seed ' + tipo, null, null, null, null, null, dt, dt, dt);
+            function insertNext(idx, cb) {
+              if (idx >= toInsert.length) return cb();
+              const uname = toInsert[idx];
+              db.run('INSERT INTO usuarios(username, password, role, pode_controlar_caixa) VALUES (?, ?, ?, ?)', [uname, 'seeded', 'user', 0], function(insErr) {
+                if (insErr) return cb(insErr);
+                existing[uname] = this.lastID;
+                insertNext(idx + 1, cb);
+              });
             }
-          }
 
-          insertSale.finalize();
-          insertMov.finalize();
+            insertNext(0, (insErr) => {
+              if (insErr) return reject(insErr);
+              const userIds = userNames.map(u => existing[u]).filter(Boolean);
+              const operadorId = userIds.length > 0 ? userIds[randInt(0, userIds.length - 1)] : null;
+
+              // if status_caixa table exists, create multiple sessions (abertura/fechamento) to link to
+              db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='status_caixa'", (tblErr, tblRow) => {
+                if (tblErr) return reject(tblErr);
+                const createInserts = (caixaSessions) => {
+                  // do not write to legacy `vendas`; create unified orders instead
+                  const insertMov = db.prepare('INSERT INTO caixa_movimentacoes(tipo, valor, descricao, usuario_id, operador_id, caixa_status_id, motivo, aprovado_por, data_movimento, criado_em, atualizado_em) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+
+                  for (let i = 0; i < NUM_RECORDS; i++) {
+                    const doSale = Math.random() < 0.7;
+                    const dt = randomDateIn2025();
+                    if (doSale) {
+                      const p = productsList[randInt(0, productsList.length - 1)];
+                      const qty = randInt(1, Math.max(1, Math.min(10, p.quantidade_estoque || 10)));
+                      const unit = p.preco_venda || 1;
+                      const price = Number((unit * qty).toFixed(2));
+                      const metodo = ['dinheiro', 'cartao_credito', 'cartao_debito', 'pix'][randInt(0, 3)];
+                      // choose a random caixa session for this order (70% chance)
+                      const orderCaixaId = caixaSessions && caixaSessions.length > 0 && Math.random() < 0.7 ? caixaSessions[randInt(0, caixaSessions.length - 1)] : null;
+                      db.run('INSERT INTO venda_cabecalho(data_venda, subtotal, desconto, acrescimo, total_final, operador_id, caixa_status_id) VALUES (?, ?, ?, ?, ?, ?, ?)', [dt, price, 0.0, 0.0, price, operadorId, orderCaixaId], function(orderErr) {
+                        if (!orderErr) {
+                          const vendaId = this.lastID;
+                          db.run('INSERT INTO venda_itens(venda_id, produto_id, quantidade, preco_unitario, preco_total) VALUES (?, ?, ?, ?, ?)', [vendaId, p.id, qty, unit, price]);
+                          db.run('INSERT INTO venda_pagamentos(venda_id, metodo, valor, troco, caixa_status_id) VALUES (?, ?, ?, ?, ?)', [vendaId, metodo, price, 0.0, orderCaixaId]);
+                        }
+                      });
+                    } else {
+                      const tipo = Math.random() < 0.5 ? 'entrada' : 'retirada';
+                      const valor = Number((Math.random() * 200 + 1).toFixed(2));
+                      const usuarioId = userIds.length > 0 ? userIds[randInt(0, userIds.length - 1)] : null;
+                      // pick a random caixa session or null (80% chance to link)
+                      const caixaStatusId = caixaSessions && caixaSessions.length > 0 && Math.random() < 0.8 ? caixaSessions[randInt(0, caixaSessions.length - 1)] : null;
+                      insertMov.run(tipo, valor, 'Seed ' + tipo, usuarioId, operadorId, caixaStatusId, null, null, dt, dt, dt);
+                    }
+                  }
+
+                  insertMov.finalize();
+
+                  // Additionally, create some multi-payment orders (venda_cabecalho + items + pagamentos) linked to caixa session
+                  const createOrder = db.prepare('INSERT INTO venda_cabecalho(data_venda, subtotal, desconto, acrescimo, total_final, operador_id, caixa_status_id) VALUES (?, ?, ?, ?, ?, ?, ?)');
+                  const createItem = db.prepare('INSERT INTO venda_itens(venda_id, produto_id, quantidade, preco_unitario, preco_total) VALUES (?, ?, ?, ?, ?)');
+                  const createPayment = db.prepare('INSERT INTO venda_pagamentos(venda_id, metodo, valor, troco, caixa_status_id) VALUES (?, ?, ?, ?, ?)');
+
+                  for (let j = 0; j < Math.min(50, NUM_RECORDS / 4); j++) {
+                    const dt2 = randomDateIn2025();
+                    const p = productsList[randInt(0, productsList.length - 1)];
+                    const qty = randInt(1, Math.max(1, Math.min(6, p.quantidade_estoque || 6)));
+                    const unit = p.preco_venda || 1;
+                    const subtotal = Number((unit * qty).toFixed(2));
+                    const desconto = 0.0;
+                    const acrescimo = 0.0;
+                    const total = subtotal;
+                    // choose a random caixa session for this order (70% chance)
+                    const orderCaixaId = caixaSessions && caixaSessions.length > 0 && Math.random() < 0.7 ? caixaSessions[randInt(0, caixaSessions.length - 1)] : null;
+                    createOrder.run(dt2, subtotal, desconto, acrescimo, total, operadorId, orderCaixaId, function(errOrd) {
+                      const vendaId = this.lastID;
+                      if (vendaId) {
+                        createItem.run(vendaId, p.id, qty, unit, subtotal);
+                        // possibly split payment
+                        if (Math.random() < 0.3) {
+                          // two payments
+                          const part = Number((total * (0.4 + Math.random() * 0.5)).toFixed(2));
+                          createPayment.run(vendaId, 'cartao_credito', part, 0.0, orderCaixaId);
+                          createPayment.run(vendaId, 'dinheiro', Number((total - part).toFixed(2)), 0.0, orderCaixaId);
+                        } else {
+                          const metodo = ['dinheiro', 'cartao_credito', 'cartao_debito', 'pix'][randInt(0, 3)];
+                          createPayment.run(vendaId, metodo, total, 0.0, orderCaixaId);
+                        }
+                      }
+                    });
+                  }
+
+                  createOrder.finalize();
+                  createItem.finalize();
+                  createPayment.finalize(() => {
+                    // done
+                  });
+                };
+                if (tblRow) {
+                  // create multiple sessions across 2025 with random open/close times
+                  const sessCount = randInt(6, 12);
+                  const sessions = [];
+                  function createSess(idx) {
+                    if (idx >= sessCount) return createInserts(sessions);
+                    // pick random abertura and maybe fechamento
+                    const abertura = new Date(randomDateIn2025()).toISOString();
+                    const willClose = Math.random() < 0.85; // most sessions closed
+                    let fechamento = null;
+                    if (willClose) {
+                      // fechamento after abertura by up to 7 days
+                      const aTs = Date.parse(abertura);
+                      const maxClose = aTs + 7 * 24 * 60 * 60 * 1000;
+                      const closeTs = randInt(aTs, maxClose);
+                      fechamento = new Date(closeTs).toISOString();
+                    }
+                    const abertoFlag = !willClose;
+                    const openedBy = operadorId;
+                    const closedBy = willClose ? (Math.random() < 0.7 ? operadorId : (userIds.length > 0 ? userIds[randInt(0, userIds.length - 1)] : operadorId)) : null;
+                    const now = new Date().toISOString();
+                    db.run('INSERT INTO status_caixa(aberto, horario_abertura_obrigatorio, horario_fechamento_obrigatorio, aberto_por, fechado_por, data_abertura, data_fechamento, criado_em, atualizado_em, saldo_inicial, saldo_esperado, terminal_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [abertoFlag ? 1 : 0, null, null, openedBy, closedBy, abertura, fechamento, now, now, 0.0, 0.0, null], function(errCs) {
+                      if (errCs) return reject(errCs);
+                      sessions.push(this.lastID);
+                      createSess(idx + 1);
+                    });
+                  }
+                  createSess(0);
+                } else {
+                  createInserts([]);
+                }
+              });
+            });
+          });
           db.close(err2 => {
             if (err2) return reject(err2);
             resolve();
@@ -195,9 +308,16 @@ async function runPgMode() {
       if (doSale) {
         const p = products[randInt(0, products.length - 1)];
         const qty = randInt(1, Math.max(1, Math.min(10, p.quantidade_estoque || 10)));
-        const price = Number(((p.preco_venda || 1) * qty).toFixed(2));
+        const unit = p.preco_venda || 1;
+        const price = Number((unit * qty).toFixed(2));
         const metodo = ['dinheiro', 'cartao_credito', 'cartao_debito', 'pix'][randInt(0, 3)];
-        await client.query('INSERT INTO vendas(produto_id, quantidade_vendida, preco_total, data_venda, metodo_pagamento, cliente_id, operador_id) VALUES($1,$2,$3,$4,$5,$6,$7)', [p.id, qty, price, dt, metodo, null, null]);
+        // create order (venda_cabecalho) + item + single payment instead of legacy vendas
+        const orderRes = await client.query('INSERT INTO venda_cabecalho(data_venda, subtotal, desconto, acrescimo, total_final, operador_id, caixa_status_id) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id', [dt, price, 0.0, 0.0, price, null, null]);
+        const vendaId = orderRes.rows && orderRes.rows[0] && orderRes.rows[0].id ? orderRes.rows[0].id : null;
+        if (vendaId) {
+          await client.query('INSERT INTO venda_itens(venda_id, produto_id, quantidade, preco_unitario, preco_total) VALUES($1,$2,$3,$4,$5)', [vendaId, p.id, qty, unit, price]);
+          await client.query('INSERT INTO venda_pagamentos(venda_id, metodo, valor, troco, caixa_status_id) VALUES($1,$2,$3,$4,$5)', [vendaId, metodo, price, 0.0, null]);
+        }
       } else {
         const tipo = Math.random() < 0.5 ? 'entrada' : 'retirada';
         const valor = Number((Math.random() * 200 + 1).toFixed(2));

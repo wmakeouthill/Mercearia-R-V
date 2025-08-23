@@ -1,7 +1,6 @@
 package com.example.backendspring.client;
 
 // removed unused import Sale
-import com.example.backendspring.sale.SaleRepository;
 import com.example.backendspring.sale.SaleOrderRepository;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
@@ -20,7 +19,6 @@ import java.time.OffsetDateTime;
 public class ClientController {
     private static final Logger logger = LoggerFactory.getLogger(ClientController.class);
     private final ClientRepository clientRepository;
-    private final SaleRepository saleRepository;
     private final SaleOrderRepository saleOrderRepository;
 
     @GetMapping
@@ -79,31 +77,21 @@ public class ClientController {
             }
         }
 
-        java.util.List<com.example.backendspring.sale.Sale> vendasLegado = new java.util.ArrayList<>();
         java.util.List<com.example.backendspring.sale.SaleOrder> ordens = new java.util.ArrayList<>();
 
         if (inicio != null && fim != null) {
             // Period filter: load matching legacy sales and orders for the period
-            var tmpLegado = saleRepository.findByPeriodo(inicio, fim).stream()
-                    .filter(s -> s.getCliente() != null && s.getCliente().getId() != null
-                            && s.getCliente().getId().equals(id))
-                    .sorted((a, b) -> b.getDataVenda().compareTo(a.getDataVenda()))
-                    .toList();
-            vendasLegado.addAll(tmpLegado);
-            // sale orders - use pageable variant to limit DB work
+            // load only sale orders (new model)
             ordens = saleOrderRepository.findByClienteIdAndPeriodo(id, inicio, fim,
                     PageRequest.of(0, Integer.MAX_VALUE));
         } else {
             // No period: use pageable queries for both repositories
             var pr = PageRequest.of(page, size);
-            var pageResult = saleRepository.findByClienteIdOrderByDataVendaDesc(id, pr);
-            vendasLegado = pageResult != null && pageResult.hasContent() ? pageResult.getContent()
-                    : java.util.Collections.emptyList();
+            // use only saleOrderRepository for client orders
             ordens = saleOrderRepository.findByClienteIdOrderByDataVendaDesc(id, pr);
         }
 
         java.util.List<java.util.Map<String, Object>> merged = new java.util.ArrayList<>();
-        vendasLegado.forEach(s -> merged.add(mapLegacySale(s)));
         ordens.forEach(o -> merged.add(mapSaleOrder(o)));
 
         // sort by data desc
@@ -134,31 +122,9 @@ public class ClientController {
         return ResponseEntity.ok(resp);
     }
 
-    private java.util.Map<String, Object> mapLegacySale(com.example.backendspring.sale.Sale s) {
-        var m = new java.util.LinkedHashMap<String, Object>();
-        m.put("id", s.getId());
-        m.put("preco_total", s.getPrecoTotal());
-        m.put("data_venda", s.getDataVenda());
-        m.put("tipo", "legado");
-        m.put("quantidade_vendida", s.getQuantidadeVendida());
-        if (s.getProduto() != null) {
-            m.put("produto_id", s.getProduto().getId());
-            m.put("produto_nome", s.getProduto().getNome());
-            m.put("produto_imagem", s.getProduto().getImagem());
-        }
-        // Normalize to include itens array so frontend can display products uniformly
-        var itens = new java.util.ArrayList<java.util.Map<String, Object>>();
-        var it = new java.util.LinkedHashMap<String, Object>();
-        it.put("id", null);
-        it.put("produto_id", s.getProduto() != null ? s.getProduto().getId() : null);
-        it.put("produto_nome", s.getProduto() != null ? s.getProduto().getNome() : null);
-        it.put("produto_imagem", s.getProduto() != null ? s.getProduto().getImagem() : null);
-        it.put("quantidade", s.getQuantidadeVendida());
-        it.put("preco_unitario", null);
-        it.put("preco_total", s.getPrecoTotal());
-        itens.add(it);
-        m.put("itens", itens);
-        return m;
+    // legacy mapping removed — keep signature for API compatibility if needed later
+    private java.util.Map<String, Object> mapLegacySale(Object s) {
+        return java.util.Collections.emptyMap();
     }
 
     private java.util.Map<String, Object> mapSaleOrder(com.example.backendspring.sale.SaleOrder o) {
@@ -202,9 +168,8 @@ public class ClientController {
         // Prevent deletion if there are related sales/orders to avoid FK constraint
         // errors
         try {
-            // Nullify FK on sales/orders referencing this client, then delete client
+            // Nullify FK on orders referencing this client, then delete client
             logger.debug("Nullifying client FK for id {}", id);
-            saleRepository.nullifyClienteById(id);
             saleOrderRepository.nullifyClienteById(id);
 
             clientRepository.deleteById(id);

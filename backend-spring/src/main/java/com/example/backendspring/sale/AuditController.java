@@ -23,7 +23,6 @@ public class AuditController {
 
     private static final Logger log = LoggerFactory.getLogger(AuditController.class);
     private final SaleDeletionRepository saleDeletionRepository;
-    private final SaleRepository saleRepository;
     private final SaleOrderRepository saleOrderRepository;
     private final com.example.backendspring.product.ProductRepository productRepository;
     private final ObjectMapper objectMapper;
@@ -81,6 +80,7 @@ public class AuditController {
                         data.getOrDefault("metodoPagamento", "dinheiro"));
                 String dataVendaStr = data.getOrDefault("data_venda", data.get("dataVenda")).toString();
 
+                // legacy restore: convert legacy payload into a SaleOrder (new model)
                 if (produtoIdNum == null)
                     return ResponseEntity.badRequest().body(Map.of("error", "Produto inválido no payload"));
 
@@ -100,16 +100,33 @@ public class AuditController {
                 productRepository.save(produto);
 
                 OffsetDateTime dt = OffsetDateTime.parse(dataVendaStr);
-                Sale sale = Sale.builder()
-                        .produto(produto)
-                        .quantidadeVendida(quantidade)
-                        .precoTotal(preco)
+                SaleOrder order = SaleOrder.builder()
                         .dataVenda(dt)
-                        .metodoPagamento(metodo)
+                        .subtotal(preco)
+                        .desconto(0.0)
+                        .acrescimo(0.0)
+                        .totalFinal(preco)
                         .build();
 
-                saleRepository.save(sale);
-                return ResponseEntity.ok(Map.of("message", "Venda restaurada com sucesso"));
+                SaleItem si = SaleItem.builder()
+                        .venda(order)
+                        .produto(produto)
+                        .quantidade(quantidade)
+                        .precoUnitario(preco)
+                        .precoTotal(preco)
+                        .build();
+                order.getItens().add(si);
+
+                SalePayment sp = SalePayment.builder()
+                        .venda(order)
+                        .metodo(metodo)
+                        .valor(preco)
+                        .troco(0.0)
+                        .build();
+                order.getPagamentos().add(sp);
+
+                saleOrderRepository.save(order);
+                return ResponseEntity.ok(Map.of("message", "Venda restaurada como order com sucesso"));
             } else if ("checkout".equals(type)) {
                 // payload expected to have keys: id, data_venda, subtotal, desconto, acrescimo,
                 // total_final, itens[], pagamentos[]

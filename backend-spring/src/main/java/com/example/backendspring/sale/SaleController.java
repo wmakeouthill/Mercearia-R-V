@@ -12,8 +12,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,34 +25,37 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class SaleController {
 
-    private final SaleRepository saleRepository;
     private final ProductRepository productRepository;
     private final ClientRepository clientRepository;
     private final SaleOrderRepository saleOrderRepository;
     private final SaleReportService saleReportService;
-    private final SaleDeletionRepository saleDeletionRepository;
     private final ObjectMapper objectMapper;
     private final CaixaStatusRepository caixaStatusRepository;
 
     private static final String KEY_ERROR = "error";
-    private static final String KEY_MESSAGE = "message";
     private static final String KEY_QTD_VENDIDA = "quantidade_vendida";
     private static final String DEFAULT_PAGAMENTO = "dinheiro";
     private static final Logger log = LoggerFactory.getLogger(SaleController.class);
 
     @GetMapping
     public List<Map<String, Object>> getAll() {
-        return saleRepository.findAll().stream().map(v -> {
+        return saleOrderRepository.findAllOrderByData().stream().map(o -> {
             java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
-            row.put("id", v.getId());
-            row.put("produto_id", v.getProduto().getId());
-            row.put(KEY_QTD_VENDIDA, v.getQuantidadeVendida());
-            row.put("preco_total", v.getPrecoTotal());
-            row.put("data_venda", v.getDataVenda());
-            row.put("metodo_pagamento", v.getMetodoPagamento());
-            row.put("produto_nome", v.getProduto().getNome());
-            row.put("codigo_barras", v.getProduto().getCodigoBarras());
-            row.put("produto_imagem", v.getProduto().getImagem());
+            row.put("id", o.getId());
+            int qtd = o.getItens() == null ? 0
+                    : o.getItens().stream().mapToInt(it -> it.getQuantidade() == null ? 0 : it.getQuantidade()).sum();
+            row.put(KEY_QTD_VENDIDA, qtd);
+            row.put("preco_total", o.getTotalFinal());
+            row.put("data_venda", o.getDataVenda());
+            String metodo = (o.getPagamentos() == null || o.getPagamentos().isEmpty()) ? ""
+                    : (o.getPagamentos().size() == 1 ? o.getPagamentos().get(0).getMetodo() : "multiplo");
+            row.put("metodo_pagamento", metodo);
+            row.put("produto_nome", o.getItens() == null || o.getItens().isEmpty() ? ("Pedido #" + o.getId())
+                    : o.getItens().get(0).getProduto().getNome());
+            row.put("codigo_barras", o.getItens() == null || o.getItens().isEmpty() ? null
+                    : o.getItens().get(0).getProduto().getCodigoBarras());
+            row.put("produto_imagem", o.getItens() == null || o.getItens().isEmpty() ? null
+                    : o.getItens().get(0).getProduto().getImagem());
             return row;
         }).toList();
     }
@@ -77,32 +78,12 @@ public class SaleController {
             } catch (Exception ignored) {
             }
 
-            // fetch legacy sales and orders (unpaged), then merge and page in-memory to
-            // preserve unified ordering
-            java.util.List<com.example.backendspring.sale.Sale> legacy = (inicio != null && fim != null)
-                    ? saleRepository.findByPeriodo(inicio, fim)
-                    : saleRepository.findAllOrderByData();
-
+            // fetch only orders (unpaged). Legacy `vendas` is deprecated and not used.
             java.util.List<com.example.backendspring.sale.SaleOrder> orders = (inicio != null && fim != null)
                     ? saleOrderRepository.findByPeriodo(inicio, fim)
                     : saleOrderRepository.findAllOrderByData();
 
             java.util.List<java.util.Map<String, Object>> rows = new java.util.ArrayList<>();
-
-            for (var s : legacy) {
-                var m = new java.util.LinkedHashMap<String, Object>();
-                m.put("id", s.getId());
-                m.put("produto_id", s.getProduto() != null ? s.getProduto().getId() : null);
-                m.put("produto_nome", s.getProduto() != null ? s.getProduto().getNome() : null);
-                m.put("produto_imagem", s.getProduto() != null ? s.getProduto().getImagem() : null);
-                m.put("quantidade_vendida", s.getQuantidadeVendida());
-                m.put("preco_total", s.getPrecoTotal());
-                m.put("data_venda", s.getDataVenda());
-                m.put("itens", java.util.List.of());
-                m.put("_isCheckout", false);
-                m.put("row_id", "legacy-" + s.getId());
-                rows.add(m);
-            }
 
             for (var o : orders) {
                 var m = new java.util.LinkedHashMap<String, Object>();
@@ -215,36 +196,55 @@ public class SaleController {
         produto.setQuantidadeEstoque(produto.getQuantidadeEstoque() - req.getQuantidadeVendida());
         productRepository.save(produto);
 
-        Sale.SaleBuilder builder = Sale.builder()
+        // Create a SaleOrder (unified model) with a single item and a single payment
+        var now = OffsetDateTime.now();
+        SaleOrder order = SaleOrder.builder()
+                .dataVenda(now)
+                .subtotal(req.getPrecoTotal())
+                .desconto(0.0)
+                .acrescimo(0.0)
+                .totalFinal(req.getPrecoTotal())
+                .operador(null)
+                .build();
+
+        SaleItem it = SaleItem.builder()
+                .venda(order)
                 .produto(produto)
-                .quantidadeVendida(req.getQuantidadeVendida())
+                .quantidade(req.getQuantidadeVendida())
+                .precoUnitario(req.getPrecoTotal() / req.getQuantidadeVendida())
                 .precoTotal(req.getPrecoTotal())
-                .dataVenda(OffsetDateTime.now())
-                .metodoPagamento(metodo);
+                .build();
+        order.getItens().add(it);
+
+        SalePayment sp = SalePayment.builder()
+                .venda(order)
+                .metodo(metodo)
+                .valor(req.getPrecoTotal())
+                .troco(0.0)
+                .build();
+        order.getPagamentos().add(sp);
 
         if (req.getClienteId() != null) {
             Client cliente = clientRepository.findById(req.getClienteId()).orElse(null);
-            if (cliente != null) {
-                builder.cliente(cliente);
-            }
+            if (cliente != null)
+                order.setCliente(cliente);
         }
 
-        Sale sale = builder.build();
-        saleRepository.save(sale);
+        saleOrderRepository.save(order);
 
         java.util.Map<String, Object> resp = new java.util.LinkedHashMap<>();
-        resp.put("id", sale.getId());
+        resp.put("id", order.getId());
         resp.put("produto_id", produto.getId());
-        resp.put(KEY_QTD_VENDIDA, sale.getQuantidadeVendida());
-        resp.put("preco_total", sale.getPrecoTotal());
-        resp.put("data_venda", sale.getDataVenda());
-        resp.put("metodo_pagamento", sale.getMetodoPagamento());
+        resp.put(KEY_QTD_VENDIDA, req.getQuantidadeVendida());
+        resp.put("preco_total", req.getPrecoTotal());
+        resp.put("data_venda", order.getDataVenda());
+        resp.put("metodo_pagamento", metodo);
         resp.put("produto_nome", produto.getNome());
-        if (sale.getCliente() != null) {
-            resp.put("cliente_id", sale.getCliente().getId());
-            resp.put("cliente_nome", sale.getCliente().getNome());
-            resp.put("cliente_email", sale.getCliente().getEmail());
-            resp.put("cliente_telefone", sale.getCliente().getTelefone());
+        if (order.getCliente() != null) {
+            resp.put("cliente_id", order.getCliente().getId());
+            resp.put("cliente_nome", order.getCliente().getNome());
+            resp.put("cliente_email", order.getCliente().getEmail());
+            resp.put("cliente_telefone", order.getCliente().getTelefone());
         }
 
         return ResponseEntity.status(201).body(resp);
@@ -253,50 +253,10 @@ public class SaleController {
     @DeleteMapping("/{id}")
     @Transactional
     public ResponseEntity<Object> delete(@PathVariable Long id, HttpServletRequest request) {
-        Sale venda = saleRepository.findById(id).orElse(null);
-        if (venda == null)
-            return ResponseEntity.status(404).body(Map.of(KEY_ERROR, "Venda não encontrada"));
-
-        // build payload to store in audit
-        Map<String, Object> payload = new java.util.LinkedHashMap<>();
-        payload.put("id", venda.getId());
-        payload.put("produto_id", venda.getProduto().getId());
-        payload.put(KEY_QTD_VENDIDA, venda.getQuantidadeVendida());
-        payload.put("preco_total", venda.getPrecoTotal());
-        payload.put("data_venda", venda.getDataVenda());
-        payload.put("metodo_pagamento", venda.getMetodoPagamento());
-        payload.put("produto_nome", venda.getProduto().getNome());
-
-        // record deletion audit BEFORE deleting to ensure audit exists; keep within
-        // transaction so rollback will undo delete if audit fails
-        try {
-            String payloadJson = objectMapper.writeValueAsString(payload);
-            String deletedBy = null;
-            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-            if (auth != null)
-                deletedBy = auth.getName();
-            SaleDeletion sd = SaleDeletion.builder()
-                    .saleId(venda.getId())
-                    .saleType("legacy")
-                    .payload(payloadJson)
-                    .deletedBy(deletedBy)
-                    .deletedAt(OffsetDateTime.now())
-                    .build();
-            saleDeletionRepository.saveAndFlush(sd);
-            log.info("SALE_DELETION AUDIT_SAVED saleDeletionId={} saleId={}", sd.getId(), sd.getSaleId());
-        } catch (Exception e) {
-            // if audit fails, abort (transactional) so delete won't happen
-            log.error("Audit save failed, aborting delete: {}", e.getMessage(), e);
-            throw new RuntimeException("Failed to record sale deletion audit", e);
-        }
-
-        // restore stock and delete sale
-        Product produto = venda.getProduto();
-        produto.setQuantidadeEstoque(produto.getQuantidadeEstoque() + venda.getQuantidadeVendida());
-        productRepository.save(produto);
-        saleRepository.deleteById(id);
-
-        return ResponseEntity.ok(Map.of(KEY_MESSAGE, "Venda deletada com sucesso"));
+        // legacy delete: convert to deleting an order if mapping exists; otherwise
+        // return 404
+        return ResponseEntity.status(410)
+                .body(Map.of(KEY_ERROR, "Legacy venda removida. Use endpoints de orders para operações."));
     }
 
     @GetMapping("/relatorios/dia")

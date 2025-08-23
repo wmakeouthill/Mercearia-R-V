@@ -550,3 +550,66 @@ databaseChangeLog:
         - dropTable:
             tableName: sale_adjustments
             ifExists: true
+
+  - changeSet:
+      id: 20250830-drop-legacy-vendas
+      author: assistant
+      preConditions:
+        - onFail: MARK_RAN
+        - tableExists:
+            tableName: vendas
+      changes:
+        - dropTable:
+            tableName: vendas
+            cascadeConstraints: true
+      rollback:
+        - createTable:
+            tableName: vendas
+            ifNotExists: true
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: produto_id
+                  type: BIGINT
+              - column:
+                  name: quantidade_vendida
+                  type: INTEGER
+              - column:
+                  name: preco_total
+                  type: numeric(18,2)
+              - column:
+                  name: data_venda
+                  type: TIMESTAMP WITH TIME ZONE
+              - column:
+                  name: metodo_pagamento
+                  type: VARCHAR(50)
+              - column:
+                  name: cliente_id
+                  type: BIGINT
+              - column:
+                  name: operador_id
+                  type: BIGINT
+        - addForeignKeyConstraint:
+            baseTableName: vendas
+            baseColumnNames: produto_id
+            referencedTableName: produtos
+            referencedColumnNames: id
+            constraintName: fk_vendas_produtos
+        - addForeignKeyConstraint:
+            baseTableName: vendas
+            baseColumnNames: cliente_id
+            referencedTableName: clientes
+            referencedColumnNames: id
+            constraintName: fk_vendas_clientes
+        - addForeignKeyConstraint:
+            baseTableName: vendas
+            baseColumnNames: operador_id
+            referencedTableName: usuarios
+            referencedColumnNames: id
+            constraintName: fk_vendas_operador_usuarios

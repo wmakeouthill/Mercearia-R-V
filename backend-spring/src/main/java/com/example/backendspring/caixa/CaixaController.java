@@ -25,7 +25,7 @@ public class CaixaController {
     private final CaixaStatusRepository caixaStatusRepository;
     private final CaixaMovimentacaoRepository movimentacaoRepository;
     private final UserRepository userRepository;
-    private final com.example.backendspring.sale.SaleRepository saleRepository;
+    // legacy saleRepository removed from active use
     private final com.example.backendspring.sale.SaleOrderRepository saleOrderRepository;
     @PersistenceContext
     private EntityManager em;
@@ -131,10 +131,7 @@ public class CaixaController {
             // Movimentações manuais (entrada/retirada)
             lista.addAll(buildManualMovRows(dia, inicio, fim));
 
-            // Vendas simples (tabela vendas)
-            lista.addAll(buildSimpleSaleRows(dia, inicio, fim));
-
-            // Vendas completas (multi-pagamento) da venda_cabecalho
+            // Vendas (unificadas) — usar somente venda_cabecalho / venda_pagamentos
             lista.addAll(buildSaleOrderRows(dia, inicio, fim));
 
             // Ordenar por data_movimento desc
@@ -385,46 +382,8 @@ public class CaixaController {
 
     private java.util.List<java.util.Map<String, Object>> buildSimpleSaleRows(java.time.LocalDate dia,
             java.time.LocalDate inicio, java.time.LocalDate fim) {
-        java.util.List<com.example.backendspring.sale.Sale> base;
-        if (dia != null) {
-            base = saleRepository.findByDia(dia);
-        } else if (inicio != null && fim != null) {
-            base = saleRepository.findByPeriodo(inicio, fim);
-        } else {
-            // modo "tudo": trazer todas as vendas simples
-            base = saleRepository.findAllOrderByData();
-        }
-        return base.stream().map(v -> {
-            java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
-            row.put("id", v.getId());
-            row.put("tipo", TIPO_VENDA);
-            row.put(KEY_VALOR, v.getPrecoTotal());
-            row.put(KEY_DESCRICAO, "Venda - " + (v.getProduto() != null ? v.getProduto().getNome() : "Produto") +
-                    " x" + v.getQuantidadeVendida() + " (" + v.getMetodoPagamento() + ")");
-            row.put("produto_nome", v.getProduto() != null ? v.getProduto().getNome() : null);
-            row.put(KEY_METODO_PAGAMENTO, v.getMetodoPagamento());
-            // tentar mostrar operador/usuário associado à venda
-            // mostrar operador se presente
-            try {
-                if (v.getOperador() != null) {
-                    row.put(KEY_USUARIO, v.getOperador().getUsername());
-                } else {
-                    row.put(KEY_USUARIO, null);
-                }
-            } catch (Exception e) {
-                row.put(KEY_USUARIO, null);
-            }
-            row.put(KEY_DATA_MOVIMENTO, v.getDataVenda());
-            // tentar associar a sessão do caixa pela data da venda (legacy sales não têm
-            // caixaStatus)
-            try {
-                var sess = findSessionForTimestamp(v.getDataVenda());
-                row.put("caixa_status_id", sess != null ? sess.getId() : null);
-            } catch (Exception ignored) {
-                row.put("caixa_status_id", null);
-            }
-            return row;
-        }).toList();
+        // Legacy simple sales removed: return empty list to keep API stable
+        return java.util.List.of();
     }
 
     private CaixaStatus findSessionForTimestamp(java.time.OffsetDateTime dt) {
@@ -823,7 +782,7 @@ public class CaixaController {
                     }).toList();
             resp.put("movimentacoes", movs);
 
-            // Vendas vinculadas à sessão
+            // Vendas vinculadas à sessão (novo modelo)
             var orders = saleOrderRepository.findAllOrderByData().stream()
                     .filter(o -> o.getCaixaStatus() != null && status.getId().equals(o.getCaixaStatus().getId()))
                     .toList();
@@ -939,11 +898,7 @@ public class CaixaController {
             var inicio = sess.getDataAbertura() != null ? sess.getDataAbertura().toLocalDate() : null;
             var fim = sess.getDataFechamento() != null ? sess.getDataFechamento().toLocalDate() : agora.toLocalDate();
             if (inicio != null && fim != null) {
-                var legacy = saleRepository.findByPeriodo(inicio, fim);
-                vendasSessao += legacy.stream()
-                        .filter(s -> "dinheiro".equals(s.getMetodoPagamento()))
-                        .mapToDouble(s -> s.getPrecoTotal() == null ? 0.0 : s.getPrecoTotal())
-                        .sum();
+                // legacy sales no longer used; ignore legacy cash contribution
             }
         } catch (Exception ignored) {
         }
