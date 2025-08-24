@@ -7,11 +7,12 @@ import { AuthService } from '../../services/auth';
 import { ImageService } from '../../services/image.service';
 import { Produto } from '../../models';
 import { logger } from '../../utils/logger';
+import { CurrencyBrPipe } from '../../pipes/currency-br.pipe';
 
 @Component({
   selector: 'app-gerenciar-estoque',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, CurrencyBrPipe],
   template: `
     <div class="estoque-container">
       <div class="header">
@@ -52,7 +53,7 @@ import { logger } from '../../utils/logger';
               <div class="produto-info" style="flex:1;">
                 <h3>{{ produto.nome }}</h3>
                 <p class="codigo">Código: {{ produto.codigo_barras || 'N/A' }}</p>
-                <p class="preco">Preço: R$ {{ produto.preco_venda.toFixed(2) }}</p>
+                <p class="preco">Preço: {{ produto.preco_venda | currencyBR }}</p>
               </div>
               <div class="produto-imagem" style="width:80px; height:80px; display:flex; align-items:center; justify-content:center;">
                 <img [src]="getImageUrl(produto.imagem)" [alt]="produto.nome" class="produto-card-thumb" (error)="onImageError($event)" />

@@ -91,27 +91,21 @@
    @if (resumoVendasDia) {<div class="resumo">
     <div class="card">
       <div class="titulo">Receita de Vendas (dia)</div>
-      <div class="valor positivo">
-        R$ {{ totalVendasHoje.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
-      </div>
+      <div class="valor positivo">{{ totalVendasHoje | currencyBR }}</div>
     </div>
     <div class="card">
       <div class="titulo">Saldo de Movimentações (dia)</div>
-      <div class="valor" [class.positivo]="saldoMovimentacoesHoje >= 0" [class.negativo]="saldoMovimentacoesHoje < 0">
-        R$ {{ saldoMovimentacoesHoje.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
-      </div>
+      <div class="valor" [class.positivo]="saldoMovimentacoesHoje >= 0" [class.negativo]="saldoMovimentacoesHoje < 0">{{ saldoMovimentacoesHoje | currencyBR }}</div>
     </div>
     <div class="card">
       <div class="titulo">Total no Caixa (vendas + movs)</div>
-      <div class="valor" [class.positivo]="totalNoCaixaHoje >= 0" [class.negativo]="totalNoCaixaHoje < 0">
-        R$ {{ totalNoCaixaHoje.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
-      </div>
+      <div class="valor" [class.positivo]="totalNoCaixaHoje >= 0" [class.negativo]="totalNoCaixaHoje < 0">{{ totalNoCaixaHoje | currencyBR }}</div>
     </div>
      <div class="card">
        <div class="titulo">Somatórios do Período</div>
-       <div class="valor positivo">Entradas: R$ {{ sumEntradas.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</div>
-       <div class="valor negativo">Retiradas: R$ {{ sumRetiradas.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</div>
-       <div class="valor">Vendas: R$ {{ sumVendas.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</div>
+       <div class="valor positivo">Entradas: {{ sumEntradas | currencyBR }}</div>
+       <div class="valor negativo">Retiradas: {{ sumRetiradas | currencyBR }}</div>
+       <div class="valor">Vendas: {{ sumVendas | currencyBR }}</div>
      </div>
   </div>}
 
@@ -173,7 +167,7 @@
                 </span>
               </td>
               <td class="produto">{{ m.produto_nome || '-' }}</td>
-              <td class="center">R$ {{ (m.valor || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</td>
+              <td class="center">{{ (m.valor || 0) | currencyBR }}</td>
               <td class="descricao">{{ m.descricao || '-' }}</td>
               <td class="center metodo">
                 <div class="metodo-multi">

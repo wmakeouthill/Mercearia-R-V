@@ -1,6 +1,7 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { CurrencyBrPipe } from '../../pipes/currency-br.pipe';
 import { Router } from '@angular/router';
 import { ApiService } from '../../services/api';
 import { AuthService } from '../../services/auth';
@@ -11,7 +12,7 @@ import { logger } from '../../utils/logger';
 @Component({
   selector: 'app-lista-produtos',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, CurrencyBrPipe],
   templateUrl: './lista-produtos.html',
   styleUrl: './lista-produtos.scss'
 })

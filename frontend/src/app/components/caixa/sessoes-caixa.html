@@ -103,11 +103,11 @@
               <td class="break-two">{{ it.aberto_por || '-' }}</td>
               <td>{{ it.data_fechamento ? (it.data_fechamento | date:'dd/MM/yyyy HH:mm') : '-' }}</td>
               <td class="break-two">{{ it.fechado_por || '-' }}</td>
-              <td class="right">R$&nbsp;{{ it.saldo_inicial | number:'1.2-2' }}</td>
-              <td class="right">R$&nbsp;{{ it.saldo_contado | number:'1.2-2' }}</td>
-              <td class="right">R$&nbsp;{{ it.variacao | number:'1.2-2' }}</td>
-              <td class="right">R$&nbsp;{{ it.cumulative_variacao_before | number:'1.2-2' }}</td>
-              <td class="right">R$&nbsp;{{ it.cumulative_variacao_all | number:'1.2-2' }}</td>
+              <td class="right">{{ it.saldo_inicial | currencyBR }}</td>
+              <td class="right">{{ it.saldo_contado | currencyBR }}</td>
+              <td class="right">{{ it.variacao | currencyBR }}</td>
+              <td class="right">{{ it.cumulative_variacao_before | currencyBR }}</td>
+              <td class="right">{{ it.cumulative_variacao_all | currencyBR }}</td>
               <td class="center acao">
                 <div style="display:flex; gap:8px; align-items:center; justify-content:center">
                   <button class="btn-primary btn-registro" (click)="openReconciliation(it.id)">Relatório</button>
@@ -150,26 +150,26 @@
   </div>
 
   <!-- Dialog-based modal and explicit overlay to ensure full-viewport coverage -->
-  <div *ngIf="modalOpen" class="dialog-overlay" (click)="closeDialog()"></div>
-  <dialog #reconDialog class="recon-dialog" (click)="onDialogClick($event)" (cancel)="closeDialog($event)">
+  <div *ngIf="modalOpen" class="dialog-overlay" (click)="closeDialog()" (keydown)="null"></div>
+  <dialog #reconDialog class="recon-dialog" (click)="onDialogClick($event)" (cancel)="closeDialog($event)" (keydown)="null">
     <h3>Relatório de Reconciliação - Sessão {{ modalData?.id || '' }}</h3>
     <div *ngIf="!modalData">Carregando...</div>
     <div *ngIf="modalData?.error">{{ modalData.error }}</div>
     <div *ngIf="modalData && !modalData.error">
-      <p><strong>Saldo Inicial:</strong> R$&nbsp;{{ modalData.saldo_inicial | number:'1.2-2' }}</p>
-      <p><strong>Saldo Esperado:</strong> R$&nbsp;{{ modalData.saldo_esperado | number:'1.2-2' }}</p>
-      <p><strong>Saldo Contado:</strong> R$&nbsp;{{ modalData.saldo_contado | number:'1.2-2' }}</p>
-      <p><strong>Variação (sessão):</strong> R$&nbsp;{{ modalData.variacao | number:'1.2-2' }}</p>
-      <p *ngIf="modalData.cumulative_variacao_before !== undefined"><strong>Cumulativo antes (todas sessões anteriores):</strong> R$&nbsp;{{ modalData.cumulative_variacao_before | number:'1.2-2' }}</p>
-      <p *ngIf="modalData.cumulative_variacao_all !== undefined"><strong>Cumulativo geral (todas sessões):</strong> R$&nbsp;{{ modalData.cumulative_variacao_all | number:'1.2-2' }}</p>
-      <p *ngIf="modalData.deficit_nao_reposto_before !== undefined"><strong>Déficit não reposto (antes):</strong> R$&nbsp;{{ modalData.deficit_nao_reposto_before | number:'1.2-2' }}</p>
-      <p *ngIf="modalData.day_variacao_total !== undefined"><strong>Variação total do dia:</strong> R$&nbsp;{{ modalData.day_variacao_total | number:'1.2-2' }}</p>
-      <p *ngIf="modalData.day_saldo_inicial_total !== undefined"><strong>Saldo inicial total do dia:</strong> R$&nbsp;{{ modalData.day_saldo_inicial_total | number:'1.2-2' }}</p>
+      <p><strong>Saldo Inicial:</strong> {{ modalData.saldo_inicial | currencyBR }}</p>
+      <p><strong>Saldo Esperado:</strong> {{ modalData.saldo_esperado | currencyBR }}</p>
+      <p><strong>Saldo Contado:</strong> {{ modalData.saldo_contado | currencyBR }}</p>
+      <p><strong>Variação (sessão):</strong> {{ modalData.variacao | currencyBR }}</p>
+      <p *ngIf="modalData.cumulative_variacao_before !== undefined"><strong>Cumulativo antes (todas sessões anteriores):</strong> {{ modalData.cumulative_variacao_before | currencyBR }}</p>
+      <p *ngIf="modalData.cumulative_variacao_all !== undefined"><strong>Cumulativo geral (todas sessões):</strong> {{ modalData.cumulative_variacao_all | currencyBR }}</p>
+      <p *ngIf="modalData.deficit_nao_reposto_before !== undefined"><strong>Déficit não reposto (antes):</strong> {{ modalData.deficit_nao_reposto_before | currencyBR }}</p>
+      <p *ngIf="modalData.day_variacao_total !== undefined"><strong>Variação total do dia:</strong> {{ modalData.day_variacao_total | currencyBR }}</p>
+      <p *ngIf="modalData.day_saldo_inicial_total !== undefined"><strong>Saldo inicial total do dia:</strong> {{ modalData.day_saldo_inicial_total | currencyBR }}</p>
       <h4>Totais por método</h4>
       <div class="totals-list">
         <div *ngFor="let k of getKeys(modalData.totals_by_metodo)" class="total-item">
           <span class="method-label">{{ getMethodLabel(k) }}:</span>
-          <span class="method-value">R$ {{ modalData.totals_by_metodo[k] | number:'1.2-2' }}</span>
+          <span class="method-value">{{ modalData.totals_by_metodo[k] | currencyBR }}</span>
         </div>
       </div>
       <h4>Movimentações</h4>
@@ -178,7 +178,7 @@
         <tr *ngFor="let m of modalData.movimentacoes">
           <td>{{ m.id }}</td>
           <td>{{ m.tipo }}</td>
-          <td>R$ {{ m.valor | number:'1.2-2' }}</td>
+          <td>{{ m.valor | currencyBR }}</td>
           <td>{{ m.usuario || '-' }}</td>
           <td>{{ m.descricao || '-' }}</td>
           <td>{{ m.data_movimento | date:'dd/MM/yyyy HH:mm' }}</td>
@@ -190,7 +190,7 @@
         <tr *ngFor="let v of modalData.vendas">
           <td><a href="#" (click)="openVendaDetalhada($event, v.id)">{{ v.id }}</a></td>
           <td>{{ v.data_venda | date:'dd/MM/yyyy HH:mm' }}</td>
-          <td>R$ {{ v.total_final | number:'1.2-2' }}</td>
+          <td>{{ v.total_final | currencyBR }}</td>
           <td>{{ v.operador || '-' }}</td>
         </tr>
       </table>

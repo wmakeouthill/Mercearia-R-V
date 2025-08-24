@@ -5,6 +5,7 @@ import { ExchangeReturnModalComponent } from '../exchange-return-modal/exchange-
 import { ExchangeReturnListComponent } from '../exchange-return-list/exchange-return-list';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { CurrencyBrPipe } from '../../pipes/currency-br.pipe';
 import { Router } from '@angular/router';
 import { ApiService } from '../../services/api';
 import { NotificationService } from '../../services/notification.service';
@@ -18,7 +19,7 @@ import { logger } from '../../utils/logger';
 @Component({
   selector: 'app-ponto-venda',
   standalone: true,
-  imports: [CommonModule, FormsModule, EnviarNotaModalComponent, ConfirmModalComponent, ExchangeReturnModalComponent, ExchangeReturnListComponent],
+  imports: [CommonModule, FormsModule, EnviarNotaModalComponent, ConfirmModalComponent, ExchangeReturnModalComponent, ExchangeReturnListComponent, CurrencyBrPipe],
   templateUrl: './ponto-venda.html',
   styleUrl: './ponto-venda.scss'
 })

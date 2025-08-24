@@ -1,6 +1,7 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { CurrencyBrPipe } from '../../pipes/currency-br.pipe';
 import { Router } from '@angular/router';
 import { ApiService } from '../../services/api';
 import { AuthService } from '../../services/auth';
@@ -12,7 +13,7 @@ import { formatDateBR, parseDate } from '../../utils/date-utils';
 @Component({
     selector: 'app-historico-deletados',
     standalone: true,
-    imports: [CommonModule, FormsModule],
+    imports: [CommonModule, FormsModule, CurrencyBrPipe],
     templateUrl: './historico-deletados.html',
     styleUrl: './historico-deletados.scss'
 })

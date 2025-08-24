@@ -1,6 +1,7 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { CurrencyBrPipe } from '../../pipes/currency-br.pipe';
 import { ApiService } from '../../services/api';
 import { CaixaService } from '../../services/caixa.service';
 import { AuthService } from '../../services/auth';
@@ -16,7 +17,7 @@ type TipoMovLista = 'entrada' | 'retirada' | 'venda';
 @Component({
   selector: 'app-caixa',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, CurrencyBrPipe],
   templateUrl: './caixa.html',
   styleUrl: './caixa.scss'
 })
@@ -448,7 +449,7 @@ export class CaixaComponent implements OnInit {
     const label = this.getMetodoLabel(m.metodo_pagamento || '');
     if (m.pagamento_valor != null) {
       const v = (Number(m.pagamento_valor) || 0);
-      return `${label} · R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      return `${label} · ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     }
     return label || '-';
   }

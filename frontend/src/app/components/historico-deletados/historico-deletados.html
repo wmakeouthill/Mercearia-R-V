@@ -49,7 +49,7 @@
               {{ venda['pagamentos_resumo'] }}
             </div>} @else {<ng-template>{{ venda.metodo_pagamento }}</ng-template>}
           </td>
-          <td class="valor-total">R$ {{ (venda.preco_total || 0).toFixed(2) }}</td>
+          <td class="valor-total">{{ (venda.preco_total || 0) | currencyBR }}</td>
           <td class="venda-data"><span class="data-hora-inline">{{ formatarData(venda.data_venda) }}</span></td>
           <td class="acoes-col acoes-left">
             <button *ngIf="venda.itens && venda.itens.length > 1" type="button" (click)="toggleExpand(venda.row_id)" class="btn-expand" [class.rotated]="expandedRows.has(venda.row_id)" [attr.aria-expanded]="expandedRows.has(venda.row_id)" title="Expandir venda">🔽</button>
@@ -79,8 +79,8 @@
                     <span>{{ it.produto_nome || it.produtoNome }}</span>
                   </td>
                   <td>{{ it.quantidade || it.quantidade_vendida }}</td>
-                  <td>R$ {{ (it.preco_unitario || it.precoUnitario || 0).toFixed(2) }}</td>
-                  <td>R$ {{ (it.preco_total || it.precoTotal || 0).toFixed(2) }}</td>
+                  <td>{{ (it.preco_unitario || it.precoUnitario || 0) | currencyBR }}</td>
+                  <td>{{ (it.preco_total || it.precoTotal || 0) | currencyBR }}</td>
                 </tr>}
               </tbody>
             </table>

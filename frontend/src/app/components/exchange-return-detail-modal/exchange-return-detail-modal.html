@@ -1,5 +1,5 @@
-<div class="modal-overlay" (click)="cancel()">
-  <div class="modal" (click)="$event.stopPropagation()">
+<div class="modal-overlay" (click)="cancel()" (keydown)="null">
+  <div class="modal" (click)="$event.stopPropagation()" (keydown)="null">
     <h3>Venda #{{ saleSummary.id }} - Detalhes</h3>
     <div *ngIf="loading">Carregando...</div>
     <div *ngIf="!loading && saleDetails">
@@ -9,7 +9,7 @@
           <tr *ngFor="let it of saleDetails.itens">
             <td>{{ it.produto_nome }}</td>
             <td>{{ it.quantidade }}</td>
-            <td>R$ {{ it.preco_total.toFixed(2) }}</td>
+            <td>{{ it.preco_total | currencyBR }}</td>
             <td><input type="checkbox" [(ngModel)]="selections[it.produto_id]" [ngModelOptions]="{standalone: true}" [value]="'return'"> </td>
             <td><input type="checkbox" [(ngModel)]="selections[it.produto_id]" [ngModelOptions]="{standalone: true}" [value]="'exchange'"> </td>
             <td><input type="number" [(ngModel)]="quantities[it.produto_id]" min="1" [max]="it.quantidade"></td>

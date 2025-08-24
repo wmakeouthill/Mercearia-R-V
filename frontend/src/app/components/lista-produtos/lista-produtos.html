@@ -77,7 +77,7 @@
                         </td>
                         <td class="produto-nome">{{ produto.nome }}</td>
                         <td class="produto-codigo">{{ produto.codigo_barras || '-' }}</td>
-                        <td class="produto-preco">R$ {{ produto.preco_venda.toFixed(2) }}</td>
+                        <td class="produto-preco">{{ produto.preco_venda | currencyBR }}</td>
                         <td class="produto-estoque">
                             <span class="estoque-badge">
                                 {{ produto.quantidade_estoque }}

@@ -1,6 +1,7 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { CurrencyBrPipe } from '../../pipes/currency-br.pipe';
 import { Router } from '@angular/router';
 import { CaixaService } from '../../services/caixa.service';
 import { Subject, Subscription } from 'rxjs';
@@ -12,7 +13,7 @@ import { StatusCaixa } from '../../models';
 @Component({
   selector: 'app-caixa-sessoes',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, CurrencyBrPipe],
   templateUrl: './sessoes-caixa.html',
   styleUrls: ['./caixa.scss', './sessoes-caixa.scss']
 })

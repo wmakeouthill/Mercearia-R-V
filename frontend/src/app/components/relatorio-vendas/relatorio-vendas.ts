@@ -1,6 +1,7 @@
 import { Component, OnInit, ElementRef, Renderer2, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { CurrencyBrPipe } from '../../pipes/currency-br.pipe';
 import { Router } from '@angular/router';
 import { ApiService } from '../../services/api';
 import { AuthService } from '../../services/auth';
@@ -18,7 +19,7 @@ import { EnviarNotaModalComponent } from '../enviar-nota-modal/enviar-nota-modal
 @Component({
   selector: 'app-relatorio-vendas',
   standalone: true,
-  imports: [CommonModule, FormsModule, EnviarNotaModalComponent],
+  imports: [CommonModule, FormsModule, EnviarNotaModalComponent, CurrencyBrPipe],
   templateUrl: './relatorio-vendas.html',
   styleUrl: './relatorio-vendas.scss'
 })

@@ -24,14 +24,14 @@
             <div class="card-icon">💰</div>
             <div class="card-content">
                 <h3>Receita Total</h3>
-                <p class="estatistica-valor">R$ {{ receitaTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</p>
+                <p class="estatistica-valor">{{ receitaTotal | currencyBR }}</p>
             </div>
         </div>
         <div class="estatistica-card">
             <div class="card-icon">📈</div>
             <div class="card-content">
                 <h3>Média por Venda</h3>
-                <p class="estatistica-valor">R$ {{ mediaVendas.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</p>
+                <p class="estatistica-valor">{{ mediaVendas | currencyBR }}</p>
             </div>
         </div>
         <div class="estatistica-card">
@@ -39,7 +39,7 @@
             <div class="card-content">
                 <h3>Melhor Dia</h3>
                 <p class="estatistica-valor-pequeno">{{ formatarMelhorDia(melhorDia) }}</p>
-                <p class="estatistica-sub">R$ {{ melhorDiaReceita.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</p>
+                <p class="estatistica-sub">{{ melhorDiaReceita | currencyBR }}</p>
             </div>
         </div>
     </div>
@@ -135,8 +135,8 @@
                         <td>{{ formatarData(item.data) }}</td>
                         <td>{{ item.total_vendas }}</td>
                         <td>{{ item.quantidade_vendida }}</td>
-                        <td>R$ {{ item.receita_total.toFixed(2) }}</td>
-                        <td>R$ {{ (item.receita_total / item.total_vendas).toFixed(2) }}</td>
+                        <td>{{ item.receita_total | currencyBR }}</td>
+                        <td>{{ (item.receita_total / item.total_vendas) | currencyBR }}</td>
                     </tr>}
                 </tbody>
             </table>
@@ -193,20 +193,20 @@
                 <tbody>
                     @if (resumoDia?.por_pagamento) {<tr>
                         <td>Hoje</td>
-                        <td>R$ {{ (resumoDia?.por_pagamento?.['dinheiro'] || 0) | number:'1.2-2' }}</td>
-                        <td>R$ {{ (resumoDia?.por_pagamento?.['cartao_credito'] || 0) | number:'1.2-2' }}</td>
-                        <td>R$ {{ (resumoDia?.por_pagamento?.['cartao_debito'] || 0) | number:'1.2-2' }}</td>
-                        <td>R$ {{ (resumoDia?.por_pagamento?.['pix'] || 0) | number:'1.2-2' }}</td>
-                        <td>R$ {{ (resumoDia?.receita_total || 0) | number:'1.2-2' }}</td>
+                        <td>{{ (resumoDia?.por_pagamento?.['dinheiro'] || 0) | currencyBR }}</td>
+                        <td>{{ (resumoDia?.por_pagamento?.['cartao_credito'] || 0) | currencyBR }}</td>
+                        <td>{{ (resumoDia?.por_pagamento?.['cartao_debito'] || 0) | currencyBR }}</td>
+                        <td>{{ (resumoDia?.por_pagamento?.['pix'] || 0) | currencyBR }}</td>
+                        <td>{{ (resumoDia?.receita_total || 0) | currencyBR }}</td>
                         <td>{{ resumoDia?.vendas_com_multiplo_pagamento || 0 }}</td>
                     </tr>}
                     @if (resumoMes?.por_pagamento) {<tr>
                         <td>Mês atual</td>
-                        <td>R$ {{ (resumoMes?.por_pagamento?.['dinheiro'] || 0) | number:'1.2-2' }}</td>
-                        <td>R$ {{ (resumoMes?.por_pagamento?.['cartao_credito'] || 0) | number:'1.2-2' }}</td>
-                        <td>R$ {{ (resumoMes?.por_pagamento?.['cartao_debito'] || 0) | number:'1.2-2' }}</td>
-                        <td>R$ {{ (resumoMes?.por_pagamento?.['pix'] || 0) | number:'1.2-2' }}</td>
-                        <td>R$ {{ (resumoMes?.receita_total || 0) | number:'1.2-2' }}</td>
+                        <td>{{ (resumoMes?.por_pagamento?.['dinheiro'] || 0) | currencyBR }}</td>
+                        <td>{{ (resumoMes?.por_pagamento?.['cartao_credito'] || 0) | currencyBR }}</td>
+                        <td>{{ (resumoMes?.por_pagamento?.['cartao_debito'] || 0) | currencyBR }}</td>
+                        <td>{{ (resumoMes?.por_pagamento?.['pix'] || 0) | currencyBR }}</td>
+                        <td>{{ (resumoMes?.receita_total || 0) | currencyBR }}</td>
                         <td>{{ resumoMes?.vendas_com_multiplo_pagamento || 0 }}</td>
                     </tr>}
                 </tbody>
@@ -288,7 +288,7 @@
                                 {{ venda['pagamentos_resumo'] }}
                             </div>} @else {<ng-template>{{ getMetodoPagamentoNome(venda.metodo_pagamento) }}</ng-template>}
                         </td>
-                        <td class="valor-total">R$ {{ venda.preco_total.toFixed(2) }}</td>
+                        <td class="valor-total">{{ venda.preco_total | currencyBR }}</td>
                         <td class="acoes-col acoes-left">
                             <button *ngIf="venda._isCheckout" type="button" class="btn-enviar" (click)="openEnviarModal(venda.id)" title="Enviar nota">📩</button>
                         </td>
@@ -308,8 +308,8 @@
                                             <span>{{ it.produto_nome || it.produtoNome }}</span>
                                         </td>
                                         <td>{{ it.quantidade || it.quantidade_vendida }}</td>
-                                        <td>R$ {{ (it.preco_unitario || it.precoUnitario || 0).toFixed(2) }}</td>
-                                        <td>R$ {{ (it.preco_total || it.precoTotal || 0).toFixed(2) }}</td>
+                                        <td>{{ (it.preco_unitario || it.precoUnitario || 0) | currencyBR }}</td>
+                                        <td>{{ (it.preco_total || it.precoTotal || 0) | currencyBR }}</td>
                                     </tr>}
                                 </tbody>
                             </table>

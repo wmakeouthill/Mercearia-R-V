@@ -2,11 +2,12 @@ import { Component, Input, Output, EventEmitter, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api';
+import { CurrencyBrPipe } from '../../pipes/currency-br.pipe';
 
 @Component({
     selector: 'app-exchange-return-detail-modal',
     standalone: true,
-    imports: [CommonModule, FormsModule],
+    imports: [CommonModule, FormsModule, CurrencyBrPipe],
     templateUrl: './exchange-return-detail-modal.html',
     styleUrls: ['./exchange-return-detail-modal.scss']
 })
