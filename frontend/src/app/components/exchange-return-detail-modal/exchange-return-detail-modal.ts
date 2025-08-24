@@ -25,7 +25,9 @@ export class ExchangeReturnDetailModalComponent implements OnInit {
     replacementSearch: { [itemId: number]: string } = {};
     replacementFiltered: { [itemId: number]: any[] } = {};
     showReplacementList: { [itemId: number]: boolean } = {};
-    replacementPosition: { [itemId: number]: { top?: string } } = {};
+    replacementPosition: { [itemId: number]: { top?: string; left?: string; width?: string } } = {};
+    replacementInputWidth: { [itemId: number]: number } = {};
+    replacementHideTimer: { [itemId: number]: any } = {};
     // pagination for replacement dropdown
     replacementPage: { [itemId: number]: number } = {};
     replacementPageSize = 5;
@@ -61,7 +63,12 @@ export class ExchangeReturnDetailModalComponent implements OnInit {
                 // fetch available products for replacement dropdown (simple list)
                 this.api.getProdutos().subscribe({
                     next: (ps) => {
-                        this.saleDetails.produtosDisponiveis = (ps || []).map((p: any) => ({ id: p.id, nome: p.nome, quantidade_estoque: p.quantidade_estoque }));
+                        this.saleDetails.produtosDisponiveis = (ps || []).map((p: any) => ({
+                            id: p.id,
+                            nome: p.nome,
+                            quantidade_estoque: p.quantidade_estoque,
+                            preco_venda: Number(p.preco_venda ?? p.precoVenda ?? p.preco) || 0
+                        }));
                         // initialize replacement lists and pagination for each sale item
                         (r.itens || []).forEach((it: any) => {
                             this.replacementFiltered[it.produto_id] = this.saleDetails.produtosDisponiveis || [];
@@ -82,6 +89,7 @@ export class ExchangeReturnDetailModalComponent implements OnInit {
             ? this.replacementFiltered[itemId]
             : (this.saleDetails?.produtosDisponiveis || []);
         this.replacementPage[itemId] ??= 0;
+        this.clearHideTimer(itemId);
         this.updateReplacementPagination(itemId);
         // compute dropdown position to avoid clipping: place it above if near bottom of modal
         try {
@@ -92,12 +100,16 @@ export class ExchangeReturnDetailModalComponent implements OnInit {
                 const spaceBelow = viewportHeight - rect.bottom;
                 const top = rect.bottom + window.scrollY;
                 const left = rect.left + window.scrollX;
+                this.replacementInputWidth[itemId] = rect.width;
                 // if space below < 220px, place above the input
                 if (spaceBelow < 220) {
                     const aboveTop = rect.top + window.scrollY - Math.min(260, rect.height + 12) - 6;
-                    this.replacementPosition[itemId] = { top: `${aboveTop}px`, left: `${left}px`, width: `${rect.width}px` };
+                    // compute auto width
+                    const w = this.computeDropdownWidthForItems(this.replacementFiltered[itemId] || [], rect.width);
+                    this.replacementPosition[itemId] = { top: `${aboveTop}px`, left: `${left}px`, width: `${w}px` };
                 } else {
-                    this.replacementPosition[itemId] = { top: `${top}px`, left: `${left}px`, width: `${rect.width}px` };
+                    const w = this.computeDropdownWidthForItems(this.replacementFiltered[itemId] || [], rect.width);
+                    this.replacementPosition[itemId] = { top: `${top}px`, left: `${left}px`, width: `${w}px` };
                 }
             }
         } catch { /* ignore positioning errors */ }
@@ -121,10 +133,64 @@ export class ExchangeReturnDetailModalComponent implements OnInit {
         this.showReplacementList[itemId] = false;
         this.replacementFiltered[itemId] = this.saleDetails?.produtosDisponiveis || [];
         this.updateReplacementPagination(itemId);
+        // automatically mark action as 'exchange' and compute price difference
+        try {
+            // ensure the item is set to exchange
+            this.selections[itemId] = 'exchange';
+            const qty = this.quantities[itemId] || 1;
+            // find original sale item by produto_id
+            const orig = (this.saleDetails && Array.isArray(this.saleDetails.itens))
+                ? this.saleDetails.itens.find((it: any) => it.produto_id === itemId || it.produtoId === itemId)
+                : null;
+            let origUnit = 0;
+            if (orig) {
+                if (orig.preco_unitario != null) {
+                    origUnit = orig.preco_unitario;
+                } else if (orig.precoUnitario != null) {
+                    origUnit = orig.precoUnitario;
+                } else if (orig.preco_total != null && (orig.quantidade != null && orig.quantidade !== 0)) {
+                    origUnit = orig.preco_total / (orig.quantidade || 1);
+                } else {
+                    origUnit = 0;
+                }
+            }
+            const replPrice = Number(product.preco_venda || product.precoVenda || product.preco || 0) || 0;
+            const diffPerUnit = replPrice - origUnit;
+            const totalDiff = diffPerUnit * qty;
+            if (!this.valueAdjustments[itemId]) this.valueAdjustments[itemId] = { type: null, amount: 0 };
+            if (Math.abs(totalDiff) < 0.001) {
+                this.valueAdjustments[itemId].type = null;
+                this.valueAdjustments[itemId].amount = 0;
+            } else if (totalDiff > 0) {
+                this.valueAdjustments[itemId].type = 'charge';
+                this.valueAdjustments[itemId].amount = Number(totalDiff.toFixed(2));
+            } else {
+                this.valueAdjustments[itemId].type = 'refund';
+                this.valueAdjustments[itemId].amount = Number((Math.abs(totalDiff)).toFixed(2));
+            }
+        } catch (e) {
+            console.warn('Erro ao calcular diferença de preço para troca', e);
+        }
     }
 
     hideReplacementListDelayed(itemId: number): void {
-        setTimeout(() => { this.showReplacementList[itemId] = false; }, 150);
+        this.clearHideTimer(itemId);
+        this.replacementHideTimer[itemId] = setTimeout(() => { this.showReplacementList[itemId] = false; this.clearHideTimer(itemId); }, 150);
+    }
+
+    clearHideTimer(itemId: number): void {
+        const t = this.replacementHideTimer[itemId];
+        if (t) {
+            clearTimeout(t);
+            delete this.replacementHideTimer[itemId];
+        }
+    }
+
+    onDropdownMouseDown(itemId: number, event: MouseEvent): void {
+        // prevent the input blur from immediately closing the dropdown when interacting with it
+        event.preventDefault();
+        this.clearHideTimer(itemId);
+        this.showReplacementList[itemId] = true;
     }
 
     updateReplacementPagination(itemId: number): void {
@@ -148,6 +214,22 @@ export class ExchangeReturnDetailModalComponent implements OnInit {
         const max = (this.replacementTotalPages[itemId] || 1) - 1;
         this.replacementPage[itemId] = Math.min(max, p);
         this.updateReplacementPagination(itemId);
+    }
+
+    // Determine dropdown width based on longest item string and the input width
+    private computeDropdownWidthForItems(items: any[], inputWidth: number): number {
+        try {
+            // crude measurement: estimate characters width ~8px and add padding
+            let maxLabelLen = 0;
+            for (const it of items) {
+                const label = `${it.nome} R$ ${it.preco_venda}`;
+                if (label.length > maxLabelLen) maxLabelLen = label.length;
+            }
+            const est = Math.max(inputWidth, Math.min(700, maxLabelLen * 8 + 80));
+            return est;
+        } catch {
+            return inputWidth;
+        }
     }
 
     confirmActions(): void {
