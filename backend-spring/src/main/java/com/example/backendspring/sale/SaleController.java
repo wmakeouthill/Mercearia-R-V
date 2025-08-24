@@ -118,7 +118,11 @@ public class SaleController {
             }
 
             // Exclude checkout orders (CheckoutController is authoritative for these)
-            orders = orders.stream().filter(o -> o.getPagamentos() == null || o.getPagamentos().isEmpty()).toList();
+            // But when the client requested a timestamp or date range, include checkout
+            // orders as well so time-based searches return expected results.
+            if (inicioTs == null && fimTs == null && inicio == null && fim == null) {
+                orders = orders.stream().filter(o -> o.getPagamentos() == null || o.getPagamentos().isEmpty()).toList();
+            }
 
             java.util.List<java.util.Map<String, Object>> rows = new java.util.ArrayList<>();
 

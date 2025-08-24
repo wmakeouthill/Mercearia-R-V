@@ -1,5 +1,6 @@
 import { Component, OnInit, OnDestroy, Output, EventEmitter } from '@angular/core';
-import { Subject, takeUntil, debounceTime, distinctUntilChanged } from 'rxjs';
+import { Subject, takeUntil, debounceTime, distinctUntilChanged, forkJoin, of } from 'rxjs';
+import { catchError } from 'rxjs/operators';
 import { formatDateBR } from '../../utils/date-utils';
 import { ExchangeReturnDetailModalComponent } from '../exchange-return-detail-modal/exchange-return-detail-modal';
 import { CurrencyBrPipe } from '../../pipes/currency-br.pipe';
@@ -56,6 +57,33 @@ export class ExchangeReturnListComponent implements OnInit, OnDestroy {
         });
     }
 
+    // Resolve operator username from various backend shapes
+    private resolveOperator(obj: any): string | null {
+        if (!obj) return null;
+        // explicit username fields
+        if (obj.operador_username) return obj.operador_username;
+        if (obj.operator_username) return obj.operator_username;
+        if (obj.operator) return typeof obj.operator === 'string' ? obj.operator : (obj.operator.username || obj.operator.name || obj.operator.nome || null);
+        if (obj.operador) return typeof obj.operador === 'string' ? obj.operador : (obj.operador.username || obj.operador.name || obj.operador.nome || null);
+        // nested in payments or other shapes
+        if (obj.pagos && Array.isArray(obj.pagos) && obj.pagos.length > 0) {
+            const p = obj.pagos[0];
+            if (p.operador) return p.operador.username || null;
+        }
+        return null;
+    }
+
+    // Resolve customer name from various backend shapes
+    private resolveCustomer(obj: any): string | null {
+        if (!obj) return null;
+        if (obj.customer_name) return obj.customer_name;
+        if (obj.cliente_nome) return obj.cliente_nome;
+        if (obj.customerName) return obj.customerName;
+        if (obj.cliente) return typeof obj.cliente === 'string' ? obj.cliente : (obj.cliente.nome || obj.cliente.name || null);
+        if (obj.customer) return typeof obj.customer === 'string' ? obj.customer : (obj.customer.name || obj.customer.nome || null);
+        return null;
+    }
+
     onQueryInput(value: string): void {
         this.q = value;
         this.querySubject.next(value);
@@ -72,86 +100,89 @@ export class ExchangeReturnListComponent implements OnInit, OnDestroy {
         // Log params for debugging backend filtering
         console.log('searchSales params:', { page: p, size: this.size, from: fromUtc, to: toUtc, q: this.q, operator: this.operatorFilter });
 
-        this.api.searchSales(p, this.size, fromUtc || undefined, toUtc || undefined, this.q || undefined).subscribe({
-            next: (r) => {
+        forkJoin({
+            search: this.api.searchSales(p, this.size, fromUtc || undefined, toUtc || undefined, this.q || undefined).pipe(catchError(() => of(null))),
+            completas: this.api.getVendasCompletas().pipe(catchError(() => of([])))
+        }).subscribe({
+            next: (res: any) => {
+                const r = res.search || {};
                 let list = r.items || [];
-                // client-side fallback filtering (in case backend ignores from/to/q/operator)
-                const filtered = [] as any[];
-                const fromTs = fromUtc ? new Date(fromUtc).getTime() : null;
-                const toTs = toUtc ? new Date(toUtc).getTime() : null;
+                const completas = Array.isArray(res.completas) ? res.completas : [];
 
-                for (const it of list) {
-                    try {
-                        // date filter
-                        if (fromTs !== null || toTs !== null) {
-                            const dv = it.data_venda ? new Date(it.data_venda).getTime() : null;
-                            if (dv === null) continue;
-                            if (fromTs !== null && dv < fromTs) continue;
-                            if (toTs !== null && dv > toTs) continue;
-                        }
-
-                        // operator filter
-                        if (this.operatorFilter && String(this.operatorFilter).trim()) {
-                            if (!it.operator || String(it.operator).toLowerCase() !== String(this.operatorFilter).toLowerCase()) continue;
-                        }
-
-                        // text query filter (id, customer_name, preview)
-                        if (this.q && String(this.q).trim()) {
-                            const ql = String(this.q).toLowerCase();
-                            const idMatch = String(it.id || '').toLowerCase().includes(ql);
-                            const cust = String(it.customer_name || '').toLowerCase().includes(ql);
-                            const previewArr = Array.isArray(it.preview) ? it.preview : (it.itens || it.items || it.sale_items || []);
-                            const previewStr = Array.isArray(previewArr) ? previewArr.join(', ').toLowerCase() : String(previewArr || '').toLowerCase();
-                            const previewMatch = previewStr.includes(ql);
-                            if (!(idMatch || cust || previewMatch)) continue;
-                        }
-
-                        filtered.push(it);
-                    } catch {
-                        // skip invalid item
-                    }
-                }
-
-                if (filtered.length > 0) list = filtered;
-                // ensure each item has a products_preview, total_preview, operator and customer fields
-                list = list.map((it: any) => {
-                    // try to build from whatever the search endpoint returned
-                    const itemsArr = it.itens || it.items || it.sale_items || [];
-                    const names = Array.isArray(itemsArr)
-                        ? itemsArr.map((x: any) => x && (x.produto_nome || x.product_name || x.name || x.title || x.produto_id)).filter(Boolean)
-                        : [];
-                    it.products_preview = names.join(', ');
-
-                    // total may be present in different fields
-                    it.total_preview = it.preco_total || it.valor_total || it.total || it.order_total || it.precoTotal || '';
-
-                    // if total not present, try to compute from item lines (price * qty)
-                    if ((!it.total_preview || it.total_preview === '') && Array.isArray(itemsArr) && itemsArr.length > 0) {
-                        const computed = this.computeItemsSum(itemsArr);
-                        if (computed > 0) it.total_preview = computed;
-                    }
-
-                    // if we couldn't build a products preview or total, fetch full order details asynchronously
-                    if ((!it.products_preview || it.products_preview.length === 0) || !it.total_preview) {
-                        this.populateOrderPreview(it);
-                    }
-
-                    // normalize operator field from various backend shapes
-                    it.operator = it.operator || it.operador || it.operator_username || it.operador_username || (it.operador_username && String(it.operador_username)) || null;
-                    // normalize customer name/id
-                    it.customer_name = it.customer_name || it.cliente_nome || it.cliente_name || it.customerName || null;
-                    it.customer_id = it.customer_id || it.cliente_id || it.clienteId || null;
-
+                // map completas into lightweight search-shape and normalize operator/customer
+                const completasMapped = completas.map((c: any) => {
+                    const it: any = { ...c };
+                    it.itens = it.itens || it.items || [];
+                    const previewArr = Array.isArray(it.itens) ? it.itens.map((i: any) => i.produto_nome || i.produtoNome || i.product_name || i.name || i.title || i.produto_id).filter(Boolean) : [];
+                    it.products_preview = previewArr.join(', ');
+                    it.itens_count = it.itens.length;
+                    it.total_preview = it.preco_total || it.total_final || it.totalFinal || it.total || it.order_total || null;
+                    it.preco_total = it.preco_total || it.total_preview;
+                    it.operator = this.resolveOperator(it) || null;
+                    it.customer_name = this.resolveCustomer(it) || null;
+                    it.data_venda = it.data_venda || it.dataVenda || it.dataVenda;
                     return it;
                 });
-                if (this.operatorFilter) {
-                    list = list.filter((it: any) => (it.operator || '').toLowerCase() === String(this.operatorFilter).toLowerCase());
+
+                // If detailed search returned items, prefer it but replace entries with checkout data when available
+                if (Array.isArray(list) && list.length > 0) {
+                    const completasById: Record<string, any> = {};
+                    for (const c of completasMapped) if (c && c.id != null) completasById[String(c.id)] = c;
+                    list = list.map((it: any) => {
+                        const cid = it && it.id != null ? String(it.id) : null;
+                        if (cid && completasById[cid]) {
+                            // merge checkout authoritative data on top
+                            return { ...it, ...completasById[cid] };
+                        }
+                        return it;
+                    });
+                    // normalize fields for any remaining detailed items
+                    list = list.map((it: any) => {
+                        const itemsArr = it.itens || it.items || it.sale_items || [];
+                        const names = Array.isArray(itemsArr) ? itemsArr.map((x: any) => x && (x.produto_nome || x.product_name || x.name || x.title || x.produto_id)).filter(Boolean) : [];
+                        it.products_preview = it.products_preview || names.join(', ');
+                        it.itens_count = it.itens_count || itemsArr.length || it.itens_count || 0;
+                        it.total_preview = it.total_preview || it.preco_total || it.valor_total || it.total || it.order_total || it.precoTotal || '';
+                        if ((!it.total_preview || it.total_preview === '') && Array.isArray(itemsArr) && itemsArr.length > 0) {
+                            const computed = this.computeItemsSum(itemsArr);
+                            if (computed > 0) it.total_preview = computed;
+                        }
+                        it.operator = this.resolveOperator(it) || null;
+                        it.customer_name = this.resolveCustomer(it) || null;
+                        return it;
+                    });
+
+                    // apply operator filter if present
+                    if (this.operatorFilter) {
+                        list = list.filter((it: any) => (it.operator || '').toLowerCase() === String(this.operatorFilter).toLowerCase());
+                    }
+
+                    this.items = list;
+                    this.page = (r.page || 0);
+                    this.size = (r.size || this.size);
+                    this.total = (r.total_elements || list.length);
+                    this.totalPages = Math.max(1, Math.ceil(this.total / this.size));
+                    this.buildPaginationItems();
+                    this.loading = false;
+                    return;
                 }
-                this.items = list;
-                this.page = (r.page || 0);
-                this.size = (r.size || this.size);
-                this.total = (r.total_elements || list.length);
-                this.totalPages = Math.max(1, Math.ceil(this.total / this.size));
+
+                // If detailed search returned nothing (legacy endpoint removed), paginate checkout results locally
+                const completasFull = completasMapped;
+                // apply operator filter
+                let completasFiltered = completasFull;
+                if (this.operatorFilter) {
+                    completasFiltered = completasFull.filter((it: any) => (it.operator || '').toLowerCase() === String(this.operatorFilter).toLowerCase());
+                }
+                const total = completasFiltered.length;
+                const start = p * this.size;
+                const end = start + this.size;
+                const pageSlice = completasFiltered.slice(start, end);
+                this.items = pageSlice;
+                this.page = p;
+                this.size = this.size;
+                this.total = total;
+                this.totalPages = Math.max(1, Math.ceil(total / this.size));
                 this.buildPaginationItems();
                 this.loading = false;
             }, error: () => { this.loading = false; }
@@ -293,6 +324,17 @@ export class ExchangeReturnListComponent implements OnInit, OnDestroy {
                     if (computed > 0) it.total_preview = computed;
                 }
                 if (!it.itens_count && Array.isArray(fullItems)) it.itens_count = fullItems.length;
+                // populate operator and customer from full order when available
+                try {
+                    it.operator = it.operator || r.operador_username || (r.operador && (r.operador.username || r.operador.name || r.operador.nome)) || it.operator || null;
+                } catch {
+                    /* ignore */
+                }
+                try {
+                    it.customer_name = it.customer_name || r.cliente_nome || r.customerName || (r.cliente && (r.cliente.nome || r.cliente.name)) || (r.customer && (r.customer.name || r.customer.nome)) || it.customer_name || null;
+                } catch {
+                    /* ignore */
+                }
             },
             error: () => { /* ignore */ }
         });

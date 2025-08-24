@@ -353,6 +353,17 @@ public class CheckoutController {
 
                     resp.put("itens", itens);
                     resp.put("pagamentos", pagamentos);
+                    // include operador and cliente summary for list view
+                    try {
+                        if (venda.getOperador() != null && venda.getOperador().getUsername() != null)
+                            resp.put("operador_username", venda.getOperador().getUsername());
+                    } catch (Exception ignored) {
+                    }
+                    try {
+                        if (venda.getCliente() != null && venda.getCliente().getNome() != null)
+                            resp.put("cliente_nome", venda.getCliente().getNome());
+                    } catch (Exception ignored) {
+                    }
                     return resp;
                 }).toList();
         return ResponseEntity.ok(lista);
@@ -556,6 +567,24 @@ public class CheckoutController {
             resp.put("customer_email", venda.getCustomerEmail());
         if (venda.getCustomerPhone() != null)
             resp.put("customer_phone", venda.getCustomerPhone());
+
+        // include operador / cliente summary so frontend components can display them
+        try {
+            if (venda.getOperador() != null && venda.getOperador().getUsername() != null)
+                resp.put("operador_username", venda.getOperador().getUsername());
+        } catch (Exception ignored) {
+        }
+        try {
+            if (venda.getCliente() != null) {
+                if (venda.getCliente().getNome() != null)
+                    resp.put("cliente_nome", venda.getCliente().getNome());
+                if (venda.getCliente().getId() != null)
+                    resp.put("cliente_id", venda.getCliente().getId());
+            } else if (venda.getCustomerName() != null) {
+                resp.put("cliente_nome", venda.getCustomerName());
+            }
+        } catch (Exception ignored) {
+        }
         return resp;
     }
 
