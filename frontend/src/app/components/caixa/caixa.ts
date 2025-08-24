@@ -154,8 +154,10 @@ export class CaixaComponent implements OnInit {
     let periodoInicio: string | undefined;
     let periodoFim: string | undefined;
     if (this.filtroModo === 'dia') {
-      // usar periodo_inicio/periodo_fim em vez de data isolada para evitar
-      // inconsistências de timezone/serialização entre frontend/backend
+      // para manter todos os endpoints consistentes, informar tanto o parâmetro
+      // `data` (usado por resumo-dia) quanto o periodo_inicio/periodo_fim (usado
+      // por listagem quando necessário)
+      dataParam = this.dataSelecionada;
       periodoInicio = this.dataSelecionada;
       periodoFim = this.dataSelecionada;
     } else if (this.filtroModo === 'mes') {
@@ -351,10 +353,19 @@ export class CaixaComponent implements OnInit {
   }
 
   get totalVendasHoje(): number {
+    // Quando o usuário aplica filtros no modo 'dia', preferir o somatório retornado
+    // pela listagem paginada (sumVendas) que considera filtros por tipo/método/hora.
+    if (this.filtroModo === 'dia' && (this.filtroTipo || this.filtroMetodo || this.filtroHoraInicio || this.filtroHoraFim)) {
+      return Number(this.sumVendas || 0);
+    }
     return Number(this.resumoVendasDia?.receita_total || 0);
   }
 
   get saldoMovimentacoesHoje(): number {
+    // Preferir somatório calculado pelo endpoint de listagem quando filtros ativos
+    if (this.filtroModo === 'dia' && (this.filtroTipo || this.filtroMetodo || this.filtroHoraInicio || this.filtroHoraFim)) {
+      return Number((this.sumEntradas || 0) - (this.sumRetiradas || 0));
+    }
     return Number(this.resumo?.saldo_movimentacoes || 0);
   }
 

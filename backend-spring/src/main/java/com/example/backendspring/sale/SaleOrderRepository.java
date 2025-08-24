@@ -12,10 +12,10 @@ import java.util.List;
 
 public interface SaleOrderRepository extends JpaRepository<SaleOrder, Long> {
 
-    @Query("select so from SaleOrder so left join fetch so.itens left join fetch so.pagamentos where function('date', so.dataVenda) = :dia order by so.dataVenda desc")
+    @Query(value = "SELECT * FROM venda_cabecalho WHERE (data_venda AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date = :dia ORDER BY data_venda DESC", nativeQuery = true)
     List<SaleOrder> findByDia(@Param("dia") LocalDate dia);
 
-    @Query("select so from SaleOrder so where function('date', so.dataVenda) between :inicio and :fim order by so.dataVenda desc")
+    @Query(value = "SELECT * FROM venda_cabecalho WHERE (data_venda AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date BETWEEN :inicio AND :fim ORDER BY data_venda DESC", nativeQuery = true)
     List<SaleOrder> findByPeriodo(@Param("inicio") LocalDate inicio, @Param("fim") LocalDate fim);
 
     // pageable variants (no fetch-join to avoid MultipleBagFetchException)
