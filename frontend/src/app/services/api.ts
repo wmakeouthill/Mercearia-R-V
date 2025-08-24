@@ -287,7 +287,8 @@ export class ApiService {
 
   // Search sales for exchange/return modal (backend: /api/sales/search)
   searchSales(page: number = 0, size: number = 5, from?: string, to?: string, q?: string) {
-    let url = `${this.baseUrl}/sales/search?page=${page}&size=${size}`;
+    // Use the unified detailed vendas endpoint which supports date/time filtering
+    let url = `${this.baseUrl}/vendas/detalhadas?page=${page}&size=${size}`;
     if (from) url += `&from=${encodeURIComponent(from)}`;
     if (to) url += `&to=${encodeURIComponent(to)}`;
     if (q) url += `&q=${encodeURIComponent(q)}`;

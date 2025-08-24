@@ -1,12 +1,14 @@
 <div class="exchange-list">
   <div class="filters">
-    <input type="text" placeholder="Pesquisar (id, cliente, item)" [(ngModel)]="q" class="input-filtro-busca">
-    <select [(ngModel)]="operatorFilter" class="select-filtro-operator">
+    <input type="text" placeholder="Pesquisar (id, cliente, item)" [(ngModel)]="q" (input)="onQueryInput(q)" class="input-filtro-busca">
+    <select [(ngModel)]="operatorFilter" class="select-filtro-operator" (change)="loadPage(0)">
       <option value="">Todos Operadores</option>
       <option *ngFor="let op of operators" [value]="op.username">{{ op.username }}</option>
     </select>
     <input type="date" [(ngModel)]="from">
+    <input type="time" [(ngModel)]="fromTime" placeholder="HH:mm">
     <input type="date" [(ngModel)]="to">
+    <input type="time" [(ngModel)]="toTime" placeholder="HH:mm">
     <label>Linhas:
       <select [(ngModel)]="size" (change)="loadPage(0)">
         <option [ngValue]="5">5</option>
@@ -14,23 +16,25 @@
         <option [ngValue]="20">20</option>
       </select>
     </label>
-    <button class="btn-limpar-filtro" (click)="q=''; operatorFilter=''; from=''; to=''; loadPage(0)">Limpar</button>
+    <button class="btn-limpar-filtro" (click)="q=''; operatorFilter=''; from=''; to=''; fromTime=''; toTime=''; loadPage(0)">Limpar</button>
     <button class="btn-filtrar" (click)="loadPage(0)">🔍 Buscar</button>
   </div>
 
   <div *ngIf="loading">Carregando...</div>
   <table *ngIf="!loading">
     <thead>
-      <tr><th>ID</th><th>Data</th><th>Cliente</th><th>Operador</th><th>Itens</th><th>Ações</th></tr>
+      <tr><th>ID</th><th>Produtos</th><th>Itens</th><th>Total</th><th>Operador</th><th>Cliente</th><th>Data</th><th>Ações</th></tr>
     </thead>
     <tbody>
       <tr *ngFor="let it of items">
         <td>{{ it.id }}</td>
-        <td>{{ formatDate(it.data_venda) }}</td>
-        <td>{{ it.customer_name || '-' }}</td>
-        <td>{{ it.operator || '-' }}</td>
+        <td class="produtos-preview" title="{{ it.products_preview || '' }}">{{ it.products_preview || '' }}</td>
         <td>{{ it.itens_count }}</td>
-        <td><button class="btn-detalhar" (click)="openSaleDetail(it)">Detalhar</button></td>
+        <td class="tabela-total">{{ it.total_preview ? (it.total_preview | currencyBR) : '' }}</td>
+        <td>{{ it.operator || '-' }}</td>
+        <td>{{ it.customer_name || '-' }}</td>
+        <td>{{ formatDate(it.data_venda) }}</td>
+        <td class="acoes-col"><button class="btn-detalhar" (click)="openSaleDetail(it)">Detalhar</button></td>
       </tr>
     </tbody>
   </table>

@@ -70,18 +70,47 @@ public class SaleController {
         try {
             java.time.LocalDate inicio = null;
             java.time.LocalDate fim = null;
+            java.time.OffsetDateTime inicioTs = null;
+            java.time.OffsetDateTime fimTs = null;
+
+            // Detect if parameters include time (ISO) and parse accordingly
             try {
-                if (from != null && !from.isBlank())
-                    inicio = java.time.LocalDate.parse(from);
-                if (to != null && !to.isBlank())
-                    fim = java.time.LocalDate.parse(to);
+                if (from != null && !from.isBlank()) {
+                    if (from.contains("T") || from.contains("Z") || from.contains(":")) {
+                        inicioTs = java.time.OffsetDateTime.parse(from);
+                    } else {
+                        inicio = java.time.LocalDate.parse(from);
+                    }
+                }
+                if (to != null && !to.isBlank()) {
+                    if (to.contains("T") || to.contains("Z") || to.contains(":")) {
+                        fimTs = java.time.OffsetDateTime.parse(to);
+                    } else {
+                        fim = java.time.LocalDate.parse(to);
+                    }
+                }
             } catch (Exception ignored) {
             }
 
-            // fetch only orders (unpaged). Legacy `vendas` is deprecated and not used.
-            java.util.List<com.example.backendspring.sale.SaleOrder> orders = (inicio != null && fim != null)
-                    ? saleOrderRepository.findByPeriodo(inicio, fim)
-                    : saleOrderRepository.findAllOrderByData();
+            // fetch only orders (unpaged). Prefer timestamp search when provided
+            java.util.List<com.example.backendspring.sale.SaleOrder> orders;
+            if (inicioTs != null && fimTs != null) {
+                log.info("Searching vendas by timestamp range (controller fallback): from={} to={}", inicioTs, fimTs);
+                // Fallback: fetch all and filter in-memory to avoid native query binding issues
+                var all = saleOrderRepository.findAllOrderByData();
+                final java.time.OffsetDateTime fromVal = inicioTs;
+                final java.time.OffsetDateTime toVal = fimTs;
+                orders = all.stream().filter(o -> {
+                    var dv = o.getDataVenda();
+                    return (dv != null && !dv.isBefore(fromVal) && !dv.isAfter(toVal));
+                }).toList();
+                log.info("Orders after timestamp in-memory filter: {}", orders.size());
+            } else if (inicio != null && fim != null) {
+                log.info("Searching vendas by date range: {} to {}", inicio, fim);
+                orders = saleOrderRepository.findByPeriodo(inicio, fim);
+            } else {
+                orders = saleOrderRepository.findAllOrderByData();
+            }
 
             java.util.List<java.util.Map<String, Object>> rows = new java.util.ArrayList<>();
 
@@ -104,6 +133,28 @@ public class SaleController {
                 m.put("quantidade_vendida", qtd);
                 m.put("preco_total", o.getTotalFinal());
                 m.put("data_venda", o.getDataVenda());
+                // operador (username) and cliente info
+                if (o.getOperador() != null) {
+                    var u = o.getOperador();
+                    m.put("operator", u.getUsername());
+                    m.put("operator_username", u.getUsername());
+                    m.put("operador_username", u.getUsername());
+                    m.put("operator_id", u.getId());
+                } else {
+                    m.put("operator", null);
+                    m.put("operator_username", null);
+                    m.put("operador_username", null);
+                    m.put("operator_id", null);
+                }
+                if (o.getCliente() != null) {
+                    var c = o.getCliente();
+                    m.put("customer_name", c.getNome());
+                    m.put("cliente_nome", c.getNome());
+                    m.put("customer_id", c.getId());
+                    m.put("cliente_id", c.getId());
+                } else {
+                    m.put("customer_name", null);
+                }
                 var itens = o.getItens().stream().map(it -> {
                     var im = new java.util.LinkedHashMap<String, Object>();
                     im.put("produto_id", it.getProduto() != null ? it.getProduto().getId() : null);

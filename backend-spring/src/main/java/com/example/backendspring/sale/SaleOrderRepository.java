@@ -18,6 +18,11 @@ public interface SaleOrderRepository extends JpaRepository<SaleOrder, Long> {
     @Query(value = "SELECT * FROM venda_cabecalho WHERE (data_venda AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date BETWEEN :inicio AND :fim ORDER BY data_venda DESC", nativeQuery = true)
     List<SaleOrder> findByPeriodo(@Param("inicio") LocalDate inicio, @Param("fim") LocalDate fim);
 
+    // New: filter by timestamp range (expects UTC timestamps)
+    @Query(value = "SELECT * FROM venda_cabecalho WHERE data_venda BETWEEN :from AND :to ORDER BY data_venda DESC", nativeQuery = true)
+    List<SaleOrder> findByPeriodoTimestamps(@Param("from") java.time.OffsetDateTime from,
+            @Param("to") java.time.OffsetDateTime to);
+
     // pageable variants (no fetch-join to avoid MultipleBagFetchException)
     List<SaleOrder> findByClienteIdOrderByDataVendaDesc(Long clienteId, Pageable pageable);
 
