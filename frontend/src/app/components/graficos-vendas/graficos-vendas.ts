@@ -471,9 +471,28 @@ export class GraficosVendasComponent implements OnInit {
         });
       },
       error: err => {
-        this.erro = 'Falha ao carregar vendas';
-        this.carregando = false;
-        logger.error('GRAFICOS_VENDAS', 'LOAD_FAIL', 'Erro ao carregar vendas', { err });
+        // Se falhou ao carregar vendas legado (backend pode ter removido endpoint), tentar prosseguir apenas com checkout
+        logger.warn('GRAFICOS_VENDAS', 'LOAD_LEGADO_FAIL', 'Falha ao carregar vendas legado, tentando apenas vendas completas (checkout)', { err });
+        this.vendasLegado = [];
+        // Tentar buscar somente o checkout para não impedir os gráficos
+        this.api.getVendasCompletas().subscribe({
+          next: completas => {
+            this.vendasCheckout = this.mapCheckoutParaLinhas(completas);
+            this.unificarVendas();
+            this.definirAnos();
+            this.recalcularTudo();
+            this.carregando = false;
+          },
+          error: errC => {
+            logger.error('GRAFICOS_VENDAS', 'LOAD_CHECKOUT_FAIL_AFTER_LEGADO', 'Erro ao carregar checkout após falha no legado', { errC, originalErr: err });
+            this.vendasCheckout = [];
+            this.unificarVendas();
+            this.definirAnos();
+            this.recalcularTudo();
+            this.carregando = false;
+            this.erro = 'Falha ao carregar vendas';
+          }
+        });
       }
     });
   }
