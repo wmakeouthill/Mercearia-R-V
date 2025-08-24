@@ -94,10 +94,12 @@ public class SaleAdjustmentController {
 
             // adjust sale item quantity / remove if zero
             int newQty = targetItem.getQuantidade() - qty;
+            boolean itemRemoved = false;
             if (newQty <= 0) {
                 // remove item
                 venda.getItens().removeIf(it -> it.getId().equals(targetItem.getId()));
                 saleItemRepository.delete(targetItem);
+                itemRemoved = true;
             } else {
                 targetItem.setQuantidade(newQty);
                 targetItem.setPrecoTotal(targetItem.getPrecoUnitario() * newQty);
@@ -145,7 +147,7 @@ public class SaleAdjustmentController {
             // create adjustment record
             SaleAdjustment adj = SaleAdjustment.builder()
                     .saleOrder(venda)
-                    .saleItem(targetItem)
+                    .saleItem(itemRemoved ? null : targetItem)
                     .type("return")
                     .quantity(qty)
                     .replacementProductId(null)
