@@ -4,22 +4,35 @@
     <div *ngIf="loading">Carregando...</div>
     <div *ngIf="!loading && saleDetails">
       <table>
-        <thead><tr><th>Produto</th><th>Qtd Vendida</th><th>Preço</th><th>Ação</th><th>Qtd</th><th>Substituto</th></tr></thead>
+        <thead><tr><th>Produto</th><th>Qtd Vendida</th><th>Preço</th><th>Ação</th><th>Qtd</th><th>Substituto</th><th>Valores</th></tr></thead>
         <tbody>
           <tr *ngFor="let it of saleDetails.itens">
-            <td>{{ it.produto_nome }}</td>
+            <td class="product-cell">{{ it.produto_nome }}</td>
             <td>{{ it.quantidade }}</td>
             <td>{{ it.preco_total | currencyBR }}</td>
             <td class="action-cell">
-              <label class="action-option"><input type="radio" name="action-{{it.produto_id}}" [(ngModel)]="selections[it.produto_id]" [ngModelOptions]="{standalone: true}" [value]="'return'"> <span>Devolver</span></label>
-              <label class="action-option"><input type="radio" name="action-{{it.produto_id}}" [(ngModel)]="selections[it.produto_id]" [ngModelOptions]="{standalone: true}" [value]="'exchange'"> <span>Trocar</span></label>
+              <div class="action-stack">
+                <label class="action-option"><input type="radio" name="action-{{it.produto_id}}" [(ngModel)]="selections[it.produto_id]" [ngModelOptions]="{standalone: true}" [value]="'return'"> <span>Devolver</span></label>
+                <label class="action-option"><input type="radio" name="action-{{it.produto_id}}" [(ngModel)]="selections[it.produto_id]" [ngModelOptions]="{standalone: true}" [value]="'exchange'"> <span>Trocar</span></label>
+              </div>
             </td>
             <td><input type="number" [(ngModel)]="quantities[it.produto_id]" min="1" [max]="it.quantidade"></td>
             <td>
-              <select [(ngModel)]="replacementProductIds[it.produto_id]" [ngModelOptions]="{standalone: true}" [disabled]="selections[it.produto_id] !== 'exchange'">
-                <option [ngValue]="null">-- selecionar --</option>
-                <option *ngFor="let p of saleDetails.produtosDisponiveis" [ngValue]="p.id">{{p.nome}} ({{p.quantidade_estoque}})</option>
-              </select>
+              <div class="searchable-select">
+                <input type="text" [(ngModel)]="replacementSearch[it.produto_id]" (input)="onReplacementSearch(it.produto_id)" (focus)="onReplacementFocus(it.produto_id)" (blur)="hideReplacementListDelayed(it.produto_id)" [disabled]="selections[it.produto_id] !== 'exchange'" [ngModelOptions]="{standalone: true}" placeholder="Buscar produto...">
+                <ul *ngIf="showReplacementList[it.produto_id] && (replacementFiltered[it.produto_id] || []).length > 0" class="options-list">
+                  <li *ngFor="let p of replacementFiltered[it.produto_id]" (mousedown)="selectReplacement(it.produto_id, p)">{{p.nome}} ({{p.quantidade_estoque}})</li>
+                </ul>
+              </div>
+            </td>
+            <td class="value-cell">
+              <div class="value-controls" [class.disabled]="selections[it.produto_id] !== 'exchange'">
+                <div class="value-type">
+                  <label><input type="radio" name="valtype-{{it.produto_id}}" [(ngModel)]="valueAdjustments[it.produto_id].type" [ngModelOptions]="{standalone: true}" [value]="'refund'"> <span>Troco</span></label>
+                  <label><input type="radio" name="valtype-{{it.produto_id}}" [(ngModel)]="valueAdjustments[it.produto_id].type" [ngModelOptions]="{standalone: true}" [value]="'charge'"> <span>Adicionar</span></label>
+                </div>
+                <input type="number" step="0.01" [(ngModel)]="valueAdjustments[it.produto_id].amount" [ngModelOptions]="{standalone: true}" [disabled]="selections[it.produto_id] !== 'exchange'" class="value-input" placeholder="0,00">
+              </div>
             </td>
           </tr>
         </tbody>

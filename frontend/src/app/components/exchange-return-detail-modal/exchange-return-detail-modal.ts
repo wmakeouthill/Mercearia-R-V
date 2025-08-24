@@ -21,6 +21,14 @@ export class ExchangeReturnDetailModalComponent implements OnInit {
     quantities: { [itemId: number]: number } = {};
     produtosDisponiveis: any[] = [];
 
+    // UI state for searchable replacement select
+    replacementSearch: { [itemId: number]: string } = {};
+    replacementFiltered: { [itemId: number]: any[] } = {};
+    showReplacementList: { [itemId: number]: boolean } = {};
+
+    // value adjustments (troco / pagamento adicional)
+    valueAdjustments: { [itemId: number]: { type: 'refund' | 'charge' | null, amount: number } } = {};
+
     loading = false;
 
     constructor(private readonly api: ApiService) { }
@@ -35,12 +43,44 @@ export class ExchangeReturnDetailModalComponent implements OnInit {
             next: (r) => {
                 this.saleDetails = r;
                 // init selections and quantities
-                (r.itens || []).forEach((it: any) => { this.selections[it.produto_id] = 'none'; this.quantities[it.produto_id] = it.quantidade; this.replacementProductIds[it.produto_id] = null; });
+                (r.itens || []).forEach((it: any) => {
+                    this.selections[it.produto_id] = 'none';
+                    this.quantities[it.produto_id] = it.quantidade;
+                    this.replacementProductIds[it.produto_id] = null;
+                    this.replacementSearch[it.produto_id] = '';
+                    this.replacementFiltered[it.produto_id] = [];
+                    this.showReplacementList[it.produto_id] = false;
+                    this.valueAdjustments[it.produto_id] = { type: null, amount: 0 };
+                });
                 // fetch available products for replacement dropdown (simple list)
                 this.api.getProdutos().subscribe({ next: (ps) => { this.saleDetails.produtosDisponiveis = (ps || []).map((p: any) => ({ id: p.id, nome: p.nome, quantidade_estoque: p.quantidade_estoque })); }, error: () => { this.saleDetails.produtosDisponiveis = []; } });
                 this.loading = false;
             }, error: () => { this.loading = false; }
         });
+    }
+
+    onReplacementFocus(itemId: number): void {
+        this.showReplacementList[itemId] = true;
+        this.replacementFiltered[itemId] = this.saleDetails?.produtosDisponiveis || [];
+    }
+
+    onReplacementSearch(itemId: number): void {
+        const q = (this.replacementSearch[itemId] || '').toLowerCase();
+        if (!q) {
+            this.replacementFiltered[itemId] = this.saleDetails.produtosDisponiveis || [];
+            return;
+        }
+        this.replacementFiltered[itemId] = (this.saleDetails.produtosDisponiveis || []).filter((p: any) => (p.nome || '').toLowerCase().includes(q));
+    }
+
+    selectReplacement(itemId: number, product: any): void {
+        this.replacementProductIds[itemId] = product.id;
+        this.replacementSearch[itemId] = product.nome;
+        this.showReplacementList[itemId] = false;
+    }
+
+    hideReplacementListDelayed(itemId: number): void {
+        setTimeout(() => { this.showReplacementList[itemId] = false; }, 150);
     }
 
     confirmActions(): void {
