@@ -954,7 +954,7 @@ export class RelatorioVendasComponent implements OnInit {
       item.data,
       item.total_vendas.toString(),
       item.quantidade_vendida.toString(),
-      `R$ ${item.receita_total.toFixed(2)}`
+      `R$ ${Number(item.receita_total || 0).toFixed(2)}`
     ]);
 
     return [headers, ...linhas].map(linha => linha.join(',')).join('\n');

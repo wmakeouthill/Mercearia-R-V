@@ -26,7 +26,7 @@ export class CaixaComponent implements OnInit {
   mesSelecionado = getCurrentDateForInput().substring(0, 7);
   resumo: { data: string; saldo_movimentacoes: number } | null = null;
   resumoVendasDia: RelatorioResumo | null = null;
-  movimentacoes: Array<{ id: number; tipo: TipoMovLista; valor: number; descricao?: string; usuario?: string; data_movimento: string; produto_nome?: string; metodo_pagamento?: string; pagamento_valor?: number; caixa_status_id?: number; caixa_status?: any }> = [];
+  movimentacoes: Array<{ id: number; tipo: TipoMovLista; valor: number | null; descricao?: string; usuario?: string; data_movimento: string; produto_nome?: string; metodo_pagamento?: string; pagamento_valor?: number; caixa_status_id?: number; caixa_status?: any }> = [];
   filtroTipo = '';
   filtroMetodo = '';
   filtroHoraInicio = '';
@@ -154,7 +154,10 @@ export class CaixaComponent implements OnInit {
     let periodoInicio: string | undefined;
     let periodoFim: string | undefined;
     if (this.filtroModo === 'dia') {
-      dataParam = this.dataSelecionada;
+      // usar periodo_inicio/periodo_fim em vez de data isolada para evitar
+      // inconsistências de timezone/serialização entre frontend/backend
+      periodoInicio = this.dataSelecionada;
+      periodoFim = this.dataSelecionada;
     } else if (this.filtroModo === 'mes') {
       const [y, m] = this.mesSelecionado.split('-').map(Number);
       const first = new Date(y, (m || 1) - 1, 1);
@@ -318,8 +321,11 @@ export class CaixaComponent implements OnInit {
     const dir = this.sortDir === 'asc' ? 1 : -1;
     this.movimentacoes.sort((a, b) => {
       switch (this.sortKey) {
-        case 'valor':
-          return (a.valor - b.valor) * dir;
+        case 'valor': {
+          const va = Number(a.valor ?? 0);
+          const vb = Number(b.valor ?? 0);
+          return (va - vb) * dir;
+        }
         case 'tipo':
           return (a.tipo.localeCompare(b.tipo)) * dir;
         case 'metodo': {
@@ -430,7 +436,8 @@ export class CaixaComponent implements OnInit {
     }
     const label = this.getMetodoLabel(m.metodo_pagamento || '');
     if (m.pagamento_valor != null) {
-      return `${label} · R$ ${(Number(m.pagamento_valor) || 0).toFixed(2)}`;
+      const v = (Number(m.pagamento_valor) || 0);
+      return `${label} · R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     }
     return label || '-';
   }
@@ -453,7 +460,8 @@ export class CaixaComponent implements OnInit {
     const label = this.getMetodoLabel(m.metodo_pagamento || '');
     if (!label) return [];
     if (m.pagamento_valor != null) {
-      return [`${label} · R$ ${(Number(m.pagamento_valor) || 0).toFixed(2)}`];
+      const v = (Number(m.pagamento_valor) || 0);
+      return [`${label} · R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`];
     }
     return [label];
   }

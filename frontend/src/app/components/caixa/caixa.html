@@ -173,7 +173,7 @@
                 </span>
               </td>
               <td class="produto">{{ m.produto_nome || '-' }}</td>
-              <td class="center">R$ {{ (m.valor ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</td>
+              <td class="center">R$ {{ (m.valor || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</td>
               <td class="descricao">{{ m.descricao || '-' }}</td>
               <td class="center metodo">
                 <div class="metodo-multi">

@@ -61,7 +61,7 @@
                             <p><strong>Código:</strong> {{ produto.codigo_barras || 'N/A' }}</p>
                         </div>
                         <div class="produto-preco-estoque">
-                            <span class="preco">R$ {{ produto.preco_venda.toFixed(2) }}</span>
+                            <span class="preco">R$ {{ produto.preco_venda.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</span>
                             <span class="estoque">Est: {{ produto.quantidade_estoque }}</span>
                             @if (produtoSelecionado?.id === produto.id) {<div class="qtd-arrows" (click)="$event.stopPropagation()" (keydown)="$event.stopPropagation()">
                                 <span class="qtd-num">{{ quantidade }}</span>
@@ -114,7 +114,7 @@
             @if (carrinho.length > 0) {<div class="carrinho-resumo-fixo">
                 <div class="resumo-info">
                     <span class="resumo-itens">{{ carrinho.length }} item(s)</span>
-                    <span class="resumo-total">R$ {{ getTotalCarrinho().toFixed(2) }}</span>
+                    <span class="resumo-total">R$ {{ getTotalCarrinho().toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</span>
                 </div>
                 <div class="resumo-acoes">
                     <button (click)="limparCarrinho()" class="btn-limpar-pequeno" title="Limpar carrinho">🗑️</button>
@@ -137,7 +137,7 @@
                     </div>
                     <div class="item-info">
                         <h4>{{ item.produto.nome }}</h4>
-                        <p>R$ {{ item.preco_unitario.toFixed(2) }} cada</p>
+                        <p>R$ {{ item.preco_unitario.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }} cada</p>
                     </div>
                     <div class="item-controles">
                         <div class="item-quantidade">
@@ -148,7 +148,7 @@
                                 title="Aumentar quantidade">+</button>
                         </div>
                         <div class="item-total">
-                            R$ {{ item.preco_total.toFixed(2) }}
+                            R$ {{ item.preco_total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
                         </div>
                         <button (click)="removerDoCarrinho(i)" class="btn-remover" title="Remover item">🗑️</button>
                     </div>
@@ -157,11 +157,11 @@
                 <div class="carrinho-total-detalhado">
                     <div class="total-linha total-final">
                         <span><strong>Total:</strong></span>
-                        <span><strong>R$ {{ getTotalCarrinho().toFixed(2) }}</strong></span>
+                        <span><strong>R$ {{ getTotalCarrinho().toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</strong></span>
                     </div>
                     @if (pagamentos.length >= 2 && getFaltaTotal() > 0) {<div class="total-falta">
                         <span>Falta:</span>
-                        <span>R$ {{ getFaltaTotal().toFixed(2) }}</span>
+                        <span>R$ {{ getFaltaTotal().toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</span>
                     </div>}
                 </div>
 
@@ -185,7 +185,7 @@
                         </div>}
                         <div class="pagamento-total" [class.invalido]="!isPagamentoValido()">
                             <span>Total Pagamentos:</span>
-                            <span>R$ {{ getTotalPagamentos().toFixed(2) }} / R$ {{ getTotalCarrinho().toFixed(2) }}</span>
+                            <span>R$ {{ getTotalPagamentos().toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }} / R$ {{ getTotalCarrinho().toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</span>
                         </div>
                     </div>}
                 </div>
