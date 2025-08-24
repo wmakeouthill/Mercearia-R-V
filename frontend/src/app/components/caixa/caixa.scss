@@ -229,6 +229,27 @@
     white-space: nowrap;
   }
 
+  /* Allow description column to wrap and have a fixed maximum width to avoid horizontal scroll */
+  .movs-table td.descricao,
+  .item .col.descricao {
+    /* force wrapping and disable ellipsis */
+    white-space: normal !important;
+    text-overflow: clip !important;
+    -webkit-text-overflow: clip !important;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    /* preferred minimum width so description column isn't too narrow */
+    min-width: 320px;
+    max-width: 640px; /* limit width so table doesn't expand horizontally */
+    line-height: 1.2;
+    max-height: calc(1.2em * 4); /* visually limit to ~4 lines */
+    overflow: hidden; /* hide overflow beyond max-height */
+    /* render block-level content inside the cell so wrapping works reliably */
+    display: block;
+    box-sizing: border-box;
+    padding: 8px 0;
+  }
+
   /* alinhamentos */
   .movs-table th.center, .movs-table td.center { text-align: center; }
   .movs-table td.produto, .movs-table td.descricao { text-align: left; }

@@ -145,11 +145,12 @@ export class HistoricoVendasComponent implements OnInit {
     const source = Array.isArray(this.vendasFiltradasAll) ? this.vendasFiltradasAll : (Array.isArray(this.vendasFiltradas) ? this.vendasFiltradas : []);
     if (Array.isArray(source) && source.length > 0) {
       const idx = source.findIndex((s: any) => (s && venda) ? (s.id === venda.id) : false);
-      if (idx >= 0) return idx + 1;
+      if (idx >= 0) return (source.length - idx);
     }
-    // Fallback: derive from current page and pageSize, but invert so oldest sale is #1
+    // Fallback: derive stable increasing index based on overall ordering (newest-first -> number increases)
     const total = Number(this.total || (Array.isArray(this.vendasFiltradas) ? this.vendasFiltradas.length : 0));
     const globalIndexZeroBased = (this.page - 1) * Number(this.pageSize || 1) + indexOnPage;
+    // Compute reversed rank so oldest sale is 1
     return Math.max(1, total - globalIndexZeroBased);
   }
 
@@ -161,40 +162,84 @@ export class HistoricoVendasComponent implements OnInit {
     this.loading = true;
     this.error = '';
     this.page = pageNum;
-    this.apiService.getVendasDetalhadas(pageNum - 1, this.pageSize).subscribe({
-      next: (resp: any) => {
-        // If server returned paging metadata, use it
-        if (resp && typeof resp.total === 'number') {
-          this.totalCount = resp.total;
-        } else {
-          this.totalCount = 0;
-        }
-        const items = Array.isArray(resp?.items) ? resp.items : [];
-        // Garantir que o resumo de pagamentos e metodos_multi estejam presentes
-        const mapped = (items || []).map((v: any, idx: number) => {
-          const row: any = { ...v };
-          // montar pagamentos_resumo se o backend retornou pagamentos
-          const pagamentosArr = Array.isArray(v?.pagamentos) ? v.pagamentos : (Array.isArray(v?.pagamentos_list) ? v.pagamentos_list : []);
-          if (Array.isArray(pagamentosArr) && pagamentosArr.length > 0) {
-            try {
-              row.pagamentos_resumo = this.buildPagamentoResumo(pagamentosArr.map((p: any) => ({ metodo: p.metodo, valor: p.valor })));
-            } catch (e) {
-              row.pagamentos_resumo = '';
-            }
-            const metodosSet = new Set<string>();
-            for (const p of pagamentosArr) if (p?.metodo) metodosSet.add(p.metodo);
-            row.metodos_multi = Array.from(metodosSet);
+    // Fetch both detailed vendas and checkout (complete) vendas and merge, avoiding duplicates.
+    forkJoin({
+      detalhadas: this.apiService.getVendasDetalhadas(pageNum - 1, this.pageSize).pipe(catchError(() => of(null))),
+      completas: this.apiService.getVendasCompletas().pipe(catchError(() => of([])))
+    }).subscribe({
+      next: ({ detalhadas, completas }: any) => {
+        const resp = detalhadas || {};
+        if (resp && typeof resp.total === 'number') this.totalCount = resp.total; else this.totalCount = 0;
+
+        const detalhadasItems = Array.isArray(resp?.items) ? resp.items : [];
+        const completasItems = Array.isArray(completas) ? completas : [];
+
+        // normalize completa items to the same shape and mark as checkout
+        const completasMapped = completasItems.map((v: any, idx: number) => {
+          const row: any = { ...(v || {}) };
+          row._isCheckout = true;
+          row.row_id = row.row_id || `hist-checkout-${row.id ?? idx}`;
+          // pagamentos and itens are expected on checkout entries
+          const pagamentosArr = Array.isArray(row?.pagamentos) ? row.pagamentos : [];
+          if (pagamentosArr.length > 0) {
+            try { row.pagamentos_resumo = this.buildPagamentoResumo(pagamentosArr.map((p: any) => ({ metodo: p.metodo, valor: p.valor }))); } catch { row.pagamentos_resumo = ''; }
+            const metodosSet = new Set<string>(); for (const p of pagamentosArr) if (p?.metodo) metodosSet.add(p.metodo); row.metodos_multi = Array.from(metodosSet);
           }
-          // garantir row_id para o trackBy do template
-          row.row_id = row.row_id || `hist-${row.id ?? idx}`;
           return row;
         });
-        this.vendas = mapped;
-        this.vendasFiltradas = mapped;
-        // reset cached full dataset when filters/page size change
+
+        // Build map of checkout ids to avoid duplicates
+        const checkoutIds = new Set<number | string>(completasMapped.map(c => c.id));
+
+        // Process detalhadas items, skipping those that are present in checkout
+        const detalhadasMapped = (detalhadasItems || []).map((v: any, idx: number) => {
+          const row: any = { ...(v || {}) };
+          row._isCheckout = !!checkoutIds.has(row.id) ? true : false;
+          const pagamentosArr = Array.isArray(v?.pagamentos) ? v.pagamentos : (Array.isArray(v?.pagamentos_list) ? v.pagamentos_list : []);
+          if (Array.isArray(pagamentosArr) && pagamentosArr.length > 0) {
+            try { row.pagamentos_resumo = this.buildPagamentoResumo(pagamentosArr.map((p: any) => ({ metodo: p.metodo, valor: p.valor }))); } catch { row.pagamentos_resumo = ''; }
+            const metodosSet = new Set<string>(); for (const p of pagamentosArr) if (p?.metodo) metodosSet.add(p.metodo); row.metodos_multi = Array.from(metodosSet);
+          }
+          row.row_id = row.row_id || `hist-${row.id ?? idx}`;
+          return row;
+        }).filter((r: any) => !checkoutIds.has(r.id));
+
+        // normalize merged rows: derive product, image, quantity and total when missing
+        const merged = [...completasMapped, ...detalhadasMapped].map((m: any) => {
+          const itens = Array.isArray(m?.itens) ? m.itens : [];
+          // produto_nome
+          if (!m.produto_nome) {
+            if (itens.length > 0) {
+              m.produto_nome = itens[0].produto_nome || itens[0].produtoNome || (itens[0].produto ? itens[0].produto.nome : undefined);
+            }
+          }
+          // produto_imagem
+          if (!m.produto_imagem) {
+            if (itens.length > 0) {
+              m.produto_imagem = itens[0].produto_imagem || itens[0].produtoImagem || (itens[0].produto ? itens[0].produto.imagem : undefined);
+            }
+          }
+          // quantidade_vendida (sum of itens quantities)
+          if (m.quantidade_vendida == null) {
+            m.quantidade_vendida = itens.reduce((s: number, it: any) => s + (Number(it.quantidade ?? it.quantidade_vendida ?? 0) || 0), 0);
+          }
+          // preco_total fallback
+          if (m.preco_total == null) {
+            m.preco_total = m.total_final ?? m.totalFinal ?? itens.reduce((s: number, it: any) => s + (Number(it.preco_total ?? it.precoTotal ?? it.precoUnitario * (it.quantidade ?? it.quantidade_vendida ?? 0)) || 0), 0);
+          }
+          return m;
+        }).sort((a: any, b: any) => {
+          const ta = a?.data_venda ? new Date(a.data_venda).getTime() : 0;
+          const tb = b?.data_venda ? new Date(b.data_venda).getTime() : 0;
+          return tb - ta; // newest first
+        });
+
+        this.vendas = merged;
+        this.vendasFiltradas = merged;
         this.vendasFiltradasAll = null;
-        // if server reports more items than this page, fetch all pages to compute aggregate cards
-        if (resp && typeof resp.total === 'number' && resp.total > items.length) {
+
+        // If server reports more items, fetch all pages for aggregates (only using detalhadas.total)
+        if (resp && typeof resp.total === 'number' && resp.total > detalhadasItems.length) {
           const total = resp.total;
           const pageCount = Math.ceil(total / Number(this.pageSize || 1));
           const requests = [] as any[];
@@ -210,14 +255,8 @@ export class HistoricoVendasComponent implements OnInit {
               const row: any = { ...v };
               const pagamentosArr = Array.isArray(v?.pagamentos) ? v.pagamentos : (Array.isArray(v?.pagamentos_list) ? v.pagamentos_list : []);
               if (Array.isArray(pagamentosArr) && pagamentosArr.length > 0) {
-                try {
-                  row.pagamentos_resumo = this.buildPagamentoResumo(pagamentosArr.map((p: any) => ({ metodo: p.metodo, valor: p.valor })));
-                } catch (e) {
-                  row.pagamentos_resumo = '';
-                }
-                const metodosSet = new Set<string>();
-                for (const p of pagamentosArr) if (p?.metodo) metodosSet.add(p.metodo);
-                row.metodos_multi = Array.from(metodosSet);
+                try { row.pagamentos_resumo = this.buildPagamentoResumo(pagamentosArr.map((p: any) => ({ metodo: p.metodo, valor: p.valor }))); } catch { row.pagamentos_resumo = ''; }
+                const metodosSet = new Set<string>(); for (const p of pagamentosArr) if (p?.metodo) metodosSet.add(p.metodo); row.metodos_multi = Array.from(metodosSet);
               }
               row.row_id = row.row_id || `hist-${row.id ?? idx}`;
               return row;
@@ -229,6 +268,7 @@ export class HistoricoVendasComponent implements OnInit {
             });
           });
         }
+
         this.loading = false;
       },
       error: (err) => {

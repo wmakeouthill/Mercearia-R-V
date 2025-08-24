@@ -38,26 +38,31 @@ public class SaleController {
     private static final Logger log = LoggerFactory.getLogger(SaleController.class);
 
     @GetMapping
+    @Transactional(readOnly = true)
     public List<Map<String, Object>> getAll() {
-        return saleOrderRepository.findAllOrderByData().stream().map(o -> {
-            java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
-            row.put("id", o.getId());
-            int qtd = o.getItens() == null ? 0
-                    : o.getItens().stream().mapToInt(it -> it.getQuantidade() == null ? 0 : it.getQuantidade()).sum();
-            row.put(KEY_QTD_VENDIDA, qtd);
-            row.put("preco_total", o.getTotalFinal());
-            row.put("data_venda", o.getDataVenda());
-            String metodo = (o.getPagamentos() == null || o.getPagamentos().isEmpty()) ? ""
-                    : (o.getPagamentos().size() == 1 ? o.getPagamentos().get(0).getMetodo() : "multiplo");
-            row.put("metodo_pagamento", metodo);
-            row.put("produto_nome", o.getItens() == null || o.getItens().isEmpty() ? ("Pedido #" + o.getId())
-                    : o.getItens().get(0).getProduto().getNome());
-            row.put("codigo_barras", o.getItens() == null || o.getItens().isEmpty() ? null
-                    : o.getItens().get(0).getProduto().getCodigoBarras());
-            row.put("produto_imagem", o.getItens() == null || o.getItens().isEmpty() ? null
-                    : o.getItens().get(0).getProduto().getImagem());
-            return row;
-        }).toList();
+        return saleOrderRepository.findAllOrderByData().stream()
+                // Exclude orders created via checkout (they are served by /api/checkout)
+                .filter(o -> o.getPagamentos() == null || o.getPagamentos().isEmpty())
+                .map(o -> {
+                    java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
+                    row.put("id", o.getId());
+                    int qtd = o.getItens() == null ? 0
+                            : o.getItens().stream().mapToInt(it -> it.getQuantidade() == null ? 0 : it.getQuantidade())
+                                    .sum();
+                    row.put(KEY_QTD_VENDIDA, qtd);
+                    row.put("preco_total", o.getTotalFinal());
+                    row.put("data_venda", o.getDataVenda());
+                    String metodo = (o.getPagamentos() == null || o.getPagamentos().isEmpty()) ? ""
+                            : (o.getPagamentos().size() == 1 ? o.getPagamentos().get(0).getMetodo() : "multiplo");
+                    row.put("metodo_pagamento", metodo);
+                    row.put("produto_nome", o.getItens() == null || o.getItens().isEmpty() ? ("Pedido #" + o.getId())
+                            : o.getItens().get(0).getProduto().getNome());
+                    row.put("codigo_barras", o.getItens() == null || o.getItens().isEmpty() ? null
+                            : o.getItens().get(0).getProduto().getCodigoBarras());
+                    row.put("produto_imagem", o.getItens() == null || o.getItens().isEmpty() ? null
+                            : o.getItens().get(0).getProduto().getImagem());
+                    return row;
+                }).toList();
     }
 
     @GetMapping("/detalhadas")
@@ -111,6 +116,9 @@ public class SaleController {
             } else {
                 orders = saleOrderRepository.findAllOrderByData();
             }
+
+            // Exclude checkout orders (CheckoutController is authoritative for these)
+            orders = orders.stream().filter(o -> o.getPagamentos() == null || o.getPagamentos().isEmpty()).toList();
 
             java.util.List<java.util.Map<String, Object>> rows = new java.util.ArrayList<>();
 

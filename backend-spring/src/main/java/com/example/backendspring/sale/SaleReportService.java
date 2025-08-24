@@ -8,6 +8,8 @@ import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.HashMap;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Service
 @RequiredArgsConstructor
@@ -15,6 +17,7 @@ public class SaleReportService {
 
         private final JdbcTemplate jdbcTemplate;
         private static final String ALIAS_VALOR = "valor";
+        private static final Logger log = LoggerFactory.getLogger(SaleReportService.class);
 
         public Map<String, Object> getResumoDia(LocalDate dia) {
                 Map<String, Object> result = new HashMap<>();
@@ -75,16 +78,27 @@ public class SaleReportService {
 
                 Map<String, Object> result = new HashMap<>();
 
-                Long totalVendasLegado = jdbcTemplate.queryForObject(
-                                "SELECT COUNT(*) FROM vendas v WHERE (v.data_venda AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date BETWEEN ? AND ?",
-                                Long.class,
-                                inicio, fim);
-                Long qtdLegado = jdbcTemplate.queryForObject(
-                                "SELECT COALESCE(SUM(v.quantidade_vendida),0) FROM vendas v WHERE (v.data_venda AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date BETWEEN ? AND ?",
-                                Long.class, inicio, fim);
-                Double receitaLegado = jdbcTemplate.queryForObject(
-                                "SELECT COALESCE(SUM(v.preco_total),0) FROM vendas v WHERE (v.data_venda AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date BETWEEN ? AND ?",
-                                Double.class, inicio, fim);
+                Long totalVendasLegado = 0L;
+                Long qtdLegado = 0L;
+                Double receitaLegado = 0.0;
+                try {
+                        totalVendasLegado = jdbcTemplate.queryForObject(
+                                        "SELECT COUNT(*) FROM vendas v WHERE (v.data_venda AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date BETWEEN ? AND ?",
+                                        Long.class,
+                                        inicio, fim);
+                        qtdLegado = jdbcTemplate.queryForObject(
+                                        "SELECT COALESCE(SUM(v.quantidade_vendida),0) FROM vendas v WHERE (v.data_venda AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date BETWEEN ? AND ?",
+                                        Long.class, inicio, fim);
+                        receitaLegado = jdbcTemplate.queryForObject(
+                                        "SELECT COALESCE(SUM(v.preco_total),0) FROM vendas v WHERE (v.data_venda AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date BETWEEN ? AND ?",
+                                        Double.class, inicio, fim);
+                } catch (Exception e) {
+                        // legacy table may have been removed; treat as zero
+                        log.warn("Legacy vendas queries failed (table may not exist): {}", e.getMessage());
+                        totalVendasLegado = 0L;
+                        qtdLegado = 0L;
+                        receitaLegado = 0.0;
+                }
 
                 Long totalVendasNovo = jdbcTemplate.queryForObject(
                                 "SELECT COUNT(*) FROM venda_cabecalho vc WHERE (vc.data_venda AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date BETWEEN ? AND ?",
@@ -109,14 +123,18 @@ public class SaleReportService {
                 porPagamento.put("cartao_debito", 0.0);
                 porPagamento.put("pix", 0.0);
 
-                jdbcTemplate.query(
-                                ("SELECT metodo_pagamento, COALESCE(SUM(preco_total),0) as " + ALIAS_VALOR
-                                                + " FROM vendas WHERE (data_venda AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date BETWEEN ? AND ? GROUP BY metodo_pagamento"),
-                                rs -> {
-                                        String metodo = rs.getString("metodo_pagamento");
-                                        double valor = rs.getDouble(ALIAS_VALOR);
-                                        porPagamento.merge(metodo, valor, Double::sum);
-                                }, inicio, fim);
+                try {
+                        jdbcTemplate.query(
+                                        ("SELECT metodo_pagamento, COALESCE(SUM(preco_total),0) as " + ALIAS_VALOR
+                                                        + " FROM vendas WHERE (data_venda AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date BETWEEN ? AND ? GROUP BY metodo_pagamento"),
+                                        rs -> {
+                                                String metodo = rs.getString("metodo_pagamento");
+                                                double valor = rs.getDouble(ALIAS_VALOR);
+                                                porPagamento.merge(metodo, valor, Double::sum);
+                                        }, inicio, fim);
+                } catch (Exception e) {
+                        log.debug("Legacy vendas por-pagamento query skipped: {}", e.getMessage());
+                }
 
                 jdbcTemplate.query(
                                 ("SELECT vp.metodo, COALESCE(SUM(vp.valor),0) as " + ALIAS_VALOR
