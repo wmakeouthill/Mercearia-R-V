@@ -19,6 +19,7 @@ export class ExchangeReturnDetailModalComponent implements OnInit {
     selections: { [itemId: number]: 'none' | 'return' | 'exchange' } = {};
     replacementProductIds: { [itemId: number]: number | null } = {};
     quantities: { [itemId: number]: number } = {};
+    produtosDisponiveis: any[] = [];
 
     loading = false;
 
@@ -33,7 +34,10 @@ export class ExchangeReturnDetailModalComponent implements OnInit {
         this.api.getOrderById(this.saleSummary.id).subscribe({
             next: (r) => {
                 this.saleDetails = r;
+                // init selections and quantities
                 (r.itens || []).forEach((it: any) => { this.selections[it.produto_id] = 'none'; this.quantities[it.produto_id] = it.quantidade; this.replacementProductIds[it.produto_id] = null; });
+                // fetch available products for replacement dropdown (simple list)
+                this.api.getProdutos().subscribe({ next: (ps) => { this.saleDetails.produtosDisponiveis = (ps || []).map((p: any) => ({ id: p.id, nome: p.nome, quantidade_estoque: p.quantidade_estoque })); }, error: () => { this.saleDetails.produtosDisponiveis = []; } });
                 this.loading = false;
             }, error: () => { this.loading = false; }
         });

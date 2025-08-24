@@ -4,15 +4,23 @@
     <div *ngIf="loading">Carregando...</div>
     <div *ngIf="!loading && saleDetails">
       <table>
-        <thead><tr><th>Produto</th><th>Qtd</th><th>Preço</th><th>Devolver</th><th>Trocar</th><th>Qtd</th></tr></thead>
+        <thead><tr><th>Produto</th><th>Qtd Vendida</th><th>Preço</th><th>Ação</th><th>Qtd</th><th>Substituto</th></tr></thead>
         <tbody>
           <tr *ngFor="let it of saleDetails.itens">
             <td>{{ it.produto_nome }}</td>
             <td>{{ it.quantidade }}</td>
             <td>{{ it.preco_total | currencyBR }}</td>
-            <td><input type="checkbox" [(ngModel)]="selections[it.produto_id]" [ngModelOptions]="{standalone: true}" [value]="'return'"> </td>
-            <td><input type="checkbox" [(ngModel)]="selections[it.produto_id]" [ngModelOptions]="{standalone: true}" [value]="'exchange'"> </td>
+            <td class="action-cell">
+              <label class="action-option"><input type="radio" name="action-{{it.produto_id}}" [(ngModel)]="selections[it.produto_id]" [ngModelOptions]="{standalone: true}" [value]="'return'"> <span>Devolver</span></label>
+              <label class="action-option"><input type="radio" name="action-{{it.produto_id}}" [(ngModel)]="selections[it.produto_id]" [ngModelOptions]="{standalone: true}" [value]="'exchange'"> <span>Trocar</span></label>
+            </td>
             <td><input type="number" [(ngModel)]="quantities[it.produto_id]" min="1" [max]="it.quantidade"></td>
+            <td>
+              <select [(ngModel)]="replacementProductIds[it.produto_id]" [ngModelOptions]="{standalone: true}" [disabled]="selections[it.produto_id] !== 'exchange'">
+                <option [ngValue]="null">-- selecionar --</option>
+                <option *ngFor="let p of saleDetails.produtosDisponiveis" [ngValue]="p.id">{{p.nome}} ({{p.quantidade_estoque}})</option>
+              </select>
+            </td>
           </tr>
         </tbody>
       </table>
