@@ -7,13 +7,13 @@
         <thead><tr><th>Produto</th><th>Qtd Vendida</th><th>Preço</th><th>Ação</th><th>Qtd</th><th>Substituto</th><th>Valores</th></tr></thead>
         <tbody>
           <tr *ngFor="let it of saleDetails.itens">
-            <td class="product-cell">{{ it.produto_nome }}</td>
+            <td class="product-cell" [title]="getUnitPriceTooltip(it)">{{ it.produto_nome }}</td>
             <td>{{ it.quantidade }}</td>
             <td class="price-cell">{{ it.preco_total | currencyBR }}</td>
             <td class="action-cell">
               <div class="action-stack">
-                <label class="action-option"><input type="radio" name="action-{{it.produto_id}}" [(ngModel)]="selections[it.produto_id]" [ngModelOptions]="{standalone: true}" [value]="'return'"> <span>Devolver</span></label>
-                <label class="action-option"><input type="radio" name="action-{{it.produto_id}}" [(ngModel)]="selections[it.produto_id]" [ngModelOptions]="{standalone: true}" [value]="'exchange'"> <span>Trocar</span></label>
+                <label class="action-option" (click)="$event.stopPropagation(); toggleSelection(it.produto_id, 'return', $event)"><input type="radio" name="action-{{it.produto_id}}" [checked]="selections[it.produto_id] === 'return'"> <span>Devolver</span></label>
+                <label class="action-option" (click)="$event.stopPropagation(); toggleSelection(it.produto_id, 'exchange', $event)"><input type="radio" name="action-{{it.produto_id}}" [checked]="selections[it.produto_id] === 'exchange'"> <span>Trocar</span></label>
               </div>
             </td>
             <td><input type="number" [(ngModel)]="quantities[it.produto_id]" min="1" [max]="it.quantidade"></td>

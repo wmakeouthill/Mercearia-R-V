@@ -36,8 +36,28 @@ public class SaleAdjustmentController {
             return ResponseEntity.status(404).body(Map.of("error", "Venda não encontrada"));
 
         var item = saleItemRepository.findById(req.getSaleItemId()).orElse(null);
+        // fallback: if client sent produto_id instead of sale_item id, try to find the
+        // sale item in the order
+        if (item == null) {
+            try {
+                var possibleId = req.getSaleItemId();
+                if (possibleId != null && venda.getItens() != null) {
+                    var found = venda.getItens().stream()
+                            .filter(it -> it.getProduto() != null
+                                    && (it.getProduto().getId() != null && it.getProduto().getId().equals(possibleId)))
+                            .findFirst();
+                    if (found.isPresent()) {
+                        item = found.get();
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+        }
         if (item == null)
             return ResponseEntity.status(404).body(Map.of("error", "Item da venda não encontrado"));
+
+        // keep a final reference for use inside lambdas
+        var targetItem = item;
 
         // basic validations
         if (req.getQuantity() == null || req.getQuantity() <= 0)
@@ -64,24 +84,24 @@ public class SaleAdjustmentController {
 
         if (type.equalsIgnoreCase("return")) {
             // validate quantity
-            if (qty > item.getQuantidade())
+            if (qty > targetItem.getQuantidade())
                 return ResponseEntity.badRequest().body(Map.of("error", "Quantidade a devolver maior que a vendida"));
 
             // adjust stock
-            var produto = item.getProduto();
+            var produto = targetItem.getProduto();
             produto.setQuantidadeEstoque(produto.getQuantidadeEstoque() + qty);
             productRepository.save(produto);
 
             // adjust sale item quantity / remove if zero
-            int newQty = item.getQuantidade() - qty;
+            int newQty = targetItem.getQuantidade() - qty;
             if (newQty <= 0) {
                 // remove item
-                venda.getItens().removeIf(it -> it.getId().equals(item.getId()));
-                saleItemRepository.delete(item);
+                venda.getItens().removeIf(it -> it.getId().equals(targetItem.getId()));
+                saleItemRepository.delete(targetItem);
             } else {
-                item.setQuantidade(newQty);
-                item.setPrecoTotal(item.getPrecoUnitario() * newQty);
-                saleItemRepository.save(item);
+                targetItem.setQuantidade(newQty);
+                targetItem.setPrecoTotal(targetItem.getPrecoUnitario() * newQty);
+                saleItemRepository.save(targetItem);
             }
 
             // recompute sale totals
@@ -91,7 +111,7 @@ public class SaleAdjustmentController {
                     + (venda.getAcrescimo() == null ? 0.0 : venda.getAcrescimo()));
 
             // register refund payment (negative value) and caixa movimentacao (retirada)
-            double refundAmount = item.getPrecoUnitario() * qty;
+            double refundAmount = targetItem.getPrecoUnitario() * qty;
             SalePayment refundPayment = SalePayment.builder()
                     .venda(venda)
                     .metodo(req.getPaymentMethod() == null ? "dinheiro" : req.getPaymentMethod())
@@ -112,7 +132,7 @@ public class SaleAdjustmentController {
                     .builder()
                     .tipo("retirada")
                     .valor(refundAmount)
-                    .descricao("Reembolso venda " + venda.getId() + " item " + item.getId())
+                    .descricao("Reembolso venda " + venda.getId() + " item " + targetItem.getId())
                     .dataMovimento(OffsetDateTime.now())
                     .criadoEm(OffsetDateTime.now())
                     .operador(operadorUser)
@@ -125,7 +145,7 @@ public class SaleAdjustmentController {
             // create adjustment record
             SaleAdjustment adj = SaleAdjustment.builder()
                     .saleOrder(venda)
-                    .saleItem(item)
+                    .saleItem(targetItem)
                     .type("return")
                     .quantity(qty)
                     .replacementProductId(null)
@@ -137,7 +157,7 @@ public class SaleAdjustmentController {
                     .build();
             saleAdjustmentRepository.save(adj);
 
-            log.info("Return processed: saleId={} itemId={} qty={} refund={}", venda.getId(), item.getId(), qty,
+            log.info("Return processed: saleId={} itemId={} qty={} refund={}", venda.getId(), targetItem.getId(), qty,
                     refundAmount);
             return ResponseEntity.status(201).body(Map.of("message", "Return processed", "adjustmentId", adj.getId()));
 
@@ -153,7 +173,7 @@ public class SaleAdjustmentController {
                 return ResponseEntity.badRequest().body(Map.of("error", "Estoque insuficiente para produto de troca"));
 
             // restore original product stock
-            var original = item.getProduto();
+            var original = targetItem.getProduto();
             original.setQuantidadeEstoque(original.getQuantidadeEstoque() + qty);
             productRepository.save(original);
 
@@ -162,17 +182,18 @@ public class SaleAdjustmentController {
             productRepository.save(replacement);
 
             // adjust original sale item quantity / remove if zero
-            int newQty = item.getQuantidade() - qty;
+            int newQty = targetItem.getQuantidade() - qty;
             if (newQty <= 0) {
-                venda.getItens().removeIf(it -> it.getId().equals(item.getId()));
-                saleItemRepository.delete(item);
+                venda.getItens().removeIf(it -> it.getId().equals(targetItem.getId()));
+                saleItemRepository.delete(targetItem);
             } else {
-                item.setQuantidade(newQty);
-                item.setPrecoTotal(item.getPrecoUnitario() * newQty);
-                saleItemRepository.save(item);
+                targetItem.setQuantidade(newQty);
+                targetItem.setPrecoTotal(targetItem.getPrecoUnitario() * newQty);
+                saleItemRepository.save(targetItem);
             }
 
-            // create new sale item for replacement
+            // create new sale item for replacement and persist it before attaching to the
+            // order
             SaleItem newItem = SaleItem.builder()
                     .venda(venda)
                     .produto(replacement)
@@ -180,10 +201,13 @@ public class SaleAdjustmentController {
                     .precoUnitario(replacement.getPrecoVenda())
                     .precoTotal(replacement.getPrecoVenda() * qty)
                     .build();
+            // persist the new sale item to avoid transient-instance issues when persisting
+            // related entities
+            saleItemRepository.save(newItem);
             venda.getItens().add(newItem);
 
             // compute price difference
-            double priceDiffPerUnit = replacement.getPrecoVenda() - item.getPrecoUnitario();
+            double priceDiffPerUnit = replacement.getPrecoVenda() - targetItem.getPrecoUnitario();
             double totalPriceDiff = priceDiffPerUnit * qty;
 
             // if positive -> customer pays extra (entrada); if negative -> refund
@@ -256,7 +280,7 @@ public class SaleAdjustmentController {
             // create adjustment record
             SaleAdjustment adj = SaleAdjustment.builder()
                     .saleOrder(venda)
-                    .saleItem(item)
+                    .saleItem(targetItem)
                     .type("exchange")
                     .quantity(qty)
                     .replacementProductId(replacement.getId())

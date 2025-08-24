@@ -1,4 +1,5 @@
 import { Component, Input, Output, EventEmitter, OnInit } from '@angular/core';
+import { lastValueFrom } from 'rxjs';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api';
@@ -20,6 +21,10 @@ export class ExchangeReturnDetailModalComponent implements OnInit {
     replacementProductIds: { [itemId: number]: number | null } = {};
     quantities: { [itemId: number]: number } = {};
     produtosDisponiveis: any[] = [];
+    // map produto_id -> sale item id (backend sale item id)
+    saleItemByProdutoId: { [produtoId: number]: number } = {};
+    // original sold quantities per produto_id (from saleDetails.itens)
+    saleItemOriginalQty: { [produtoId: number]: number } = {};
 
     // UI state for searchable replacement select
     replacementSearch: { [itemId: number]: string } = {};
@@ -52,14 +57,21 @@ export class ExchangeReturnDetailModalComponent implements OnInit {
                 this.saleDetails = r;
                 // init selections and quantities
                 (r.itens || []).forEach((it: any) => {
-                    this.selections[it.produto_id] = 'none';
-                    this.quantities[it.produto_id] = it.quantidade;
-                    this.replacementProductIds[it.produto_id] = null;
-                    this.replacementSearch[it.produto_id] = '';
-                    this.replacementFiltered[it.produto_id] = [];
-                    this.showReplacementList[it.produto_id] = false;
-                    this.valueAdjustments[it.produto_id] = { type: null, amount: 0 };
+                    const prodId = Number(it.produto_id ?? it.produtoId ?? (it.produto && it.produto.id) ?? NaN);
+                    this.selections[prodId] = 'none';
+                    this.quantities[prodId] = it.quantidade ?? it.quantidade_vendida ?? it.quantity ?? 0;
+                    this.replacementProductIds[prodId] = null;
+                    this.replacementSearch[prodId] = '';
+                    this.replacementFiltered[prodId] = [];
+                    this.showReplacementList[prodId] = false;
+                    this.valueAdjustments[prodId] = { type: null, amount: 0 };
+                    // record mapping from produto_id to sale item id (backend) using multiple possible keys
+                    const saleItemId = it.item_id ?? it.id ?? it.sale_item_id ?? it.saleItemId ?? null;
+                    if (saleItemId != null) this.saleItemByProdutoId[prodId] = saleItemId;
+                    // record original sold quantity
+                    this.saleItemOriginalQty[prodId] = this.quantities[prodId];
                 });
+                console.debug('saleDetails.itens loaded', r.itens);
                 // fetch available products for replacement dropdown (simple list)
                 this.api.getProdutos().subscribe({
                     next: (ps) => {
@@ -137,7 +149,7 @@ export class ExchangeReturnDetailModalComponent implements OnInit {
         try {
             // ensure the item is set to exchange
             this.selections[itemId] = 'exchange';
-            const qty = this.quantities[itemId] || 1;
+            const qty = this.quantities[itemId] || 1; // fixed: use itemId here
             // find original sale item by produto_id
             const orig = (this.saleDetails && Array.isArray(this.saleDetails.itens))
                 ? this.saleDetails.itens.find((it: any) => it.produto_id === itemId || it.produtoId === itemId)
@@ -173,6 +185,19 @@ export class ExchangeReturnDetailModalComponent implements OnInit {
         }
     }
 
+    getUnitPrice(item: any): number {
+        if (!item) return 0;
+        if (item.preco_unitario != null) return item.preco_unitario;
+        if (item.precoUnitario != null) return item.precoUnitario;
+        if (item.preco_total != null && item.quantidade != null && item.quantidade !== 0) return item.preco_total / item.quantidade;
+        return 0;
+    }
+
+    getUnitPriceTooltip(item: any): string {
+        const val = this.getUnitPrice(item) || 0;
+        try { return (val).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }); } catch { return `R$ ${val.toFixed(2)}`; }
+    }
+
     hideReplacementListDelayed(itemId: number): void {
         this.clearHideTimer(itemId);
         this.replacementHideTimer[itemId] = setTimeout(() => { this.showReplacementList[itemId] = false; this.clearHideTimer(itemId); }, 150);
@@ -191,6 +216,18 @@ export class ExchangeReturnDetailModalComponent implements OnInit {
         event.preventDefault();
         this.clearHideTimer(itemId);
         this.showReplacementList[itemId] = true;
+    }
+
+    toggleSelection(itemId: number, val: 'none' | 'return' | 'exchange', ev: MouseEvent): void {
+        try {
+            ev.preventDefault();
+            ev.stopPropagation();
+        } catch { }
+        if (this.selections[itemId] === val) {
+            this.selections[itemId] = 'none';
+        } else {
+            this.selections[itemId] = val;
+        }
     }
 
     updateReplacementPagination(itemId: number): void {
@@ -237,22 +274,94 @@ export class ExchangeReturnDetailModalComponent implements OnInit {
         const selected = Object.keys(this.selections).filter(k => this.selections[+k] !== 'none');
         const calls: any[] = [];
         for (const key of selected) {
-            const itemId = Number(key);
-            const action = this.selections[itemId];
-            const qty = this.quantities[itemId] || 1;
+            const produtoKey = Number(key);
+            const action = this.selections[produtoKey];
+            // saleItemId expected by backend must be the sale_item id, not produto id
+            // resolve saleItemId from saleDetails.itens; do NOT fallback to produtoKey to avoid sending wrong id
+            let saleItemId = this.saleItemByProdutoId[produtoKey] || null;
+            if ((!saleItemId || saleItemId == null) && this.saleDetails && Array.isArray(this.saleDetails.itens)) {
+                const found = this.saleDetails.itens.find((it: any) => it.produto_id === produtoKey || it.produtoId === produtoKey);
+                if (found) {
+                    saleItemId = found.item_id ?? found.id ?? null;
+                }
+            }
+            if (!saleItemId) {
+                console.debug('saleDetails.itens for debugging identify failure', this.saleDetails?.itens, { produtoKey });
+                alert('Não foi possível identificar o item de venda correspondente para o produto selecionado. Ação ignorada. Por favor, cole o conteúdo de saleDetails.itens do console para eu analisar.');
+                continue;
+            }
+            let qty = Number(this.quantities[produtoKey]) || 1;
+            // validate against original sold quantity before sending
+            let origItem: any = null;
+            if (this.saleDetails && Array.isArray(this.saleDetails.itens)) {
+                origItem = this.saleDetails.itens.find((it: any) => (it.id === saleItemId || it.item_id === saleItemId || it.produto_id === produtoKey || it.produtoId === produtoKey));
+            }
+            const origQty = origItem ? (origItem.quantidade ?? origItem.quantidade_vendida ?? origItem.quantity ?? 0) : undefined;
+            if (origQty !== undefined && qty > origQty) {
+                // auto-clamp to original sold quantity and notify user
+                const old = qty;
+                qty = origQty;
+                console.info(`Quantidade solicitada (${old}) maior que vendida; ajustada para ${origQty}`);
+                // lightweight user feedback
+                alert(`Quantidade solicitada era maior que a vendida; ajustei para ${origQty}.`);
+            }
+            // debug: log original item qty if available
+            try {
+                const orig = (this.saleDetails && Array.isArray(this.saleDetails.itens)) ? this.saleDetails.itens.find((it: any) => ((it.item_id ?? it.id) === saleItemId || it.produto_id === produtoKey || it.produtoId === produtoKey)) : null;
+                console.debug('Adjusting sale item', { produtoKey, saleItemId, requestedQty: qty, originalQty: orig ? orig.quantidade : undefined, origItem: orig });
+            } catch (e) { console.debug('Debug failed', e); }
             if (action === 'return') {
-                calls.push(this.api.postSaleAdjustment(this.saleDetails.id, { type: 'return', saleItemId: itemId, quantity: qty, paymentMethod: 'dinheiro' }));
+                // re-check original sold quantity server-side snapshot from saleDetails
+                const origCheck = (this.saleDetails && Array.isArray(this.saleDetails.itens)) ? this.saleDetails.itens.find((it: any) => (it.item_id === saleItemId || it.id === saleItemId || it.produto_id === produtoKey)) : null;
+                const origQtyCheck = origCheck ? (origCheck.quantidade ?? origCheck.quantidade_vendida ?? origCheck.quantity ?? 0) : undefined;
+                console.debug('Return check', { produtoKey, saleItemId, requestedQty: Number(qty), origQtyCheck, origCheck });
+                if (origQtyCheck === undefined) { alert('Não foi possível validar quantidade original da venda. Ação cancelada.'); continue; }
+                if (Number(qty) > origQtyCheck) { alert(`Quantidade a devolver maior que a vendida (solicitado: ${qty}, vendido: ${origQtyCheck})`); continue; }
+                const payload = { type: 'return', saleItemId: saleItemId, quantity: Number(qty), paymentMethod: 'dinheiro' };
+                console.debug('POST adjustment payload', payload);
+                calls.push(this.api.postSaleAdjustment(this.saleDetails.id, payload));
             } else if (action === 'exchange') {
-                const replacementId = this.replacementProductIds[itemId];
-                calls.push(this.api.postSaleAdjustment(this.saleDetails.id, { type: 'exchange', saleItemId: itemId, quantity: qty, replacementProductId: replacementId, paymentMethod: 'dinheiro' }));
+                const replacementId = this.replacementProductIds[produtoKey];
+                // include priceDifference if user set it in valueAdjustments
+                const adjPayload: any = { type: 'exchange', saleItemId: saleItemId, quantity: qty, replacementProductId: replacementId, paymentMethod: 'dinheiro' };
+                const va = this.valueAdjustments[produtoKey];
+                if (va && va.amount && va.type) {
+                    adjPayload.priceDifference = va.type === 'charge' ? Number(va.amount) : -Number(va.amount);
+                }
+                // check original qty for exchange as well
+                const origCheck2 = (this.saleDetails && Array.isArray(this.saleDetails.itens)) ? this.saleDetails.itens.find((it: any) => (it.item_id === saleItemId || it.id === saleItemId || it.produto_id === produtoKey)) : null;
+                const origQtyCheck2 = origCheck2 ? (origCheck2.quantidade ?? origCheck2.quantidade_vendida ?? origCheck2.quantity ?? 0) : undefined;
+                console.debug('Exchange check', { produtoKey, saleItemId, requestedQty: Number(qty), origQtyCheck2, origCheck2 });
+                if (origQtyCheck2 === undefined) { alert('Não foi possível validar quantidade original da venda. Ação cancelada.'); continue; }
+                if (Number(qty) > origQtyCheck2) { alert(`Quantidade a devolver maior que a vendida (solicitado: ${qty}, vendido: ${origQtyCheck2})`); continue; }
+                console.debug('POST adjustment payload', adjPayload);
+                calls.push(this.api.postSaleAdjustment(this.saleDetails.id, adjPayload));
             }
         }
 
         if (calls.length === 0) { alert('Nenhuma ação selecionada'); return; }
 
-        // execute sequentially
-        const obs = calls.reduce((prev, cur) => prev.then(() => cur.toPromise().catch(() => null)), Promise.resolve());
-        obs.then(() => { alert('Ações processadas'); this.close.emit(); }).catch(() => { alert('Erro ao processar ações'); });
+        // execute all and surface errors to the user
+        const promises = calls.map((obs: any) => lastValueFrom(obs).then((r: any) => ({ status: 'fulfilled', value: r })).catch((e: any) => ({ status: 'rejected', reason: e })));
+        Promise.all(promises).then((results: any[]) => {
+            const rejected = results.filter(r => r.status === 'rejected');
+            if (rejected.length === 0) {
+                alert('Ações processadas');
+                this.close.emit();
+            } else {
+                // try to extract server message from first rejection
+                const first = rejected[0];
+                let msg = 'Erro ao processar ações';
+                try {
+                    const err = first.reason;
+                    if (err && err.error && err.error.error) msg = String(err.error.error);
+                    else if (err && err.message) msg = String(err.message);
+                } catch {
+                    /* ignore */
+                }
+                alert(msg);
+            }
+        }).catch(() => { alert('Erro ao processar ações'); });
     }
 
     cancel(): void { this.close.emit(); }

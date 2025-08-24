@@ -518,6 +518,9 @@ public class CheckoutController {
     private Map<String, Object> buildResponse(SaleOrder venda) {
         var itens = venda.getItens().stream().map(it -> {
             Map<String, Object> m = new LinkedHashMap<>();
+            // include sale item id so frontend can reference exact sale item for
+            // adjustments
+            m.put("item_id", it.getId());
             m.put("produto_id", it.getProduto().getId());
             m.put("produto_nome", it.getProduto().getNome());
             m.put("produto_imagem", it.getProduto().getImagem());
