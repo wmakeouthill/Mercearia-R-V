@@ -1,5 +1,8 @@
-.exchange-page-header { padding: 18px; background: linear-gradient(135deg, var(--light-gray) 0%, var(--white) 100%); border-radius: 12px; margin-bottom: 12px; display:flex; align-items:center; gap:12px; }
-.exchange-page-header .btn-voltar { background: linear-gradient(135deg, #DBC27D 0%, #D1B867 100%); color: var(--primary-blue); border: none; padding: 8px 12px; border-radius: 8px; font-weight:700; }
+.exchange-page-header { padding: 24px; background: linear-gradient(135deg, var(--light-gray) 0%, var(--white) 100%); border-radius: 16px; margin-bottom: 32px; display:flex; align-items:center; gap:12px; border-bottom: 3px solid var(--primary-gold); box-shadow: 0 4px 16px rgba(0, 46, 89, 0.1); }
+.exchange-page-header h1 { color: var(--primary-blue); margin: 0; font-size: 2.2rem; font-weight: 700; text-shadow: 1px 1px 2px rgba(0, 46, 89, 0.1); display:flex; align-items:center; gap:12px; }
+.exchange-page-header .header-actions { margin-left: auto; display:flex; align-items:center; gap:12px; }
+.exchange-page-header .btn-troca-devolucao { background: transparent; border: none; font-weight: 700; color: var(--primary-blue); padding: 10px 14px; }
+.exchange-page-header .btn-voltar { background: linear-gradient(135deg, #DBC27D 0%, #D1B867 100%); color: var(--primary-blue); border: none; padding: 12px 24px; border-radius: 12px; cursor: pointer; font-size: 1rem; font-weight: 700; }
 .exchange-page-body { padding: 12px; }
 
 

@@ -9,4 +9,15 @@ td, th { border:1px solid #ddd; padding:6px; }
 .pagination { margin-top:8px; display:flex; gap:8px; align-items:center; }
 .btn-detalhar { background: linear-gradient(135deg, var(--primary-blue) 0%, #1f5fa0 100%); border:none; padding:6px 10px; border-radius:8px; cursor:pointer; font-weight:700; color:#fff; }
 
+/* Reaplicar estilo de paginação usado em historico-vendas */
+.paginacao { display: grid; grid-template-columns: auto 1fr auto auto; gap: 8px 12px; padding: 12px 16px; align-items: center; justify-content: space-between; }
+.paginacao .pagination-left, .paginacao .pagination-right { display: inline-flex; gap: 6px; align-items: center; }
+.paginacao .pagination-center { display: flex; gap: 6px; align-items: center; justify-content: center; flex-wrap: wrap; }
+.paginacao .pagination-jump { display: inline-flex; align-items: center; gap: 8px; justify-self: end; }
+.paginacao .btn-page { min-width: 36px; height: 36px; padding: 0 10px; border-radius: 8px; border: 2px solid var(--medium-gray); background: var(--white); color: var(--primary-blue); font-weight: 700; cursor: pointer; }
+.paginacao .btn-page.active { background: var(--primary-blue); color: var(--white); border-color: var(--primary-blue); }
+.paginacao .btn-page:disabled { opacity: .5; cursor: not-allowed; }
+.paginacao .ellipsis { padding: 0 8px; color: var(--primary-blue); opacity: .7; }
+.paginacao .btn-go { background: var(--primary-blue); color: var(--white); border: none; border-radius: 8px; padding: 8px 12px; font-weight: 700; cursor: pointer; }
+
 
