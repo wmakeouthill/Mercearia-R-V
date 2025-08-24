@@ -9,7 +9,7 @@
           <tr *ngFor="let it of saleDetails.itens">
             <td class="product-cell">{{ it.produto_nome }}</td>
             <td>{{ it.quantidade }}</td>
-            <td>{{ it.preco_total | currencyBR }}</td>
+            <td class="price-cell">{{ it.preco_total | currencyBR }}</td>
             <td class="action-cell">
               <div class="action-stack">
                 <label class="action-option"><input type="radio" name="action-{{it.produto_id}}" [(ngModel)]="selections[it.produto_id]" [ngModelOptions]="{standalone: true}" [value]="'return'"> <span>Devolver</span></label>
@@ -19,10 +19,15 @@
             <td><input type="number" [(ngModel)]="quantities[it.produto_id]" min="1" [max]="it.quantidade"></td>
             <td>
               <div class="searchable-select">
-                <input type="text" [(ngModel)]="replacementSearch[it.produto_id]" (input)="onReplacementSearch(it.produto_id)" (focus)="onReplacementFocus(it.produto_id)" (blur)="hideReplacementListDelayed(it.produto_id)" [disabled]="selections[it.produto_id] !== 'exchange'" [ngModelOptions]="{standalone: true}" placeholder="Buscar produto...">
-                <ul *ngIf="showReplacementList[it.produto_id] && (replacementFiltered[it.produto_id] || []).length > 0" class="options-list">
-                  <li *ngFor="let p of replacementFiltered[it.produto_id]" (mousedown)="selectReplacement(it.produto_id, p)">{{p.nome}} ({{p.quantidade_estoque}})</li>
+                <input type="text" [(ngModel)]="replacementSearch[it.produto_id]" (input)="onReplacementSearch(it.produto_id)" (focus)="onReplacementFocus(it.produto_id, $event)" (blur)="hideReplacementListDelayed(it.produto_id)" [disabled]="selections[it.produto_id] !== 'exchange'" [ngModelOptions]="{standalone: true}" placeholder="Buscar produto...">
+                <ul *ngIf="showReplacementList[it.produto_id] && (replacementVisible[it.produto_id] || []).length > 0" class="options-list" [ngStyle]="replacementPosition[it.produto_id]">
+                  <li *ngFor="let p of replacementVisible[it.produto_id]" (mousedown)="selectReplacement(it.produto_id, p)">{{p.nome}} ({{p.quantidade_estoque}})</li>
                 </ul>
+                <div *ngIf="showReplacementList[it.produto_id]" class="options-footer">
+                  <button (mousedown)="replacementPrev(it.produto_id)" [disabled]="(replacementPage[it.produto_id]||0) <= 0">‹</button>
+                  <span>{{(replacementPage[it.produto_id]||0)+1}} / {{replacementTotalPages[it.produto_id]||1}}</span>
+                  <button (mousedown)="replacementNext(it.produto_id)" [disabled]="(replacementPage[it.produto_id]||0) >= ((replacementTotalPages[it.produto_id]||1)-1)">›</button>
+                </div>
               </div>
             </td>
             <td class="value-cell">

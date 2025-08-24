@@ -1,5 +1,5 @@
 .product-cell { width: 320px; padding-right: 8px; word-break: break-word; }
-.action-stack { padding: 0; margin: 0; }
+.price-cell { white-space: nowrap; }
 .modal-overlay {
   position: fixed;
   inset: 0;
@@ -10,7 +10,7 @@
   z-index: 2000;
 }
 .modal {
-  width: 920px;
+  width: 1080px;
   max-width: calc(100% - 40px);
   background: #fff;
   border-radius: 10px;
@@ -18,6 +18,7 @@
   padding: 18px;
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
   color: #222;
+  overflow: visible; /* allow dropdown to overflow modal bounds */
 }
 .modal h3 {
   margin: 0 0 12px 0;
@@ -36,7 +37,11 @@ select[disabled] { opacity: 0.5; }
 .replacement-select { min-width: 180px; padding:6px 8px; border-radius:6px; border:1px solid #e6e6e6; }
 .searchable-select { position: relative; }
 .searchable-select input[type="text"] { width: 100%; padding:6px 8px; border-radius:6px; border:1px solid #e6e6e6; }
-.searchable-select .options-list { position:absolute; left:0; right:0; max-height:160px; overflow:auto; background:#fff; border:1px solid #e6e6e6; margin-top:6px; border-radius:6px; z-index:2100; }
+.searchable-select .options-list { position:fixed; max-height:260px; overflow:auto; background:#fff; border:1px solid #e6e6e6; border-radius:6px; z-index:9999; box-shadow: 0 8px 20px rgba(0,0,0,0.08); }
+.searchable-select .options-list[style] { left:0; right:0; }
+.options-footer { display:flex; gap:8px; align-items:center; justify-content:center; padding:6px 0; }
+.options-footer button { background:transparent; border:1px solid #e6e6e6; padding:6px 8px; border-radius:6px; cursor:pointer; }
+.options-footer span { font-size:12px; color:#666; }
 .searchable-select .options-list li { padding:8px 10px; cursor:pointer; }
 .searchable-select .options-list li:hover { background:#f1f6fb; }
 .value-cell { width: 220px; }

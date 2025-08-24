@@ -25,6 +25,12 @@ export class ExchangeReturnDetailModalComponent implements OnInit {
     replacementSearch: { [itemId: number]: string } = {};
     replacementFiltered: { [itemId: number]: any[] } = {};
     showReplacementList: { [itemId: number]: boolean } = {};
+    replacementPosition: { [itemId: number]: { top?: string } } = {};
+    // pagination for replacement dropdown
+    replacementPage: { [itemId: number]: number } = {};
+    replacementPageSize = 5;
+    replacementTotalPages: { [itemId: number]: number } = {};
+    replacementVisible: { [itemId: number]: any[] } = {};
 
     // value adjustments (troco / pagamento adicional)
     valueAdjustments: { [itemId: number]: { type: 'refund' | 'charge' | null, amount: number } } = {};
@@ -53,34 +59,95 @@ export class ExchangeReturnDetailModalComponent implements OnInit {
                     this.valueAdjustments[it.produto_id] = { type: null, amount: 0 };
                 });
                 // fetch available products for replacement dropdown (simple list)
-                this.api.getProdutos().subscribe({ next: (ps) => { this.saleDetails.produtosDisponiveis = (ps || []).map((p: any) => ({ id: p.id, nome: p.nome, quantidade_estoque: p.quantidade_estoque })); }, error: () => { this.saleDetails.produtosDisponiveis = []; } });
+                this.api.getProdutos().subscribe({
+                    next: (ps) => {
+                        this.saleDetails.produtosDisponiveis = (ps || []).map((p: any) => ({ id: p.id, nome: p.nome, quantidade_estoque: p.quantidade_estoque }));
+                        // initialize replacement lists and pagination for each sale item
+                        (r.itens || []).forEach((it: any) => {
+                            this.replacementFiltered[it.produto_id] = this.saleDetails.produtosDisponiveis || [];
+                            this.replacementPage[it.produto_id] = 0;
+                            this.updateReplacementPagination(it.produto_id);
+                        });
+                    }, error: () => { this.saleDetails.produtosDisponiveis = []; }
+                });
                 this.loading = false;
             }, error: () => { this.loading = false; }
         });
     }
 
-    onReplacementFocus(itemId: number): void {
+    onReplacementFocus(itemId: number, event?: FocusEvent): void {
         this.showReplacementList[itemId] = true;
-        this.replacementFiltered[itemId] = this.saleDetails?.produtosDisponiveis || [];
+        // ensure filtered list and pagination are initialized
+        this.replacementFiltered[itemId] = this.replacementFiltered[itemId] && this.replacementFiltered[itemId].length > 0
+            ? this.replacementFiltered[itemId]
+            : (this.saleDetails?.produtosDisponiveis || []);
+        this.replacementPage[itemId] ??= 0;
+        this.updateReplacementPagination(itemId);
+        // compute dropdown position to avoid clipping: place it above if near bottom of modal
+        try {
+            const inputEl = (event?.target) as HTMLElement | null;
+            if (inputEl) {
+                const rect = inputEl.getBoundingClientRect();
+                const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+                const spaceBelow = viewportHeight - rect.bottom;
+                const top = rect.bottom + window.scrollY;
+                const left = rect.left + window.scrollX;
+                // if space below < 220px, place above the input
+                if (spaceBelow < 220) {
+                    const aboveTop = rect.top + window.scrollY - Math.min(260, rect.height + 12) - 6;
+                    this.replacementPosition[itemId] = { top: `${aboveTop}px`, left: `${left}px`, width: `${rect.width}px` };
+                } else {
+                    this.replacementPosition[itemId] = { top: `${top}px`, left: `${left}px`, width: `${rect.width}px` };
+                }
+            }
+        } catch { /* ignore positioning errors */ }
     }
 
     onReplacementSearch(itemId: number): void {
         const q = (this.replacementSearch[itemId] || '').toLowerCase();
+        const all = this.saleDetails?.produtosDisponiveis || [];
         if (!q) {
-            this.replacementFiltered[itemId] = this.saleDetails.produtosDisponiveis || [];
-            return;
+            this.replacementFiltered[itemId] = all;
+        } else {
+            this.replacementFiltered[itemId] = all.filter((p: any) => (p.nome || '').toLowerCase().includes(q));
         }
-        this.replacementFiltered[itemId] = (this.saleDetails.produtosDisponiveis || []).filter((p: any) => (p.nome || '').toLowerCase().includes(q));
+        this.replacementPage[itemId] = 0;
+        this.updateReplacementPagination(itemId);
     }
 
     selectReplacement(itemId: number, product: any): void {
         this.replacementProductIds[itemId] = product.id;
         this.replacementSearch[itemId] = product.nome;
         this.showReplacementList[itemId] = false;
+        this.replacementFiltered[itemId] = this.saleDetails?.produtosDisponiveis || [];
+        this.updateReplacementPagination(itemId);
     }
 
     hideReplacementListDelayed(itemId: number): void {
         setTimeout(() => { this.showReplacementList[itemId] = false; }, 150);
+    }
+
+    updateReplacementPagination(itemId: number): void {
+        const list = this.replacementFiltered[itemId] || [];
+        const page = this.replacementPage[itemId] || 0;
+        const size = this.replacementPageSize;
+        const totalPages = Math.max(1, Math.ceil(list.length / size));
+        this.replacementTotalPages[itemId] = totalPages;
+        const start = page * size;
+        this.replacementVisible[itemId] = list.slice(start, start + size);
+    }
+
+    replacementPrev(itemId: number): void {
+        const p = (this.replacementPage[itemId] || 0) - 1;
+        this.replacementPage[itemId] = Math.max(0, p);
+        this.updateReplacementPagination(itemId);
+    }
+
+    replacementNext(itemId: number): void {
+        const p = (this.replacementPage[itemId] || 0) + 1;
+        const max = (this.replacementTotalPages[itemId] || 1) - 1;
+        this.replacementPage[itemId] = Math.min(max, p);
+        this.updateReplacementPagination(itemId);
     }
 
     confirmActions(): void {
