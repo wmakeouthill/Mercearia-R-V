@@ -51,8 +51,12 @@
                 <div class="filtros-grupo">
                     <div class="filtro-item">
                         <label for="data">📅 Data:</label>
-                        <input type="date" id="data" [(ngModel)]="dataFiltro" (change)="filterVendas()"
-                            class="input-filtro">
+                        <div style="display:flex;gap:8px;align-items:center">
+                            <input type="date" id="data" [(ngModel)]="dataFiltro" (change)="filterVendas()" class="input-filtro">
+                            <input type="time" id="horaInicio" [(ngModel)]="horaInicioFiltro" (change)="filterVendas()" class="input-filtro" placeholder="HH:mm">
+                            <span>—</span>
+                            <input type="time" id="horaFim" [(ngModel)]="horaFimFiltro" (change)="filterVendas()" class="input-filtro" placeholder="HH:mm">
+                        </div>
                     </div>
                     <div class="filtro-item produto">
                         <label for="produto">🔍 Produto:</label>

@@ -28,6 +28,8 @@ export class HistoricoVendasComponent implements OnInit {
   vendasFiltradasAll: any[] | null = null;
   expandedRows = new Set<string>();
   dataFiltro = '';
+  horaInicioFiltro = '';
+  horaFimFiltro = '';
   produtoFiltro = '';
   metodoPagamentoFiltro = '';
   loading = false;
@@ -49,6 +51,31 @@ export class HistoricoVendasComponent implements OnInit {
   ngOnInit(): void {
     logger.info('HISTORICO_VENDAS', 'INIT', 'Componente iniciado');
     this.loadPage(1);
+  }
+
+  // Build local ISO datetime string (no Z) from YYYY-MM-DD and HH:mm
+  private normalizeDateTimeLocal(dateYmd: string, timeHHmm: string): string {
+    try {
+      const parts = dateYmd.split('-');
+      if (parts.length !== 3) return dateYmd;
+      const year = Number(parts[0]);
+      const month = Number(parts[1]) - 1;
+      const day = Number(parts[2]);
+      const t = (timeHHmm || '').split(':');
+      const hours = Number(t[0]) || 0;
+      const minutes = Number(t[1]) || 0;
+      const d = new Date(year, month, day, hours, minutes, 0, 0);
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      const hh = String(d.getHours()).padStart(2, '0');
+      const min = String(d.getMinutes()).padStart(2, '0');
+      const ss = String(d.getSeconds()).padStart(2, '0');
+      const ms = String(d.getMilliseconds()).padStart(3, '0');
+      return `${yyyy}-${mm}-${dd}T${hh}:${min}:${ss}.${ms}`;
+    } catch {
+      return `${dateYmd}T00:00:00.000`;
+    }
   }
 
   // pagination (same model as Caixa)
@@ -245,8 +272,26 @@ export class HistoricoVendasComponent implements OnInit {
       // Filtro por data
       if (this.dataFiltro) {
         try {
+          const vendaDate = parseDate(venda.data_venda);
           const vendaDataLocal = extractLocalDate(venda.data_venda);
-          matchData = vendaDataLocal === this.dataFiltro;
+          if (vendaDataLocal !== this.dataFiltro) {
+            matchData = false;
+          } else {
+            // if time filters provided, apply them
+            if (this.horaInicioFiltro || this.horaFimFiltro) {
+              const startIso = this.horaInicioFiltro ? this.normalizeDateTimeLocal(this.dataFiltro, this.horaInicioFiltro) : null;
+              const endIso = this.horaFimFiltro ? this.normalizeDateTimeLocal(this.dataFiltro, this.horaFimFiltro) : null;
+              const vendaTs = vendaDate.getTime();
+              if (startIso) {
+                const sTs = new Date(startIso).getTime();
+                if (vendaTs < sTs) matchData = false;
+              }
+              if (endIso) {
+                const eTs = new Date(endIso).getTime();
+                if (vendaTs > eTs) matchData = false;
+              }
+            }
+          }
         } catch {
           matchData = false;
         }
