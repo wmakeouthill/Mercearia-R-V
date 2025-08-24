@@ -58,7 +58,7 @@
                     </div>
                     <div class="filtro-item">
                         <label for="data">Data:</label>
-                        @if (filtroPeriodo === 'dia') {<input type="date" id="data" [(ngModel)]="filtroData" class="input-filtro">}
+                        @if (filtroPeriodo === 'dia') {<div style="display:flex;gap:8px;align-items:center"><input type="date" id="data" [(ngModel)]="filtroData" class="input-filtro"> <input type="time" id="dataHoraInicio" [(ngModel)]="filtroHoraInicio" class="input-filtro" placeholder="HH:mm"> <span>—</span> <input type="time" id="dataHoraFim" [(ngModel)]="filtroHoraFim" class="input-filtro" placeholder="HH:mm"></div>}
                         @if (filtroPeriodo === 'mes') {<input type="month" id="data-mes" [(ngModel)]="filtroData" class="input-filtro">}
                     </div>
                 </div>
