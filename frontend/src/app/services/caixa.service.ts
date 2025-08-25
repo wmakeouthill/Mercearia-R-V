@@ -35,6 +35,32 @@ export class CaixaService {
     return this.makeRequest('LISTAR_MOVIMENTACOES_MES', () => this.http.get<any>(url));
   }
 
+  listarMovimentacoesSummary(params: {
+    data?: string,
+    periodo_inicio?: string,
+    periodo_fim?: string,
+    from?: string,
+    to?: string,
+    tipo?: string,
+    metodo_pagamento?: string,
+    hora_inicio?: string,
+    hora_fim?: string,
+  }): Observable<{ sum_entradas: number; sum_retiradas: number; sum_vendas: number; total: number }> {
+    const queryParams: string[] = [];
+    if (params.data) queryParams.push(`data=${encodeURIComponent(params.data)}`);
+    if (params.periodo_inicio) queryParams.push(`periodo_inicio=${encodeURIComponent(params.periodo_inicio)}`);
+    if (params.periodo_fim) queryParams.push(`periodo_fim=${encodeURIComponent(params.periodo_fim)}`);
+    if (params.from) queryParams.push(`from=${encodeURIComponent(params.from)}`);
+    if (params.to) queryParams.push(`to=${encodeURIComponent(params.to)}`);
+    if (params.tipo) queryParams.push(`tipo=${encodeURIComponent(params.tipo)}`);
+    if (params.metodo_pagamento) queryParams.push(`metodo_pagamento=${encodeURIComponent(params.metodo_pagamento)}`);
+    if (params.hora_inicio) queryParams.push(`hora_inicio=${encodeURIComponent(params.hora_inicio)}`);
+    if (params.hora_fim) queryParams.push(`hora_fim=${encodeURIComponent(params.hora_fim)}`);
+    const query = queryParams.length ? `?${queryParams.join('&')}` : '';
+    const url = `${this.baseUrl}/caixa/movimentacoes/summary${query}`;
+    return this.makeRequest('LISTAR_MOVIMENTACOES_SUMMARY', () => this.http.get<any>(url));
+  }
+
   /**
    * Wrapper para requisições HTTP com tratamento de erro e retry
    */
@@ -93,6 +119,7 @@ export class CaixaService {
     periodo_inicio?: string,
     periodo_fim?: string,
     all?: boolean,
+    aggs?: boolean,
     from?: string,
     to?: string,
     page?: number,
@@ -131,6 +158,8 @@ export class CaixaService {
     if (params.to) queryParams.push(`to=${encodeURIComponent(params.to)}`);
     if (params.page != null) queryParams.push(`page=${params.page}`);
     if (params.size != null) queryParams.push(`size=${params.size}`);
+    // request aggregations (sums) only when asked to avoid extra paging
+    if (params.all === true || params.aggs === true) queryParams.push(`aggs=true`);
     const query = queryParams.length ? `?${queryParams.join('&')}` : '';
     const url = `${this.baseUrl}/caixa/movimentacoes${query}`;
     return this.makeRequest('LISTAR_MOVIMENTACOES', () => this.http.get<any>(url));

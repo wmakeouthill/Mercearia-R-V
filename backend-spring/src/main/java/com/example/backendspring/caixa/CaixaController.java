@@ -111,6 +111,7 @@ public class CaixaController {
             @RequestParam(value = "from", required = false) String from,
             @RequestParam(value = "to", required = false) String to,
             @RequestParam(value = "all", required = false) Boolean all,
+            @RequestParam(value = "aggs", required = false) Boolean aggs,
             @RequestParam(value = "tipo", required = false) String tipo,
             @RequestParam(value = "metodo_pagamento", required = false) String metodoPagamento,
             @RequestParam(value = "hora_inicio", required = false) String horaInicio,
@@ -378,6 +379,27 @@ public class CaixaController {
             var filtrada = applyFilters(lista, tipo, metodoPagamento, tIni, tFim);
             log.info("listarMovimentacoes: after-local-time-filter count={}", filtrada.size());
 
+            // If client requested aggregations only, return sums without fetching pages
+            if (Boolean.TRUE.equals(aggs)) {
+                double sumEntradasAgg = filtrada.stream()
+                        .filter(m -> TIPO_ENTRADA.equals(m.get("tipo")))
+                        .mapToDouble(m -> ((Number) m.get(KEY_VALOR)).doubleValue())
+                        .sum();
+                double sumRetiradasAgg = filtrada.stream()
+                        .filter(m -> TIPO_RETIRADA.equals(m.get("tipo")))
+                        .mapToDouble(m -> ((Number) m.get(KEY_VALOR)).doubleValue())
+                        .sum();
+                double sumVendasAgg = filtrada.stream()
+                        .filter(m -> TIPO_VENDA.equals(m.get("tipo")))
+                        .mapToDouble(m -> ((Number) m.get(KEY_VALOR)).doubleValue())
+                        .sum();
+                return ResponseEntity.ok(java.util.Map.of(
+                        KEY_SUM_ENTRADAS, sumEntradasAgg,
+                        KEY_SUM_RETIRADAS, sumRetiradasAgg,
+                        KEY_SUM_VENDAS, sumVendasAgg,
+                        KEY_TOTAL, filtrada.size()));
+            }
+
             // If client requested all matching items (no pagination), return them
             // in a single response. Useful for UIs that need client-side
             // filtering/aggregation without fetching pages.
@@ -568,6 +590,21 @@ public class CaixaController {
             body.put(KEY_HAS_NEXT, false);
             body.put(KEY_PAGE, 1);
             body.put(KEY_SIZE, lista.size());
+            double sumEntradasAll = lista.stream()
+                    .filter(m -> TIPO_ENTRADA.equals(m.get("tipo")))
+                    .mapToDouble(m -> ((Number) (m.get(KEY_VALOR) == null ? 0 : m.get(KEY_VALOR))).doubleValue())
+                    .sum();
+            double sumRetiradasAll = lista.stream()
+                    .filter(m -> TIPO_RETIRADA.equals(m.get("tipo")))
+                    .mapToDouble(m -> ((Number) (m.get(KEY_VALOR) == null ? 0 : m.get(KEY_VALOR))).doubleValue())
+                    .sum();
+            double sumVendasAll = lista.stream()
+                    .filter(m -> TIPO_VENDA.equals(m.get("tipo")))
+                    .mapToDouble(m -> ((Number) (m.get(KEY_VALOR) == null ? 0 : m.get(KEY_VALOR))).doubleValue())
+                    .sum();
+            body.put(KEY_SUM_ENTRADAS, sumEntradasAll);
+            body.put(KEY_SUM_RETIRADAS, sumRetiradasAll);
+            body.put(KEY_SUM_VENDAS, sumVendasAll);
             return ResponseEntity.ok(body);
         } catch (Exception e) {
             log.error("listarMovimentacoes/dia: exception", e);
@@ -591,7 +628,7 @@ public class CaixaController {
             java.time.LocalDate fim = inicio.plusMonths(1).minusDays(1);
             // Delegate to the main listing path; preserve pagination
             return listarMovimentacoes(null, inicio.toString(), fim.toString(), null, null, null, null, null, null,
-                    null,
+                    null, null,
                     page == null ? 1 : page, size == null ? 20 : size);
         } catch (Exception e) {
             log.error("listarMovimentacoes/mes: exception", e);
@@ -694,6 +731,24 @@ public class CaixaController {
             return ResponseEntity.status(500).body(java.util.Map.of("items", java.util.List.of(), "total", 0,
                     "hasNext", false, "page", 1, "size", 20));
         }
+    }
+
+    @GetMapping("/movimentacoes/summary")
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    public ResponseEntity<java.util.Map<String, Object>> movimentacoesSummary(
+            @RequestParam(value = "data", required = false) String data,
+            @RequestParam(value = "periodo_inicio", required = false) String periodoInicio,
+            @RequestParam(value = "periodo_fim", required = false) String periodoFim,
+            @RequestParam(value = "from", required = false) String from,
+            @RequestParam(value = "to", required = false) String to,
+            @RequestParam(value = "tipo", required = false) String tipo,
+            @RequestParam(value = "metodo_pagamento", required = false) String metodoPagamento,
+            @RequestParam(value = "hora_inicio", required = false) String horaInicio,
+            @RequestParam(value = "hora_fim", required = false) String horaFim) {
+        // Delegate to existing listarMovimentacoes with aggs=true to reuse
+        // the same filtering logic and ensure identical results.
+        return listarMovimentacoes(data, periodoInicio, periodoFim, from, to, null, Boolean.TRUE, tipo, metodoPagamento,
+                horaInicio, horaFim, null, null);
     }
 
     @DeleteMapping("/sessoes/{id}")

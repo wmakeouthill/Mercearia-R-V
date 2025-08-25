@@ -7,8 +7,7 @@ import { extractLocalDate, getCurrentDateForInput } from '../../utils/date-utils
 import { CaixaService } from '../../services/caixa.service';
 import { AuthService } from '../../services/auth';
 import { logger } from '../../utils/logger';
-import { forkJoin, of, Subscription, firstValueFrom } from 'rxjs';
-import { catchError } from 'rxjs/operators';
+import { forkJoin, of, Subscription } from 'rxjs';
 import { RelatorioResumo } from '../../models';
 import { Router } from '@angular/router';
 
@@ -384,20 +383,74 @@ export class CaixaComponent implements OnInit {
           this.sumEntradas = consolidated.filter((c: any) => c.tipo === 'entrada').reduce((s: number, it: any) => s + (Number(it.valor || 0) || 0), 0);
           this.sumRetiradas = consolidated.filter((c: any) => c.tipo === 'retirada').reduce((s: number, it: any) => s + (Number(it.valor || 0) || 0), 0);
           this.sumVendas = consolidated.filter((c: any) => c.tipo === 'venda').reduce((s: number, it: any) => s + (Number(it.valor || 0) || 0), 0);
-          // If in 'dia' mode synthesize resumoVendasDia from consolidated vendas
+          // Synthesize resumoVendasDia and resumo from consolidated totals for all modes
+          this.resumoVendasDia = { receita_total: Number(this.sumVendas || 0), total_vendas: Number(this.sumVendas || 0), quantidade_vendida: 0 } as any;
           if (this.filtroModo === 'dia') {
-            this.resumoVendasDia = { receita_total: Number(this.sumVendas || 0), total_vendas: Number(this.sumVendas || 0), quantidade_vendida: 0 } as any;
             this.resumo = { data: this.dataSelecionada, saldo_movimentacoes: Number(this.sumEntradas || 0) - Number(this.sumRetiradas || 0) } as any;
+          } else if (this.filtroModo === 'mes') {
+            this.resumo = { data: this.mesSelecionado, saldo_movimentacoes: Number(this.sumEntradas || 0) - Number(this.sumRetiradas || 0) } as any;
+          } else { // tudo
+            this.resumo = { data: 'Total', saldo_movimentacoes: Number(this.sumEntradas || 0) - Number(this.sumRetiradas || 0) } as any;
           }
 
           this.applySorting();
           this.loading = false;
         };
 
-        // For legacy paginated listing we do NOT automatically fetch all pages.
-        // The UI should request further pages on user pagination. Just finalize
-        // the payload we received for page 1.
+        // Render page 1 immediately
         finalizePayload(payload);
+        // Instead of fetching every page, request aggregated sums in one call
+        // to avoid many requests. Use the listing endpoint with aggs=true.
+        const aggsParams: any = {
+          tipo: this.filtroTipo || undefined,
+          metodo_pagamento: this.filtroMetodo || undefined,
+          hora_inicio: this.filtroHoraInicio || undefined,
+          hora_fim: this.filtroHoraFim || undefined,
+          aggs: true
+        };
+        if (this.filtroModo === 'dia') {
+          aggsParams.data = this.dataSelecionada;
+        } else if (this.filtroModo === 'mes') {
+          aggsParams.periodo_inicio = listingPeriodoInicio;
+          aggsParams.periodo_fim = listingPeriodoFim;
+        }
+
+        try {
+          // Prefer the dedicated summary endpoint to get aggregates in one call
+          const summaryObs = this.filtroModo === 'dia' || this.filtroModo === 'mes'
+            ? this.caixaService.listarMovimentacoesSummary({
+              data: this.filtroModo === 'dia' ? this.dataSelecionada : undefined,
+              periodo_inicio: this.filtroModo === 'mes' ? listingPeriodoInicio : undefined,
+              periodo_fim: this.filtroModo === 'mes' ? listingPeriodoFim : undefined,
+              tipo: this.filtroTipo || undefined,
+              metodo_pagamento: this.filtroMetodo || undefined,
+              hora_inicio: this.filtroHoraInicio || undefined,
+              hora_fim: this.filtroHoraFim || undefined,
+            })
+            : this.caixaService.listarMovimentacoesSummary({ tipo: this.filtroTipo || undefined, metodo_pagamento: this.filtroMetodo || undefined });
+
+          summaryObs.subscribe({
+            next: (aggResp: any) => {
+              try {
+                if (aggResp) {
+                  this.sumEntradas = Number(aggResp?.sum_entradas || 0);
+                  this.sumRetiradas = Number(aggResp?.sum_retiradas || 0);
+                  this.sumVendas = Number(aggResp?.sum_vendas || 0);
+                  if (this.filtroModo === 'mes') {
+                    this.resumo = { data: this.mesSelecionado, saldo_movimentacoes: this.sumEntradas - this.sumRetiradas } as any;
+                  } else if (this.filtroModo === 'dia') {
+                    this.resumo = { data: this.dataSelecionada, saldo_movimentacoes: this.sumEntradas - this.sumRetiradas } as any;
+                  } else {
+                    this.resumo = { data: 'Total', saldo_movimentacoes: this.sumEntradas - this.sumRetiradas } as any;
+                  }
+                }
+              } catch (e) { logger.warn('CAIXA_COMPONENT', 'AGGS_PARSE_FAIL', 'Failed to parse summary response', e); }
+            },
+            error: (err) => { logger.warn('CAIXA_COMPONENT', 'AGGS_FAIL', 'Summary call failed', err); }
+          });
+        } catch (e) {
+          logger.warn('CAIXA_COMPONENT', 'AGGS_SUBSCRIBE_FAIL', 'Failed to subscribe to summary call', e);
+        }
         return;
         // prefer backend-provided day resumo when in 'dia' mode; otherwise
         // synthesize a resumo object from the listing sums so the UI cards
