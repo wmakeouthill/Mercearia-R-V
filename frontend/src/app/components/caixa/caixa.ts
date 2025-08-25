@@ -199,10 +199,12 @@ export class CaixaComponent implements OnInit {
       periodoFim = last.toISOString().substring(0, 10);
     }
 
-    const resumoVendasObs = this.filtroModo === 'dia' ? this.api.getResumoDia(this.dataSelecionada) : of(null);
-    // We'll compute resumo from the filtered listing when in 'dia' mode, but
-    // still request resumo-dia for compatibility in case backend provides it.
-    const resumoMovsObs = this.filtroModo === 'dia' ? this.caixaService.getResumoMovimentacoesDia(this.dataSelecionada) : of(null);
+    // For the day-card values, always request the real current day when not
+    // in 'dia' mode so the cards reflect today's numbers. When in 'dia'
+    // mode, request the user-selected date.
+    const todayInput = getCurrentDateForInput();
+    const resumoVendasObs = this.api.getResumoDia(this.filtroModo === 'dia' ? this.dataSelecionada : todayInput);
+    const resumoMovsObs = this.caixaService.getResumoMovimentacoesDia(this.filtroModo === 'dia' ? this.dataSelecionada : todayInput);
     // DEBUG: log params sent to listarMovimentacoes
     try {
       // Log the raw params (data/periodo) computed above; avoid referencing
@@ -315,10 +317,10 @@ export class CaixaComponent implements OnInit {
         }
         // resumo objects may also be string-encoded
         if (typeof resumoVendas === 'string') {
-          try { resumoVendas = JSON.parse(resumoVendas); } catch { resumoVendas = null; }
+          try { resumoVendas = JSON.parse(resumoVendas); } catch { resumoVendas = null as any; }
         }
         if (typeof resumoMovs === 'string') {
-          try { resumoMovs = JSON.parse(resumoMovs); } catch { resumoMovs = null; }
+          try { resumoMovs = JSON.parse(resumoMovs); } catch { resumoMovs = null as any; }
         }
 
         // helper to run the normal payload processing after ensuring we have
@@ -399,6 +401,18 @@ export class CaixaComponent implements OnInit {
 
         // Render page 1 immediately
         finalizePayload(payload);
+        // Ensure day-cards reflect the real current day when not in 'dia' mode
+        if (this.filtroModo !== 'dia') {
+          const today = getCurrentDateForInput();
+          this.api.getResumoDia(today).subscribe({
+            next: (r: any) => { try { if (r) this.resumoVendasDia = r; } catch { } },
+            error: () => { }
+          });
+          this.caixaService.getResumoMovimentacoesDia(today).subscribe({
+            next: (r: any) => { try { if (r) this.resumo = { data: today, saldo_movimentacoes: Number(r?.saldo_movimentacoes || 0) }; } catch { } },
+            error: () => { }
+          });
+        }
         // Instead of fetching every page, request aggregated sums in one call
         // to avoid many requests. Use the listing endpoint with aggs=true.
         const aggsParams: any = {
@@ -436,13 +450,9 @@ export class CaixaComponent implements OnInit {
                   this.sumEntradas = Number(aggResp?.sum_entradas || 0);
                   this.sumRetiradas = Number(aggResp?.sum_retiradas || 0);
                   this.sumVendas = Number(aggResp?.sum_vendas || 0);
-                  if (this.filtroModo === 'mes') {
-                    this.resumo = { data: this.mesSelecionado, saldo_movimentacoes: this.sumEntradas - this.sumRetiradas } as any;
-                  } else if (this.filtroModo === 'dia') {
-                    this.resumo = { data: this.dataSelecionada, saldo_movimentacoes: this.sumEntradas - this.sumRetiradas } as any;
-                  } else {
-                    this.resumo = { data: 'Total', saldo_movimentacoes: this.sumEntradas - this.sumRetiradas } as any;
-                  }
+                  // Do not overwrite `this.resumo` here: the day-specific cards
+                  // (resumo/resumoVendasDia) must be derived from resumoMovsObs/
+                  // resumoVendasObs so they reflect today's/day-selected numbers.
                 }
               } catch (e) { logger.warn('CAIXA_COMPONENT', 'AGGS_PARSE_FAIL', 'Failed to parse summary response', e); }
             },
