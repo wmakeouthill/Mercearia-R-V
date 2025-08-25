@@ -110,6 +110,7 @@ public class CaixaController {
             @RequestParam(value = "periodo_fim", required = false) String periodoFim,
             @RequestParam(value = "from", required = false) String from,
             @RequestParam(value = "to", required = false) String to,
+            @RequestParam(value = "all", required = false) Boolean all,
             @RequestParam(value = "tipo", required = false) String tipo,
             @RequestParam(value = "metodo_pagamento", required = false) String metodoPagamento,
             @RequestParam(value = "hora_inicio", required = false) String horaInicio,
@@ -126,6 +127,39 @@ public class CaixaController {
                 inicio = java.time.LocalDate.parse(periodoInicio);
                 fim = java.time.LocalDate.parse(periodoFim);
             }
+            // Debug: when client requests all, log repository counts for the requested
+            // range
+            try {
+                if (Boolean.TRUE.equals(all)) {
+                    if (dia != null) {
+                        var movsDia = movimentacaoRepository.findByDia(dia);
+                        var ordersDia = saleOrderRepository.findByDia(dia);
+                        log.info("listarMovimentacoes[ALL]: dia={} movs={} orders={}", dia,
+                                (movsDia instanceof java.util.Collection ? ((java.util.Collection<?>) movsDia).size()
+                                        : -1),
+                                (ordersDia instanceof java.util.Collection
+                                        ? ((java.util.Collection<?>) ordersDia).size()
+                                        : -1));
+                    } else if (inicio != null && fim != null) {
+                        var movsPer = movimentacaoRepository.findByPeriodo(inicio, fim);
+                        var ordersPer = saleOrderRepository.findByPeriodo(inicio, fim);
+                        log.info("listarMovimentacoes[ALL]: periodo {}..{} movs={} orders={}", inicio, fim,
+                                (movsPer instanceof java.util.Collection ? ((java.util.Collection<?>) movsPer).size()
+                                        : -1),
+                                (ordersPer instanceof java.util.Collection
+                                        ? ((java.util.Collection<?>) ordersPer).size()
+                                        : -1));
+                    } else if (from != null || to != null) {
+                        log.info("listarMovimentacoes[ALL]: raw from/to params provided from={} to={}", from, to);
+                    }
+                }
+            } catch (Exception ex) {
+                log.warn("listarMovimentacoes[ALL]: debug counts failed", ex);
+            }
+            log.info(
+                    "listarMovimentacoes: request params data={} periodo_inicio={} periodo_fim={} from={} to={} all={} tipo={} metodo_pagamento={} hora_inicio={} hora_fim={} page={} size={}",
+                    data, periodoInicio, periodoFim, from, to, all, tipo, metodoPagamento, horaInicio, horaFim, page,
+                    size);
             java.util.List<java.util.Map<String, Object>> lista = new java.util.ArrayList<>();
 
             var tIni = safeParseLocalTime(horaInicio);
@@ -277,7 +311,7 @@ public class CaixaController {
                     if (!byId.containsKey(idObj))
                         byId.put(idObj, m);
                 }
-                lista = byId.values().stream().toList();
+                lista = new java.util.ArrayList<>(byId.values());
 
                 // debug instants
                 try {
@@ -301,7 +335,7 @@ public class CaixaController {
             }
 
             // Ordenar por data_movimento desc
-            sortByDataMovimentoDesc(lista);
+            lista = sortByDataMovimentoDesc(lista);
 
             // Debug: when hora filters are used, log samples to diagnose timezone issues
             if (tIni != null || tFim != null) {
@@ -330,6 +364,34 @@ public class CaixaController {
             // Filtros opcionais por tipo, método e faixa horária (local-time)
             var filtrada = applyFilters(lista, tipo, metodoPagamento, tIni, tFim);
             log.info("listarMovimentacoes: after-local-time-filter count={}", filtrada.size());
+
+            // If client requested all matching items (no pagination), return them
+            // in a single response. Useful for UIs that need client-side
+            // filtering/aggregation without fetching pages.
+            if (Boolean.TRUE.equals(all)) {
+                java.util.Map<String, Object> bodyAll = new java.util.LinkedHashMap<>();
+                bodyAll.put(KEY_ITEMS, filtrada);
+                bodyAll.put(KEY_TOTAL, filtrada.size());
+                bodyAll.put(KEY_HAS_NEXT, false);
+                bodyAll.put(KEY_PAGE, 1);
+                bodyAll.put(KEY_SIZE, filtrada.size());
+                double sumEntradasAll = filtrada.stream()
+                        .filter(m -> TIPO_ENTRADA.equals(m.get("tipo")))
+                        .mapToDouble(m -> ((Number) m.get(KEY_VALOR)).doubleValue())
+                        .sum();
+                double sumRetiradasAll = filtrada.stream()
+                        .filter(m -> TIPO_RETIRADA.equals(m.get("tipo")))
+                        .mapToDouble(m -> ((Number) m.get(KEY_VALOR)).doubleValue())
+                        .sum();
+                double sumVendasAll = filtrada.stream()
+                        .filter(m -> TIPO_VENDA.equals(m.get("tipo")))
+                        .mapToDouble(m -> ((Number) m.get(KEY_VALOR)).doubleValue())
+                        .sum();
+                bodyAll.put(KEY_SUM_ENTRADAS, sumEntradasAll);
+                bodyAll.put(KEY_SUM_RETIRADAS, sumRetiradasAll);
+                bodyAll.put(KEY_SUM_VENDAS, sumVendasAll);
+                return ResponseEntity.ok(bodyAll);
+            }
 
             // Somatórios no período filtrado
             double sumEntradas = filtrada.stream()
@@ -384,6 +446,127 @@ public class CaixaController {
                     KEY_SUM_ENTRADAS, 0.0,
                     KEY_SUM_RETIRADAS, 0.0,
                     KEY_SUM_VENDAS, 0.0));
+        }
+    }
+
+    /**
+     * Endpoint helper: retorna todas movimentações + vendas para uma data (no
+     * timezone America/Sao_Paulo).
+     * Query param: data=YYYY-MM-DD
+     */
+    @GetMapping("/movimentacoes/dia")
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    public ResponseEntity<java.util.Map<String, Object>> listarMovimentacoesDia(
+            @RequestParam(value = "data") String data) {
+        try {
+            java.time.LocalDate dia = java.time.LocalDate.parse(data);
+            java.time.ZoneId sp = java.time.ZoneId.of("America/Sao_Paulo");
+            var zdtFrom = java.time.ZonedDateTime.of(dia, java.time.LocalTime.MIDNIGHT, sp);
+            var zdtTo = java.time.ZonedDateTime.of(dia.plusDays(1), java.time.LocalTime.MIDNIGHT, sp).minusNanos(1);
+            java.time.OffsetDateTime fromTs = zdtFrom.toOffsetDateTime();
+            java.time.OffsetDateTime toTs = zdtTo.toOffsetDateTime();
+
+            java.util.List<java.util.Map<String, Object>> lista = new java.util.ArrayList<>();
+
+            // movs via DB
+            try {
+                var movs = movimentacaoRepository.findByPeriodoTimestamps(fromTs, toTs);
+                for (var m : movs) {
+                    java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
+                    row.put("id", m.getId());
+                    row.put("caixa_status_id", m.getCaixaStatus() != null ? m.getCaixaStatus().getId() : null);
+                    row.put("tipo", m.getTipo());
+                    row.put(KEY_VALOR, m.getValor());
+                    row.put(KEY_DESCRICAO, m.getDescricao());
+                    String usuarioNome = null;
+                    try {
+                        if (m.getOperador() != null)
+                            usuarioNome = m.getOperador().getUsername();
+                    } catch (Exception ignored) {
+                    }
+                    if (usuarioNome == null && m.getUsuario() != null) {
+                        usuarioNome = m.getUsuario().getUsername();
+                    }
+                    row.put(KEY_USUARIO, usuarioNome);
+                    row.put(KEY_DATA_MOVIMENTO, m.getDataMovimento());
+                    lista.add(row);
+                }
+            } catch (Exception e) {
+                log.warn("listarMovimentacoes/dia: movs query failed", e);
+                lista.addAll(buildManualMovRows(dia, null, null));
+            }
+
+            // orders via DB
+            try {
+                var orders = saleOrderRepository.findByPeriodoTimestampsRaw(fromTs, toTs);
+                for (var vo : orders) {
+                    for (var pg : vo.getPagamentos()) {
+                        java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
+                        row.put("id", vo.getId());
+                        row.put("tipo", TIPO_VENDA);
+                        row.put(KEY_VALOR, pg.getValor());
+                        row.put("pagamento_valor", pg.getValor());
+                        row.put("total_venda", vo.getTotalFinal());
+                        row.put(KEY_DESCRICAO, vo.getPagamentos().size() > 1 ? "Venda (multi)" : "Venda");
+                        row.put("produto_nome",
+                                vo.getItens().isEmpty() ? null : vo.getItens().get(0).getProduto().getNome());
+                        row.put(KEY_METODO_PAGAMENTO, pg.getMetodo());
+                        row.put(KEY_USUARIO, vo.getOperador() != null ? vo.getOperador().getUsername() : null);
+                        row.put(KEY_DATA_MOVIMENTO, vo.getDataVenda());
+                        row.put("caixa_status_id", vo.getCaixaStatus() != null ? vo.getCaixaStatus().getId() : null);
+                        lista.add(row);
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("listarMovimentacoes/dia: orders query failed", e);
+                lista.addAll(buildSaleOrderRows(dia, null, null));
+            }
+
+            // dedupe and sort
+            java.util.Map<Object, java.util.Map<String, Object>> byId = new java.util.LinkedHashMap<>();
+            for (var m : lista) {
+                Object idObj = m.get("id");
+                if (idObj == null) {
+                    idObj = (m.get(KEY_DATA_MOVIMENTO) == null ? java.util.UUID.randomUUID().toString()
+                            : m.get(KEY_DATA_MOVIMENTO).toString() + "|" + m.get(KEY_DESCRICAO));
+                }
+                if (!byId.containsKey(idObj))
+                    byId.put(idObj, m);
+            }
+            lista = new java.util.ArrayList<>(byId.values());
+            lista = sortByDataMovimentoDesc(lista);
+
+            java.util.Map<String, Object> body = new java.util.LinkedHashMap<>();
+            body.put(KEY_ITEMS, lista);
+            body.put(KEY_TOTAL, lista.size());
+            body.put(KEY_HAS_NEXT, false);
+            body.put(KEY_PAGE, 1);
+            body.put(KEY_SIZE, lista.size());
+            return ResponseEntity.ok(body);
+        } catch (Exception e) {
+            log.error("listarMovimentacoes/dia: exception", e);
+            return ResponseEntity.status(500).body(Map.of(KEY_ERROR, "Falha ao listar por dia"));
+        }
+    }
+
+    /**
+     * Endpoint helper: retorna todas movimentações + vendas para um mês.
+     * Query params: ano=YYYY mes=MM
+     */
+    @GetMapping("/movimentacoes/mes")
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    public ResponseEntity<java.util.Map<String, Object>> listarMovimentacoesMes(
+            @RequestParam(value = "ano") int ano,
+            @RequestParam(value = "mes") int mes) {
+        try {
+            java.time.LocalDate inicio = java.time.LocalDate.of(ano, mes, 1);
+            java.time.LocalDate fim = inicio.plusMonths(1).minusDays(1);
+            return listarMovimentacoes(null, inicio.toString(), fim.toString(), null, null, true, null, null, null,
+                    null, 1,
+                    Integer.MAX_VALUE);
+        } catch (Exception e) {
+            log.error("listarMovimentacoes/mes: exception", e);
+            return ResponseEntity.status(500).body(Map.of(KEY_ERROR, "Falha ao listar por mês"));
         }
     }
 
@@ -637,9 +820,20 @@ public class CaixaController {
         })).toList();
     }
 
-    private static void sortByDataMovimentoDesc(java.util.List<java.util.Map<String, Object>> lista) {
-        lista.sort((a, b) -> java.time.OffsetDateTime.parse(b.get(KEY_DATA_MOVIMENTO).toString())
-                .compareTo(java.time.OffsetDateTime.parse(a.get(KEY_DATA_MOVIMENTO).toString())));
+    private static java.util.List<java.util.Map<String, Object>> sortByDataMovimentoDesc(
+            java.util.List<java.util.Map<String, Object>> lista) {
+        try {
+            java.util.List<java.util.Map<String, Object>> mutable = lista instanceof java.util.ArrayList
+                    ? lista
+                    : new java.util.ArrayList<>(lista);
+            mutable.sort((a, b) -> java.time.OffsetDateTime.parse(b.get(KEY_DATA_MOVIMENTO).toString())
+                    .compareTo(java.time.OffsetDateTime.parse(a.get(KEY_DATA_MOVIMENTO).toString())));
+            return mutable;
+        } catch (Exception e) {
+            // If sorting fails, return original list to avoid propagating 500 to clients
+            log.warn("sortByDataMovimentoDesc: sort failed", e);
+            return lista;
+        }
     }
 
     private static java.util.List<java.util.Map<String, Object>> applyFilters(

@@ -7,7 +7,7 @@ import { extractLocalDate, getCurrentDateForInput } from '../../utils/date-utils
 import { CaixaService } from '../../services/caixa.service';
 import { AuthService } from '../../services/auth';
 import { logger } from '../../utils/logger';
-import { forkJoin, of } from 'rxjs';
+import { forkJoin, of, Subscription, firstValueFrom } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { RelatorioResumo } from '../../models';
 import { Router } from '@angular/router';
@@ -35,6 +35,11 @@ export class CaixaComponent implements OnInit {
   filtroHoraFim = '';
   sortKey: 'tipo' | 'metodo' | 'valor' | 'data' = 'data';
   sortDir: 'asc' | 'desc' = 'desc';
+  fetchingAllPages = false;
+  private currentRequestSub: Subscription | null = null;
+  private loadResumoTimer: any = null;
+  private readonly LOAD_DEBOUNCE_MS = 300;
+  private lastRequestKey: string | null = null;
 
   tipo: TipoMovManual = 'entrada';
   valor: number | null = null;
@@ -145,13 +150,38 @@ export class CaixaComponent implements OnInit {
 
   // modais de abrir/fechar removidos: operadores usam botões em outros pontos (ex: dashboard/ponto-venda)
 
-  onChangeData(): void { this.page = 1; this.loadResumoEMovimentacoes(); }
-  onChangeMes(): void { this.page = 1; this.loadResumoEMovimentacoes(); }
-  onChangeModo(): void { this.page = 1; this.loadResumoEMovimentacoes(); }
+  private scheduleLoadResumo(ms: number = this.LOAD_DEBOUNCE_MS): void {
+    try { if (this.loadResumoTimer) clearTimeout(this.loadResumoTimer); } catch (e) { }
+    this.loadResumoTimer = setTimeout(() => { this.loadResumoEMovimentacoes(); this.loadResumoTimer = null; }, ms);
+  }
+
+  onChangeData(): void { this.page = 1; this.scheduleLoadResumo(); }
+  onChangeMes(): void { this.page = 1; this.scheduleLoadResumo(); }
+  onChangeModo(): void { this.page = 1; this.scheduleLoadResumo(); }
 
   private loadResumoEMovimentacoes(): void {
     this.error = '';
     this.loading = true;
+    // build a key representing the current filter/pagination parameters
+    const keyObj = {
+      modo: this.filtroModo,
+      data: this.dataSelecionada,
+      mes: this.mesSelecionado,
+      tipo: this.filtroTipo,
+      metodo: this.filtroMetodo,
+      horaInicio: this.filtroHoraInicio,
+      horaFim: this.filtroHoraFim,
+      page: this.page,
+      size: this.pageSize
+    };
+    const key = JSON.stringify(keyObj);
+    // If an identical request is already in flight, skip issuing another
+    if (this.currentRequestSub && this.lastRequestKey === key) {
+      logger.debug('CAIXA_COMPONENT', 'DEDUPE_SKIP', 'Skipping duplicate in-flight request', { keyObj });
+      this.loading = false;
+      return;
+    }
+    this.lastRequestKey = key;
     let dataParam: string | undefined;
     let periodoInicio: string | undefined;
     let periodoFim: string | undefined;
@@ -200,6 +230,7 @@ export class CaixaComponent implements OnInit {
     let listingDataParam: string | undefined = undefined;
     let listingPeriodoInicio: string | undefined = undefined;
     let listingPeriodoFim: string | undefined = undefined;
+    // from/to not used by client now; kept for legacy if needed
     let listingFrom: string | undefined = undefined;
     let listingTo: string | undefined = undefined;
     if (this.filtroModo === 'dia') {
@@ -218,24 +249,34 @@ export class CaixaComponent implements OnInit {
       listingDataParam = dataParam;
     }
 
-    forkJoin({
-      resumoVendas: resumoVendasObs,
-      resumoMovs: resumoMovsObs,
-      movimentacoes: this.caixaService.listarMovimentacoes({
-        // For 'dia' mode we want the full dataset and will filter client-side
-        // to mimic the 'tudo' behaviour filtered by date (same tactic as
-        // RelatorioVendas). When not 'dia' we send the computed listing params.
-        data: this.filtroModo === 'dia' ? undefined : listingDataParam,
+    // cancel previous request if in-flight to avoid recursive calls
+    try { if (this.currentRequestSub) this.currentRequestSub.unsubscribe(); } catch { }
+
+    // decide which backend listing endpoint to call depending on mode
+    const movEndpoint = this.filtroModo === 'dia' ? 'dia' : (this.filtroModo === 'mes' ? 'mes' : 'list');
+    let movimentacoesObs: any;
+    if (movEndpoint === 'dia') {
+      movimentacoesObs = this.caixaService.listarMovimentacoesDia(this.dataSelecionada);
+    } else if (movEndpoint === 'mes') {
+      const [y, m] = this.mesSelecionado.split('-').map(Number);
+      movimentacoesObs = this.caixaService.listarMovimentacoesMes(y, m);
+    } else {
+      movimentacoesObs = this.caixaService.listarMovimentacoes({
+        data: this.filtroModo === 'tudo' ? listingDataParam : undefined,
         tipo: this.filtroTipo || undefined,
         metodo_pagamento: this.filtroMetodo || undefined,
-        hora_inicio: undefined, // hora filters are applied client-side for 'dia'
-        hora_fim: undefined,
-        periodo_inicio: this.filtroModo === 'dia' ? undefined : listingPeriodoInicio,
-        periodo_fim: this.filtroModo === 'dia' ? undefined : listingPeriodoFim,
+        hora_inicio: this.filtroHoraInicio || undefined,
+        hora_fim: this.filtroHoraFim || undefined,
+        periodo_inicio: listingPeriodoInicio,
+        periodo_fim: listingPeriodoFim,
         page: this.page,
         size: this.pageSize,
-      })
-    }).subscribe({
+      });
+    }
+
+    const request$ = forkJoin({ resumoVendas: resumoVendasObs, resumoMovs: resumoMovsObs, movimentacoes: movimentacoesObs });
+
+    this.currentRequestSub = request$.subscribe({
       next: ({ resumoVendas, resumoMovs, movimentacoes }) => {
         // DEBUG: log raw responses
         try {
@@ -351,35 +392,11 @@ export class CaixaComponent implements OnInit {
           this.loading = false;
         };
 
-        // If in 'dia' mode and server indicates more pages exist, fetch all pages
-        // before finalizing so client-side filtering can operate over the full
-        // dataset (mimicking 'tudo' filtered by date).
-        if (this.filtroModo === 'dia' && payload && typeof payload.total === 'number' && payload.total > (Array.isArray(payload.items) ? payload.items.length : 0)) {
-          try {
-            const total = Number(payload.total || 0);
-            const pageCount = Math.max(1, Math.ceil(total / Number(this.pageSize || 1)));
-            const requests: any[] = [];
-            for (let p = 1; p <= pageCount; p++) {
-              requests.push(this.caixaService.listarMovimentacoes({
-                page: p,
-                size: this.pageSize,
-                tipo: this.filtroTipo || undefined,
-                metodo_pagamento: this.filtroMetodo || undefined
-              }).pipe(catchError(() => of({ items: [] }))));
-            }
-            forkJoin(requests).subscribe((pages: any[]) => {
-              const all = ([] as any[]).concat(...pages.map((r: any) => Array.isArray(r?.items) ? r.items : []));
-              payload.items = all;
-              finalizePayload(payload);
-            }, (err) => {
-              logger.warn('CAIXA_COMPONENT', 'FETCH_ALL_PAGES_FAIL', 'Failed to fetch all pages for dia mode', err);
-              finalizePayload(payload);
-            });
-            return; // wait for async finalize
-          } catch (e) {
-            // fallback to processing existing payload
-          }
-        }
+        // For legacy paginated listing we do NOT automatically fetch all pages.
+        // The UI should request further pages on user pagination. Just finalize
+        // the payload we received for page 1.
+        finalizePayload(payload);
+        return;
         // prefer backend-provided day resumo when in 'dia' mode; otherwise
         // synthesize a resumo object from the listing sums so the UI cards
         // continue to display meaningful totals for 'mes' and 'tudo'.
@@ -465,7 +482,8 @@ export class CaixaComponent implements OnInit {
         this.error = 'Erro ao carregar dados do caixa';
         this.loading = false;
         logger.error('CAIXA_COMPONENT', 'LOAD_DADOS', 'Erro ao carregar', err);
-      }
+      },
+      complete: () => { this.currentRequestSub = null; this.lastRequestKey = null; }
     });
   }
 
@@ -475,7 +493,7 @@ export class CaixaComponent implements OnInit {
   setPageSize(n: 20 | 50 | 100) {
     this.pageSize = n;
     this.page = 1;
-    this.loadResumoEMovimentacoes();
+    this.scheduleLoadResumo(0);
   }
 
   get totalPages(): number {
@@ -520,7 +538,7 @@ export class CaixaComponent implements OnInit {
     const page = Math.max(1, Math.min(this.totalPages, Math.floor(Number(targetPage) || 1)));
     if (page === this.page) return;
     this.page = page;
-    this.loadResumoEMovimentacoes();
+    this.scheduleLoadResumo(0);
   }
 
   nextPage() {
@@ -556,7 +574,7 @@ export class CaixaComponent implements OnInit {
   }
 
   aplicarFiltrosMovs(): void {
-    this.loadResumoEMovimentacoes();
+    this.scheduleLoadResumo();
   }
 
   limparFiltrosMovs(): void {
@@ -564,7 +582,7 @@ export class CaixaComponent implements OnInit {
     this.filtroMetodo = '';
     this.filtroHoraInicio = '';
     this.filtroHoraFim = '';
-    this.loadResumoEMovimentacoes();
+    this.scheduleLoadResumo();
   }
 
   setSort(key: 'tipo' | 'metodo' | 'valor' | 'data'): void {
@@ -819,5 +837,6 @@ export class CaixaComponent implements OnInit {
     return cleaned;
   }
 }
+
 
 

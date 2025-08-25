@@ -18,6 +18,17 @@ export class CaixaService {
     this.loadStatusCaixa();
   }
 
+  listarMovimentacoesDia(data: string): Observable<{ items: any[]; total: number; hasNext: boolean; page: number; size: number; sum_entradas: number; sum_retiradas: number; sum_vendas: number }> {
+    const url = `${this.baseUrl}/caixa/movimentacoes/dia?data=${encodeURIComponent(data)}`;
+    return this.makeRequest('LISTAR_MOVIMENTACOES_DIA', () => this.http.get<any>(url));
+  }
+
+  listarMovimentacoesMes(ano: number, mes: number): Observable<{ items: any[]; total: number; hasNext: boolean; page: number; size: number; sum_entradas?: number; sum_retiradas?: number; sum_vendas?: number }> {
+    const m = String(mes).padStart(2, '0');
+    const url = `${this.baseUrl}/caixa/movimentacoes/mes?ano=${ano}&mes=${m}`;
+    return this.makeRequest('LISTAR_MOVIMENTACOES_MES', () => this.http.get<any>(url));
+  }
+
   /**
    * Wrapper para requisições HTTP com tratamento de erro e retry
    */
@@ -75,6 +86,7 @@ export class CaixaService {
     hora_fim?: string,
     periodo_inicio?: string,
     periodo_fim?: string,
+    all?: boolean,
     from?: string,
     to?: string,
     page?: number,
@@ -107,6 +119,7 @@ export class CaixaService {
     if (params.metodo_pagamento) queryParams.push(`metodo_pagamento=${encodeURIComponent(params.metodo_pagamento)}`);
     if (params.hora_inicio) queryParams.push(`hora_inicio=${encodeURIComponent(params.hora_inicio)}`);
     if (params.hora_fim) queryParams.push(`hora_fim=${encodeURIComponent(params.hora_fim)}`);
+    if (params.all === true) queryParams.push(`all=true`);
     // include explicit timestamp bounds if provided (from/to are ISO strings with offset/Z)
     if (params.from) queryParams.push(`from=${encodeURIComponent(params.from)}`);
     if (params.to) queryParams.push(`to=${encodeURIComponent(params.to)}`);
