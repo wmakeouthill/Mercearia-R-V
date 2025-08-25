@@ -24,6 +24,10 @@ public interface CaixaMovimentacaoRepository extends JpaRepository<CaixaMoviment
     @Query(value = "SELECT * FROM caixa_movimentacoes ORDER BY data_movimento DESC", nativeQuery = true)
     List<CaixaMovimentacao> findAllOrderByData();
 
+    @Query(value = "SELECT * FROM caixa_movimentacoes WHERE data_movimento BETWEEN :from AND :to ORDER BY data_movimento DESC", nativeQuery = true)
+    List<CaixaMovimentacao> findByPeriodoTimestamps(@Param("from") java.time.OffsetDateTime from,
+            @Param("to") java.time.OffsetDateTime to);
+
     @Query(value = "SELECT * FROM caixa_movimentacoes WHERE caixa_status_id IS NULL AND (data_movimento AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date = :dia ORDER BY data_movimento DESC", nativeQuery = true)
     List<CaixaMovimentacao> findByDiaUnassigned(@Param("dia") LocalDate dia);
 }

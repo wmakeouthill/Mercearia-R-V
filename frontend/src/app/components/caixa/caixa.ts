@@ -3,13 +3,13 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { CurrencyBrPipe } from '../../pipes/currency-br.pipe';
 import { ApiService } from '../../services/api';
+import { extractLocalDate, getCurrentDateForInput } from '../../utils/date-utils';
 import { CaixaService } from '../../services/caixa.service';
 import { AuthService } from '../../services/auth';
 import { logger } from '../../utils/logger';
-import { forkJoin } from 'rxjs';
+import { forkJoin, of } from 'rxjs';
 import { RelatorioResumo } from '../../models';
 import { Router } from '@angular/router';
-import { getCurrentDateForInput } from '../../utils/date-utils';
 
 type TipoMovManual = 'entrada' | 'retirada';
 type TipoMovLista = 'entrada' | 'retirada' | 'venda';
@@ -155,12 +155,12 @@ export class CaixaComponent implements OnInit {
     let periodoInicio: string | undefined;
     let periodoFim: string | undefined;
     if (this.filtroModo === 'dia') {
-      // para manter todos os endpoints consistentes, informar tanto o parâmetro
-      // `data` (usado por resumo-dia) quanto o periodo_inicio/periodo_fim (usado
-      // por listagem quando necessário)
+      // For 'dia' mode, prefer sending `data=YYYY-MM-DD` to the listing
+      // and to resumo-dia. Do not set periodo_inicio/periodo_fim to avoid
+      // confusion in debug logs and ensure backend uses the LocalDate path.
       dataParam = this.dataSelecionada;
-      periodoInicio = this.dataSelecionada;
-      periodoFim = this.dataSelecionada;
+      periodoInicio = undefined;
+      periodoFim = undefined;
     } else if (this.filtroModo === 'mes') {
       const [y, m] = this.mesSelecionado.split('-').map(Number);
       const first = new Date(y, (m || 1) - 1, 1);
@@ -169,38 +169,192 @@ export class CaixaComponent implements OnInit {
       periodoFim = last.toISOString().substring(0, 10);
     }
 
+    const resumoVendasObs = this.filtroModo === 'dia' ? this.api.getResumoDia(this.dataSelecionada) : of(null);
+    // We'll compute resumo from the filtered listing when in 'dia' mode, but
+    // still request resumo-dia for compatibility in case backend provides it.
+    const resumoMovsObs = this.filtroModo === 'dia' ? this.caixaService.getResumoMovimentacoesDia(this.dataSelecionada) : of(null);
+    // DEBUG: log params sent to listarMovimentacoes
+    try {
+      // Log the raw params (data/periodo) computed above; avoid referencing
+      // listing* variables that are declared later to prevent TS errors.
+      logger.info('CAIXA_COMPONENT', 'DEBUG_PARAMS', 'Calling listarMovimentacoes with params', {
+        filtroModo: this.filtroModo,
+        dataParam,
+        periodoInicio,
+        periodoFim,
+        filtroTipo: this.filtroTipo,
+        filtroMetodo: this.filtroMetodo,
+        horaInicio: this.filtroHoraInicio,
+        horaFim: this.filtroHoraFim,
+        page: this.page,
+        size: this.pageSize
+      });
+    } catch (e) {
+      // ignore logger errors
+    }
+    // Determine listing params depending on filtroModo:
+    // - 'dia' -> send explicit `data=YYYY-MM-DD`
+    // - 'mes' -> send `periodo_inicio`/`periodo_fim` (YYYY-MM-DD)
+    // - 'tudo' -> send `data` when set
+    let listingDataParam: string | undefined = undefined;
+    let listingPeriodoInicio: string | undefined = undefined;
+    let listingPeriodoFim: string | undefined = undefined;
+    let listingFrom: string | undefined = undefined;
+    let listingTo: string | undefined = undefined;
+    if (this.filtroModo === 'dia') {
+      // For 'dia' mode, send both LocalDate period AND explicit UTC instants
+      // (from/to) computed from America/Sao_Paulo midnight..23:59:59.999 so the
+      // backend can match either path and return the same rows as 'tudo'.
+      listingPeriodoInicio = this.dataSelecionada;
+      listingPeriodoFim = this.dataSelecionada;
+      // Do not compute/send from/to here; prefer LocalDate parameters only.
+      listingFrom = undefined;
+      listingTo = undefined;
+    } else if (this.filtroModo === 'mes') {
+      listingPeriodoInicio = periodoInicio;
+      listingPeriodoFim = periodoFim;
+    } else { // tudo
+      listingDataParam = dataParam;
+    }
+
     forkJoin({
-      resumoVendas: this.api.getResumoDia(this.dataSelecionada),
-      resumoMovs: this.caixaService.getResumoMovimentacoesDia(dataParam),
+      resumoVendas: resumoVendasObs,
+      resumoMovs: resumoMovsObs,
       movimentacoes: this.caixaService.listarMovimentacoes({
-        data: dataParam,
+        // For 'dia' mode we want the full dataset and will filter client-side
+        // to mimic the 'tudo' behaviour filtered by date (same tactic as
+        // RelatorioVendas). When not 'dia' we send the computed listing params.
+        data: this.filtroModo === 'dia' ? undefined : listingDataParam,
         tipo: this.filtroTipo || undefined,
         metodo_pagamento: this.filtroMetodo || undefined,
-        hora_inicio: this.filtroHoraInicio || undefined,
-        hora_fim: this.filtroHoraFim || undefined,
-        periodo_inicio: periodoInicio,
-        periodo_fim: periodoFim,
+        hora_inicio: undefined, // hora filters are applied client-side for 'dia'
+        hora_fim: undefined,
+        periodo_inicio: this.filtroModo === 'dia' ? undefined : listingPeriodoInicio,
+        periodo_fim: this.filtroModo === 'dia' ? undefined : listingPeriodoFim,
         page: this.page,
         size: this.pageSize,
       })
     }).subscribe({
       next: ({ resumoVendas, resumoMovs, movimentacoes }) => {
-        this.resumoVendasDia = resumoVendas;
-        this.resumo = resumoMovs as any;
-        const payload = movimentacoes as any;
+        // DEBUG: log raw responses
+        try {
+          logger.info('CAIXA_COMPONENT', 'DEBUG_RESPONSES', 'Received responses from forkJoin', {
+            resumoVendasRaw: resumoVendas,
+            resumoMovsRaw: resumoMovs,
+            movimentacoesRaw: movimentacoes
+          });
+        } catch (e) {
+          // ignore
+        }
+        // some responses may arrive double-encoded as JSON strings (observed in logs).
+        // Coerce into an object if needed.
+        let payload: any = movimentacoes as any;
+        // Normalize payload: sometimes the backend or an intermediary
+        // double-encodes the response. Handle these cases robustly so the
+        // UI receives an object with an `items` array.
+        if (typeof payload === 'string') {
+          try {
+            payload = JSON.parse(payload);
+          } catch (e) {
+            logger.warn('CAIXA_COMPONENT', 'PARSE_MOVIMENTACOES', 'Failed to parse movimentacoes response string', e);
+            payload = { items: [] };
+          }
+        }
+        // If payload is an object but items is a JSON string, parse it too.
+        if (payload && typeof payload.items === 'string') {
+          try {
+            payload.items = JSON.parse(payload.items);
+            logger.info('CAIXA_COMPONENT', 'PARSE_MOVIMENTACOES_ITEMS', 'Parsed string-encoded items', { count: (payload.items || []).length });
+          } catch (e) {
+            logger.warn('CAIXA_COMPONENT', 'PARSE_MOVIMENTACOES_ITEMS_FAIL', 'Failed to parse payload.items', e);
+            payload.items = [];
+          }
+        }
+        // resumo objects may also be string-encoded
+        if (typeof resumoVendas === 'string') {
+          try { resumoVendas = JSON.parse(resumoVendas); } catch { resumoVendas = null; }
+        }
+        if (typeof resumoMovs === 'string') {
+          try { resumoMovs = JSON.parse(resumoMovs); } catch { resumoMovs = null; }
+        }
+        // prefer backend-provided day resumo when in 'dia' mode; otherwise
+        // synthesize a resumo object from the listing sums so the UI cards
+        // continue to display meaningful totals for 'mes' and 'tudo'.
+        if (resumoVendas) {
+          this.resumoVendasDia = resumoVendas;
+        } else {
+          this.resumoVendasDia = {
+            receita_total: Number(payload?.sum_vendas || 0),
+            total_vendas: Number(payload?.sum_vendas || 0),
+            quantidade_vendida: 0
+          } as any;
+        }
+        // resumoMovs is only requested for 'dia' mode. When not present,
+        // synthesize a resumo from the listing sums so UI cards show
+        // meaningful values for 'mes' and 'tudo'.
+        // We'll prefer recomputing aggregates from the final list when in
+        // 'dia' mode because we fetch the full dataset and apply client-side
+        // filtering to match the 'tudo' dataset filtered by date.
         let lista = payload?.items || [];
+        if (this.filtroModo === 'dia') {
+          // filter by selected local date
+          try {
+            lista = (Array.isArray(lista) ? lista : []).filter((m: any) => {
+              try {
+                const mvDateLocal = extractLocalDate(m.data_movimento);
+                if (mvDateLocal !== this.dataSelecionada) return false;
+                // apply hora filters if present
+                if (this.filtroHoraInicio || this.filtroHoraFim) {
+                  const vendaTs = new Date(m.data_movimento).getTime();
+                  if (this.filtroHoraInicio) {
+                    const sIso = this.normalizeDateTimeLocal(this.dataSelecionada, this.filtroHoraInicio);
+                    if (vendaTs < new Date(sIso).getTime()) return false;
+                  }
+                  if (this.filtroHoraFim) {
+                    const eIso = this.normalizeDateTimeLocal(this.dataSelecionada, this.filtroHoraFim);
+                    if (vendaTs > new Date(eIso).getTime()) return false;
+                  }
+                }
+                return true;
+              } catch {
+                return false;
+              }
+            });
+          } catch (e) {
+            lista = [];
+          }
+          // prefer backend resumo when available, otherwise synthesize from filtered list
+          if (resumoMovs) {
+            this.resumo = resumoMovs as any;
+          } else {
+            this.resumo = { data: this.dataSelecionada, saldo_movimentacoes: 0 } as any;
+          }
+        } else {
+          if (resumoMovs) {
+            this.resumo = resumoMovs as any;
+          } else {
+            this.resumo = { data: periodoInicio || 'periodo', saldo_movimentacoes: Number(payload?.sum_entradas || 0) - Number(payload?.sum_retiradas || 0) } as any;
+          }
+        }
         // garantir que o campo usuario seja preenchido com operador quando disponível
         lista = lista.map((m: any) => ({
           ...m,
           usuario: m.usuario || (m.operador ? (m.operador.username || m.operador) : null)
         }));
         // Consolidar vendas multi (que vêm uma linha por método do backend) em uma única linha por venda
-        this.movimentacoes = this.consolidarVendasMulti(lista);
+        const consolidated = this.consolidarVendasMulti(lista);
+        this.movimentacoes = consolidated;
         this.hasMore = !!payload?.hasNext;
-        this.total = Number(payload?.total || 0);
-        this.sumEntradas = Number(payload?.sum_entradas || 0);
-        this.sumRetiradas = Number(payload?.sum_retiradas || 0);
-        this.sumVendas = Number(payload?.sum_vendas || 0);
+        this.total = Number(payload?.total || consolidated.length);
+        // Recompute sums from consolidated list to reflect client-side filtering
+        this.sumEntradas = consolidated.filter((c: any) => c.tipo === 'entrada').reduce((s: number, it: any) => s + (Number(it.valor || 0) || 0), 0);
+        this.sumRetiradas = consolidated.filter((c: any) => c.tipo === 'retirada').reduce((s: number, it: any) => s + (Number(it.valor || 0) || 0), 0);
+        this.sumVendas = consolidated.filter((c: any) => c.tipo === 'venda').reduce((s: number, it: any) => s + (Number(it.valor || 0) || 0), 0);
+        // If in 'dia' mode synthesize resumoVendasDia from consolidated vendas
+        if (this.filtroModo === 'dia') {
+          this.resumoVendasDia = { receita_total: Number(this.sumVendas || 0), total_vendas: Number(this.sumVendas || 0), quantidade_vendida: 0 } as any;
+          this.resumo = { data: this.dataSelecionada, saldo_movimentacoes: Number(this.sumEntradas || 0) - Number(this.sumRetiradas || 0) } as any;
+        }
         this.applySorting();
         this.loading = false;
       },
@@ -524,6 +678,31 @@ export class CaixaComponent implements OnInit {
       }
     }
     return resultado;
+  }
+
+  // Build local ISO datetime string (no Z) from YYYY-MM-DD and HH:mm
+  private normalizeDateTimeLocal(dateYmd: string, timeHHmm: string): string {
+    try {
+      const parts = dateYmd.split('-');
+      if (parts.length !== 3) return dateYmd;
+      const year = Number(parts[0]);
+      const month = Number(parts[1]) - 1;
+      const day = Number(parts[2]);
+      const t = (timeHHmm || '').split(':');
+      const hours = Number(t[0]) || 0;
+      const minutes = Number(t[1]) || 0;
+      const d = new Date(year, month, day, hours, minutes, 0, 0);
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      const hh = String(d.getHours()).padStart(2, '0');
+      const min = String(d.getMinutes()).padStart(2, '0');
+      const ss = String(d.getSeconds()).padStart(2, '0');
+      const ms = String(d.getMilliseconds()).padStart(3, '0');
+      return `${yyyy}-${mm}-${dd}T${hh}:${min}:${ss}.${ms}`;
+    } catch {
+      return `${dateYmd}T00:00:00.000`;
+    }
   }
 
   private formatBadgeFromRaw(entry: string): string {

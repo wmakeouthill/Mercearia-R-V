@@ -8,6 +8,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.OffsetDateTime;
+import com.example.backendspring.utils.DateTimeUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import jakarta.persistence.EntityManager;
@@ -107,6 +108,8 @@ public class CaixaController {
             @RequestParam(value = "data", required = false) String data,
             @RequestParam(value = "periodo_inicio", required = false) String periodoInicio,
             @RequestParam(value = "periodo_fim", required = false) String periodoFim,
+            @RequestParam(value = "from", required = false) String from,
+            @RequestParam(value = "to", required = false) String to,
             @RequestParam(value = "tipo", required = false) String tipo,
             @RequestParam(value = "metodo_pagamento", required = false) String metodoPagamento,
             @RequestParam(value = "hora_inicio", required = false) String horaInicio,
@@ -123,22 +126,210 @@ public class CaixaController {
                 inicio = java.time.LocalDate.parse(periodoInicio);
                 fim = java.time.LocalDate.parse(periodoFim);
             }
-            var lista = new java.util.ArrayList<java.util.Map<String, Object>>();
+            java.util.List<java.util.Map<String, Object>> lista = new java.util.ArrayList<>();
 
             var tIni = safeParseLocalTime(horaInicio);
             var tFim = safeParseLocalTime(horaFim);
 
-            // Movimentações manuais (entrada/retirada)
-            lista.addAll(buildManualMovRows(dia, inicio, fim));
+            // parse optional from/to ISO timestamps (UTC/offset-aware)
+            java.time.OffsetDateTime fromTs = null;
+            java.time.OffsetDateTime toTs = null;
+            try {
+                if (from != null && !from.isBlank())
+                    fromTs = java.time.OffsetDateTime.parse(from);
+            } catch (Exception ignored) {
+            }
+            try {
+                if (to != null && !to.isBlank())
+                    toTs = java.time.OffsetDateTime.parse(to);
+            } catch (Exception ignored) {
+            }
 
-            // Vendas (unificadas) — usar somente venda_cabecalho / venda_pagamentos
-            lista.addAll(buildSaleOrderRows(dia, inicio, fim));
+            // If the client provided a date/period plus hora_inicio/hora_fim, build
+            // precise fromTs/toTs in America/Sao_Paulo to avoid timezone mismatches
+            try {
+                java.time.ZoneId sp = java.time.ZoneId.of("America/Sao_Paulo");
+                // If the user provided a single date with no explicit times, build a full-day
+                // timestamp range in America/Sao_Paulo and convert to OffsetDateTime so
+                // subsequent instant-based filtering is correct relative to UTC storage.
+                if (dia != null && (tIni == null && tFim == null)) {
+                    var zdtFrom = java.time.ZonedDateTime.of(dia, java.time.LocalTime.MIDNIGHT, sp);
+                    var zdtTo = java.time.ZonedDateTime.of(dia.plusDays(1), java.time.LocalTime.MIDNIGHT, sp)
+                            .minusNanos(1);
+                    fromTs = zdtFrom.toOffsetDateTime();
+                    toTs = zdtTo.toOffsetDateTime();
+                } else if (dia != null && (tIni != null || tFim != null)) {
+                    if (tIni != null) {
+                        var zdt = java.time.ZonedDateTime.of(dia, tIni, sp);
+                        fromTs = zdt.toOffsetDateTime();
+                    }
+                    if (tFim != null) {
+                        var zdt2 = java.time.ZonedDateTime.of(dia, tFim, sp);
+                        toTs = zdt2.toOffsetDateTime();
+                    }
+                } else if (inicio != null && fim != null && (tIni == null && tFim == null)) {
+                    var zdtFrom = java.time.ZonedDateTime.of(inicio, java.time.LocalTime.MIDNIGHT, sp);
+                    var zdtTo = java.time.ZonedDateTime.of(fim.plusDays(1), java.time.LocalTime.MIDNIGHT, sp)
+                            .minusNanos(1);
+                    fromTs = zdtFrom.toOffsetDateTime();
+                    toTs = zdtTo.toOffsetDateTime();
+                } else if (inicio != null && fim != null && (tIni != null || tFim != null)) {
+                    if (tIni != null) {
+                        var zdt = java.time.ZonedDateTime.of(inicio, tIni, sp);
+                        fromTs = zdt.toOffsetDateTime();
+                    }
+                    if (tFim != null) {
+                        var zdt2 = java.time.ZonedDateTime.of(fim, tFim, sp);
+                        toTs = zdt2.toOffsetDateTime();
+                    }
+                }
+
+                // Log computed OffsetDateTime bounds for debugging timezone issues
+                if (fromTs != null || toTs != null) {
+                    log.info("listarMovimentacoes: computed fromTs={} toTs={}", fromTs, toTs);
+                }
+            } catch (Exception ignored) {
+            }
+
+            // If a timestamp range was provided, prefer database queries (timestamp-aware)
+            // to avoid fetching all records and filtering in memory. This improves
+            // performance and ensures consistent timezone handling.
+            if (fromTs != null || toTs != null) {
+                final java.time.OffsetDateTime fFrom = fromTs;
+                final java.time.OffsetDateTime fTo = toTs;
+
+                // Movimentações no período via DB
+                try {
+                    var movs = movimentacaoRepository.findByPeriodoTimestamps(fFrom, fTo);
+                    for (var m : movs) {
+                        java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
+                        row.put("id", m.getId());
+                        row.put("caixa_status_id", m.getCaixaStatus() != null ? m.getCaixaStatus().getId() : null);
+                        row.put("tipo", m.getTipo());
+                        row.put(KEY_VALOR, m.getValor());
+                        row.put(KEY_DESCRICAO, m.getDescricao());
+                        String usuarioNome = null;
+                        try {
+                            if (m.getOperador() != null)
+                                usuarioNome = m.getOperador().getUsername();
+                        } catch (Exception ignored) {
+                        }
+                        if (usuarioNome == null && m.getUsuario() != null) {
+                            usuarioNome = m.getUsuario().getUsername();
+                        }
+                        row.put(KEY_USUARIO, usuarioNome);
+                        row.put(KEY_DATA_MOVIMENTO, m.getDataMovimento());
+                        lista.add(row);
+                    }
+                } catch (Exception e) {
+                    log.warn("listarMovimentacoes: DB movs query failed, falling back to in-memory", e);
+                    lista.addAll(buildManualMovRows(dia, inicio, fim));
+                }
+
+                // Vendas no período via DB
+                try {
+                    var orders = saleOrderRepository.findByPeriodoTimestampsRaw(fFrom, fTo);
+                    for (var vo : orders) {
+                        for (var pg : vo.getPagamentos()) {
+                            java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
+                            row.put("id", vo.getId());
+                            row.put("tipo", TIPO_VENDA);
+                            row.put(KEY_VALOR, pg.getValor());
+                            row.put("pagamento_valor", pg.getValor());
+                            row.put("total_venda", vo.getTotalFinal());
+                            var nf = java.text.NumberFormat
+                                    .getCurrencyInstance(java.util.Locale.forLanguageTag("pt-BR"));
+                            String totalFmt = nf.format(vo.getTotalFinal());
+                            boolean multi = vo.getPagamentos().size() > 1;
+                            if (multi) {
+                                String breakdown = vo.getPagamentos().stream()
+                                        .map(p -> labelMetodoPagamento(p.getMetodo()) + " " + nf.format(p.getValor()))
+                                        .collect(java.util.stream.Collectors.joining(" | "));
+                                row.put(KEY_DESCRICAO, "Venda (multi) - total " + totalFmt + " - " + breakdown);
+                            } else {
+                                row.put(KEY_DESCRICAO,
+                                        "Venda - total " + totalFmt + " (" + labelMetodoPagamento(pg.getMetodo()) + " "
+                                                + nf.format(pg.getValor()) + ")");
+                            }
+                            row.put("produto_nome",
+                                    vo.getItens().isEmpty() ? null : vo.getItens().get(0).getProduto().getNome());
+                            row.put(KEY_METODO_PAGAMENTO, pg.getMetodo());
+                            row.put(KEY_USUARIO, vo.getOperador() != null ? vo.getOperador().getUsername() : null);
+                            row.put(KEY_DATA_MOVIMENTO, vo.getDataVenda());
+                            row.put("caixa_status_id",
+                                    vo.getCaixaStatus() != null ? vo.getCaixaStatus().getId() : null);
+                            lista.add(row);
+                        }
+                    }
+                } catch (Exception e) {
+                    log.warn("listarMovimentacoes: DB orders query failed, falling back to in-memory", e);
+                    lista.addAll(buildSaleOrderRows(dia, inicio, fim));
+                }
+
+                // Deduplicate by id while preserving order
+                java.util.Map<Object, java.util.Map<String, Object>> byId = new java.util.LinkedHashMap<>();
+                for (var m : lista) {
+                    Object idObj = m.get("id");
+                    if (idObj == null) {
+                        idObj = (m.get(KEY_DATA_MOVIMENTO) == null ? java.util.UUID.randomUUID().toString()
+                                : m.get(KEY_DATA_MOVIMENTO).toString() + "|" + m.get(KEY_DESCRICAO));
+                    }
+                    if (!byId.containsKey(idObj))
+                        byId.put(idObj, m);
+                }
+                lista = byId.values().stream().toList();
+
+                // debug instants
+                try {
+                    var sampleInst = lista.stream().limit(6).map(m -> {
+                        try {
+                            var odt = (java.time.OffsetDateTime) m.get(KEY_DATA_MOVIMENTO);
+                            return odt == null ? "null" : odt.toInstant().toString();
+                        } catch (Exception ex) {
+                            return "err";
+                        }
+                    }).toList();
+                    log.info("listarMovimentacoes: after-db-instant-fetch count={} sampleInst={}", lista.size(),
+                            sampleInst);
+                } catch (Exception ignored) {
+                }
+            } else {
+                // No timestamp range provided — fallback to original behavior: fetch by
+                // date/period or all
+                lista.addAll(buildManualMovRows(dia, inicio, fim));
+                lista.addAll(buildSaleOrderRows(dia, inicio, fim));
+            }
 
             // Ordenar por data_movimento desc
             sortByDataMovimentoDesc(lista);
 
-            // Filtros opcionais por tipo, método e faixa horária
+            // Debug: when hora filters are used, log samples to diagnose timezone issues
+            if (tIni != null || tFim != null) {
+                try {
+                    var sample = lista.stream().limit(6).map(m -> {
+                        try {
+                            var odt = (java.time.OffsetDateTime) m.get(KEY_DATA_MOVIMENTO);
+                            if (odt == null)
+                                return "null";
+                            try {
+                                return odt.atZoneSameInstant(java.time.ZoneId.of("America/Sao_Paulo")).toLocalTime()
+                                        .toString();
+                            } catch (Exception ex) {
+                                return odt.toLocalTime().toString();
+                            }
+                        } catch (Exception e) {
+                            return "err";
+                        }
+                    }).toList();
+                    log.info("listarMovimentacoes: pre-local-time-filter count={} sampleTimes={}", lista.size(),
+                            sample);
+                } catch (Exception ignored) {
+                }
+            }
+
+            // Filtros opcionais por tipo, método e faixa horária (local-time)
             var filtrada = applyFilters(lista, tipo, metodoPagamento, tIni, tFim);
+            log.info("listarMovimentacoes: after-local-time-filter count={}", filtrada.size());
 
             // Somatórios no período filtrado
             double sumEntradas = filtrada.stream()
@@ -468,11 +659,23 @@ public class CaixaController {
             final java.time.LocalTime ftIni = tIni;
             final java.time.LocalTime ftFim = tFim;
             stream = stream.filter(m -> {
-                var odt = (java.time.OffsetDateTime) m.get(KEY_DATA_MOVIMENTO);
-                var time = odt.toLocalTime();
-                boolean okIni = ftIni == null || !time.isBefore(ftIni);
-                boolean okFim = ftFim == null || !time.isAfter(ftFim);
-                return okIni && okFim;
+                try {
+                    var odt = (java.time.OffsetDateTime) m.get(KEY_DATA_MOVIMENTO);
+                    if (odt == null)
+                        return false;
+                    // convert stored timestamp to America/Sao_Paulo local time to match UI input
+                    java.time.LocalTime time;
+                    try {
+                        time = odt.atZoneSameInstant(java.time.ZoneId.of("America/Sao_Paulo")).toLocalTime();
+                    } catch (Exception ex) {
+                        time = odt.toLocalTime();
+                    }
+                    boolean okIni = ftIni == null || !time.isBefore(ftIni);
+                    boolean okFim = ftFim == null || !time.isAfter(ftFim);
+                    return okIni && okFim;
+                } catch (Exception e) {
+                    return false;
+                }
             });
         }
         return stream.toList();

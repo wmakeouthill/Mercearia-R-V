@@ -75,19 +75,41 @@ export class CaixaService {
     hora_fim?: string,
     periodo_inicio?: string,
     periodo_fim?: string,
+    from?: string,
+    to?: string,
     page?: number,
     size?: number,
   }): Observable<{ items: any[]; total: number; hasNext: boolean; page: number; size: number; sum_entradas: number; sum_retiradas: number; sum_vendas: number }> {
     const queryParams: string[] = [];
-    if (params.data) queryParams.push(`data=${encodeURIComponent(params.data)}`);
+
+    // Normalize date/period into explicit from/to ISO UTC timestamps (Z)
+    // so backend can use timestamp-range queries reliably. Use local
+    // Date construction then toISOString() to emit Z-suffixed instants.
+    const toIsoUtc = (y: number, m: number, d: number, hh = 0, mm = 0, ss = 0, ms = 0) => {
+      // month is 1-based here
+      const dt = new Date(y, (m || 1) - 1, d, hh, mm, ss, ms);
+      return dt.toISOString();
+    };
+
+    // Prefer sending explicit from/to in UTC for both single-day and
+    // periodo ranges so backend receives timestamp-range queries in the
+    // same format it uses for 'tudo' timestamp queries.
+    // Preserve explicit LocalDate parameters when provided so backend
+    // can route to the LocalDate code path and avoid timezone shifts.
     if (params.periodo_inicio && params.periodo_fim) {
       queryParams.push(`periodo_inicio=${encodeURIComponent(params.periodo_inicio)}`);
       queryParams.push(`periodo_fim=${encodeURIComponent(params.periodo_fim)}`);
+    } else if (params.data) {
+      // when data is provided as YYYY-MM-DD, send as-is
+      queryParams.push(`data=${encodeURIComponent(params.data)}`);
     }
     if (params.tipo) queryParams.push(`tipo=${encodeURIComponent(params.tipo)}`);
     if (params.metodo_pagamento) queryParams.push(`metodo_pagamento=${encodeURIComponent(params.metodo_pagamento)}`);
     if (params.hora_inicio) queryParams.push(`hora_inicio=${encodeURIComponent(params.hora_inicio)}`);
     if (params.hora_fim) queryParams.push(`hora_fim=${encodeURIComponent(params.hora_fim)}`);
+    // include explicit timestamp bounds if provided (from/to are ISO strings with offset/Z)
+    if (params.from) queryParams.push(`from=${encodeURIComponent(params.from)}`);
+    if (params.to) queryParams.push(`to=${encodeURIComponent(params.to)}`);
     if (params.page != null) queryParams.push(`page=${params.page}`);
     if (params.size != null) queryParams.push(`size=${params.size}`);
     const query = queryParams.length ? `?${queryParams.join('&')}` : '';
