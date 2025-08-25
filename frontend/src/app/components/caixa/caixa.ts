@@ -8,6 +8,7 @@ import { CaixaService } from '../../services/caixa.service';
 import { AuthService } from '../../services/auth';
 import { logger } from '../../utils/logger';
 import { forkJoin, of } from 'rxjs';
+import { catchError } from 'rxjs/operators';
 import { RelatorioResumo } from '../../models';
 import { Router } from '@angular/router';
 
@@ -276,6 +277,108 @@ export class CaixaComponent implements OnInit {
         }
         if (typeof resumoMovs === 'string') {
           try { resumoMovs = JSON.parse(resumoMovs); } catch { resumoMovs = null; }
+        }
+
+        // helper to run the normal payload processing after ensuring we have
+        // the complete items array (may require fetching additional pages).
+        const finalizePayload = (payloadObj: any) => {
+          let lista = payloadObj?.items || [];
+          // We'll prefer recomputing aggregates from the final list when in
+          // 'dia' mode because we fetch the full dataset and apply client-side
+          // filtering to match the 'tudo' dataset filtered by date.
+          if (this.filtroModo === 'dia') {
+            // filter by selected local date
+            try {
+              lista = (Array.isArray(lista) ? lista : []).filter((m: any) => {
+                try {
+                  const mvDateLocal = extractLocalDate(m.data_movimento);
+                  if (mvDateLocal !== this.dataSelecionada) return false;
+                  // apply hora filters if present
+                  if (this.filtroHoraInicio || this.filtroHoraFim) {
+                    const vendaTs = new Date(m.data_movimento).getTime();
+                    if (this.filtroHoraInicio) {
+                      const sIso = this.normalizeDateTimeLocal(this.dataSelecionada, this.filtroHoraInicio);
+                      if (vendaTs < new Date(sIso).getTime()) return false;
+                    }
+                    if (this.filtroHoraFim) {
+                      const eIso = this.normalizeDateTimeLocal(this.dataSelecionada, this.filtroHoraFim);
+                      if (vendaTs > new Date(eIso).getTime()) return false;
+                    }
+                  }
+                  return true;
+                } catch {
+                  return false;
+                }
+              });
+            } catch (e) {
+              lista = [];
+            }
+            // prefer backend resumo when available, otherwise synthesize from filtered list
+            if (resumoMovs) {
+              this.resumo = resumoMovs as any;
+            } else {
+              this.resumo = { data: this.dataSelecionada, saldo_movimentacoes: 0 } as any;
+            }
+          } else {
+            if (resumoMovs) {
+              this.resumo = resumoMovs as any;
+            } else {
+              this.resumo = { data: periodoInicio || 'periodo', saldo_movimentacoes: Number(payloadObj?.sum_entradas || 0) - Number(payloadObj?.sum_retiradas || 0) } as any;
+            }
+          }
+
+          // garantir que o campo usuario seja preenchido com operador quando disponível
+          lista = lista.map((m: any) => ({
+            ...m,
+            usuario: m.usuario || (m.operador ? (m.operador.username || m.operador) : null)
+          }));
+          // Consolidar vendas multi (que vêm uma linha por método do backend) em uma única linha por venda
+          const consolidated = this.consolidarVendasMulti(lista);
+          this.movimentacoes = consolidated;
+          this.hasMore = !!payloadObj?.hasNext;
+          this.total = Number(payloadObj?.total || consolidated.length);
+          // Recompute sums from consolidated list to reflect client-side filtering
+          this.sumEntradas = consolidated.filter((c: any) => c.tipo === 'entrada').reduce((s: number, it: any) => s + (Number(it.valor || 0) || 0), 0);
+          this.sumRetiradas = consolidated.filter((c: any) => c.tipo === 'retirada').reduce((s: number, it: any) => s + (Number(it.valor || 0) || 0), 0);
+          this.sumVendas = consolidated.filter((c: any) => c.tipo === 'venda').reduce((s: number, it: any) => s + (Number(it.valor || 0) || 0), 0);
+          // If in 'dia' mode synthesize resumoVendasDia from consolidated vendas
+          if (this.filtroModo === 'dia') {
+            this.resumoVendasDia = { receita_total: Number(this.sumVendas || 0), total_vendas: Number(this.sumVendas || 0), quantidade_vendida: 0 } as any;
+            this.resumo = { data: this.dataSelecionada, saldo_movimentacoes: Number(this.sumEntradas || 0) - Number(this.sumRetiradas || 0) } as any;
+          }
+
+          this.applySorting();
+          this.loading = false;
+        };
+
+        // If in 'dia' mode and server indicates more pages exist, fetch all pages
+        // before finalizing so client-side filtering can operate over the full
+        // dataset (mimicking 'tudo' filtered by date).
+        if (this.filtroModo === 'dia' && payload && typeof payload.total === 'number' && payload.total > (Array.isArray(payload.items) ? payload.items.length : 0)) {
+          try {
+            const total = Number(payload.total || 0);
+            const pageCount = Math.max(1, Math.ceil(total / Number(this.pageSize || 1)));
+            const requests: any[] = [];
+            for (let p = 1; p <= pageCount; p++) {
+              requests.push(this.caixaService.listarMovimentacoes({
+                page: p,
+                size: this.pageSize,
+                tipo: this.filtroTipo || undefined,
+                metodo_pagamento: this.filtroMetodo || undefined
+              }).pipe(catchError(() => of({ items: [] }))));
+            }
+            forkJoin(requests).subscribe((pages: any[]) => {
+              const all = ([] as any[]).concat(...pages.map((r: any) => Array.isArray(r?.items) ? r.items : []));
+              payload.items = all;
+              finalizePayload(payload);
+            }, (err) => {
+              logger.warn('CAIXA_COMPONENT', 'FETCH_ALL_PAGES_FAIL', 'Failed to fetch all pages for dia mode', err);
+              finalizePayload(payload);
+            });
+            return; // wait for async finalize
+          } catch (e) {
+            // fallback to processing existing payload
+          }
         }
         // prefer backend-provided day resumo when in 'dia' mode; otherwise
         // synthesize a resumo object from the listing sums so the UI cards
