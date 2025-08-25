@@ -258,8 +258,10 @@ export class CaixaComponent implements OnInit {
     if (movEndpoint === 'dia') {
       movimentacoesObs = this.caixaService.listarMovimentacoesDia(this.dataSelecionada);
     } else if (movEndpoint === 'mes') {
+      // Call month endpoint with pagination parameters so backend returns
+      // paged results and UI pagination controls work.
       const [y, m] = this.mesSelecionado.split('-').map(Number);
-      movimentacoesObs = this.caixaService.listarMovimentacoesMes(y, m);
+      movimentacoesObs = this.caixaService.listarMovimentacoesMes(y, m, this.page, this.pageSize as number);
     } else {
       movimentacoesObs = this.caixaService.listarMovimentacoes({
         data: this.filtroModo === 'tudo' ? listingDataParam : undefined,

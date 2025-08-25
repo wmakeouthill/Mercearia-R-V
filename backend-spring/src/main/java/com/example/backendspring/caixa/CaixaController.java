@@ -307,6 +307,19 @@ public class CaixaController {
                     if (idObj == null) {
                         idObj = (m.get(KEY_DATA_MOVIMENTO) == null ? java.util.UUID.randomUUID().toString()
                                 : m.get(KEY_DATA_MOVIMENTO).toString() + "|" + m.get(KEY_DESCRICAO));
+                    } else {
+                        // Preserve separate rows for multi-payment sales by including
+                        // payment method/value in the dedupe key so they are not
+                        // collapsed into a single entry.
+                        try {
+                            if (TIPO_VENDA.equals(m.get("tipo"))) {
+                                Object metodo = m.get(KEY_METODO_PAGAMENTO);
+                                Object pgVal = m.get("pagamento_valor");
+                                idObj = idObj.toString() + "|" + (metodo == null ? "" : metodo.toString()) + "|"
+                                        + (pgVal == null ? "" : pgVal.toString());
+                            }
+                        } catch (Exception ignored) {
+                        }
                     }
                     if (!byId.containsKey(idObj))
                         byId.put(idObj, m);
@@ -496,7 +509,8 @@ public class CaixaController {
                 lista.addAll(buildManualMovRows(dia, null, null));
             }
 
-            // orders via DB
+            // orders via DB — build rows the same way as the main listing so
+            // 'dia' matches 'tudo' formatting (including multi-payment breakdown)
             try {
                 var orders = saleOrderRepository.findByPeriodoTimestampsRaw(fromTs, toTs);
                 for (var vo : orders) {
@@ -507,7 +521,19 @@ public class CaixaController {
                         row.put(KEY_VALOR, pg.getValor());
                         row.put("pagamento_valor", pg.getValor());
                         row.put("total_venda", vo.getTotalFinal());
-                        row.put(KEY_DESCRICAO, vo.getPagamentos().size() > 1 ? "Venda (multi)" : "Venda");
+                        var nf = java.text.NumberFormat.getCurrencyInstance(java.util.Locale.forLanguageTag("pt-BR"));
+                        String totalFmt = nf.format(vo.getTotalFinal());
+                        boolean multi = vo.getPagamentos().size() > 1;
+                        if (multi) {
+                            String breakdown = vo.getPagamentos().stream()
+                                    .map(p -> labelMetodoPagamento(p.getMetodo()) + " " + nf.format(p.getValor()))
+                                    .collect(java.util.stream.Collectors.joining(" | "));
+                            row.put(KEY_DESCRICAO, "Venda (multi) - total " + totalFmt + " - " + breakdown);
+                        } else {
+                            row.put(KEY_DESCRICAO,
+                                    "Venda - total " + totalFmt + " (" + labelMetodoPagamento(pg.getMetodo()) + " "
+                                            + nf.format(pg.getValor()) + ")");
+                        }
                         row.put("produto_nome",
                                 vo.getItens().isEmpty() ? null : vo.getItens().get(0).getProduto().getNome());
                         row.put(KEY_METODO_PAGAMENTO, pg.getMetodo());
@@ -557,13 +583,16 @@ public class CaixaController {
     @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public ResponseEntity<java.util.Map<String, Object>> listarMovimentacoesMes(
             @RequestParam(value = "ano") int ano,
-            @RequestParam(value = "mes") int mes) {
+            @RequestParam(value = "mes") int mes,
+            @RequestParam(value = "page", required = false) Integer page,
+            @RequestParam(value = "size", required = false) Integer size) {
         try {
             java.time.LocalDate inicio = java.time.LocalDate.of(ano, mes, 1);
             java.time.LocalDate fim = inicio.plusMonths(1).minusDays(1);
-            return listarMovimentacoes(null, inicio.toString(), fim.toString(), null, null, true, null, null, null,
-                    null, 1,
-                    Integer.MAX_VALUE);
+            // Delegate to the main listing path; preserve pagination
+            return listarMovimentacoes(null, inicio.toString(), fim.toString(), null, null, null, null, null, null,
+                    null,
+                    page == null ? 1 : page, size == null ? 20 : size);
         } catch (Exception e) {
             log.error("listarMovimentacoes/mes: exception", e);
             return ResponseEntity.status(500).body(Map.of(KEY_ERROR, "Falha ao listar por mês"));

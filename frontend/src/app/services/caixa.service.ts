@@ -23,9 +23,15 @@ export class CaixaService {
     return this.makeRequest('LISTAR_MOVIMENTACOES_DIA', () => this.http.get<any>(url));
   }
 
-  listarMovimentacoesMes(ano: number, mes: number): Observable<{ items: any[]; total: number; hasNext: boolean; page: number; size: number; sum_entradas?: number; sum_retiradas?: number; sum_vendas?: number }> {
+  listarMovimentacoesMes(ano: number, mes: number, page?: number, size?: number): Observable<{ items: any[]; total: number; hasNext: boolean; page: number; size: number; sum_entradas?: number; sum_retiradas?: number; sum_vendas?: number }> {
     const m = String(mes).padStart(2, '0');
-    const url = `${this.baseUrl}/caixa/movimentacoes/mes?ano=${ano}&mes=${m}`;
+    const qp: string[] = [];
+    qp.push(`ano=${ano}`);
+    qp.push(`mes=${m}`);
+    if (page != null) qp.push(`page=${page}`);
+    if (size != null) qp.push(`size=${size}`);
+    const query = qp.length ? `?${qp.join('&')}` : '';
+    const url = `${this.baseUrl}/caixa/movimentacoes/mes${query}`;
     return this.makeRequest('LISTAR_MOVIMENTACOES_MES', () => this.http.get<any>(url));
   }
 
