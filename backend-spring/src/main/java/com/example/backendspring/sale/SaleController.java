@@ -53,12 +53,28 @@ public class SaleController {
                                     .sum();
                     row.put(KEY_QTD_VENDIDA, qtd);
                     row.put("preco_total", o.getTotalFinal());
+                    row.put("adjusted_total", o.getAdjustedTotal());
                     row.put("data_venda", o.getDataVenda());
                     String metodo = (o.getPagamentos() == null || o.getPagamentos().isEmpty()) ? ""
                             : (o.getPagamentos().size() == 1 ? o.getPagamentos().get(0).getMetodo() : "multiplo");
                     row.put("metodo_pagamento", metodo);
-                    row.put("produto_nome", o.getItens() == null || o.getItens().isEmpty() ? ("Pedido #" + o.getId())
-                            : o.getItens().get(0).getProduto().getNome());
+                    // If order has no items (e.g. fully returned/exchanged), show a human-friendly
+                    // description based on adjustments instead of falling back to undefined product
+                    if (o.getItens() == null || o.getItens().isEmpty()) {
+                        var adjs = saleAdjustmentRepository.findBySaleOrderId(o.getId());
+                        if (adjs != null && !adjs.isEmpty()) {
+                            var ex = adjs.stream().filter(a -> "exchange".equalsIgnoreCase(a.getType())).findFirst();
+                            if (ex.isPresent()) {
+                                row.put("produto_nome", "Pedido #" + o.getId() + " (Trocado)");
+                            } else {
+                                row.put("produto_nome", "Pedido #" + o.getId() + " (Devolvido)");
+                            }
+                        } else {
+                            row.put("produto_nome", "Pedido #" + o.getId());
+                        }
+                    } else {
+                        row.put("produto_nome", o.getItens().get(0).getProduto().getNome());
+                    }
                     row.put("codigo_barras", o.getItens() == null || o.getItens().isEmpty() ? null
                             : o.getItens().get(0).getProduto().getCodigoBarras());
                     row.put("produto_imagem", o.getItens() == null || o.getItens().isEmpty() ? null
@@ -132,10 +148,20 @@ public class SaleController {
                 var m = new java.util.LinkedHashMap<String, Object>();
                 m.put("id", o.getId());
                 m.put("produto_id", o.getId());
-                m.put("produto_nome",
-                        o.getItens() != null && !o.getItens().isEmpty() && o.getItens().get(0).getProduto() != null
-                                ? o.getItens().get(0).getProduto().getNome()
-                                : ("Pedido #" + o.getId()));
+                if (o.getItens() != null && !o.getItens().isEmpty() && o.getItens().get(0).getProduto() != null) {
+                    m.put("produto_nome", o.getItens().get(0).getProduto().getNome());
+                } else {
+                    var adjs = saleAdjustmentRepository.findBySaleOrderId(o.getId());
+                    if (adjs != null && !adjs.isEmpty()) {
+                        var ex = adjs.stream().filter(a -> "exchange".equalsIgnoreCase(a.getType())).findFirst();
+                        if (ex.isPresent())
+                            m.put("produto_nome", "Pedido #" + o.getId() + " (Trocado)");
+                        else
+                            m.put("produto_nome", "Pedido #" + o.getId() + " (Devolvido)");
+                    } else {
+                        m.put("produto_nome", "Pedido #" + o.getId());
+                    }
+                }
                 m.put("produto_imagem",
                         o.getItens() != null && !o.getItens().isEmpty() && o.getItens().get(0).getProduto() != null
                                 ? o.getItens().get(0).getProduto().getImagem()

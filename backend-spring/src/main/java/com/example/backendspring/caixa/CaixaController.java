@@ -396,19 +396,65 @@ public class CaixaController {
                         .filter(m -> TIPO_RETIRADA.equals(m.get("tipo")))
                         .mapToDouble(m -> ((Number) m.get(KEY_VALOR)).doubleValue())
                         .sum();
-                double sumVendasAgg = filtrada.stream()
-                        .filter(m -> TIPO_VENDA.equals(m.get("tipo")))
-                        .mapToDouble(m -> ((Number) m.get(KEY_VALOR)).doubleValue())
-                        .sum();
+                // Avoid double-counting: when a cash sale generated an explicit
+                // caixa_movimentacao
+                // (entrada) we should not count the sale payment row again as a separate venda
+                // in the aggregates. Build a set of (caixa_status_id|valor) keys for entrada
+                // rows
+                // and skip venda rows that match.
+                java.util.Set<String> entradaCashKeys = filtrada.stream()
+                        .filter(m -> TIPO_ENTRADA.equals(m.get("tipo")))
+                        .filter(m -> m.get("caixa_status_id") != null && m.get(KEY_VALOR) != null)
+                        .map(m -> m.get("caixa_status_id").toString() + "|"
+                                + Double.toString(((Number) m.get(KEY_VALOR)).doubleValue()))
+                        .collect(java.util.stream.Collectors.toSet());
+
+                double sumVendasAgg = filtrada.stream().filter(m -> TIPO_VENDA.equals(m.get("tipo"))).mapToDouble(m -> {
+                    try {
+                        Object metodo = m.get(KEY_METODO_PAGAMENTO);
+                        Object caixaId = m.get("caixa_status_id");
+                        double val = ((Number) m.get(KEY_VALOR)).doubleValue();
+                        if ("dinheiro".equals(metodo) && caixaId != null) {
+                            String key = caixaId.toString() + "|" + Double.toString(val);
+                            if (entradaCashKeys.contains(key)) {
+                                return 0.0; // skip duplicate
+                            }
+                        }
+                        return val;
+                    } catch (Exception e) {
+                        return 0.0;
+                    }
+                }).sum();
                 // Diagnostic log to help compare server-side aggregates vs frontend
                 log.info(
                         "DIAG_CAIXA_AGGS: periodoInicio={} periodoFim={} tipo={} metodo_pagamento={} -> sums: entradas={} retiradas={} vendas={} totalItems={}",
                         periodoInicio, periodoFim, tipo, metodoPagamento, sumEntradasAgg, sumRetiradasAgg, sumVendasAgg,
                         filtrada.size());
+                // Also calculate net vendas using adjusted_total when available
+                double sumVendasNet = 0.0;
+                try {
+                    sumVendasNet = filtrada.stream()
+                            .filter(m -> TIPO_VENDA.equals(m.get("tipo")))
+                            .mapToDouble(m -> {
+                                try {
+                                    Object adj = m.get("adjusted_total");
+                                    if (adj instanceof Number)
+                                        return ((Number) adj).doubleValue();
+                                } catch (Exception ignored) {
+                                }
+                                try {
+                                    return ((Number) m.get(KEY_VALOR)).doubleValue();
+                                } catch (Exception e) {
+                                    return 0.0;
+                                }
+                            }).sum();
+                } catch (Exception ignored) {
+                }
                 return ResponseEntity.ok(java.util.Map.of(
                         KEY_SUM_ENTRADAS, sumEntradasAgg,
                         KEY_SUM_RETIRADAS, sumRetiradasAgg,
                         KEY_SUM_VENDAS, sumVendasAgg,
+                        "sum_vendas_net", sumVendasNet,
                         KEY_TOTAL, filtrada.size()));
             }
 
@@ -610,10 +656,32 @@ public class CaixaController {
                     .filter(m -> TIPO_RETIRADA.equals(m.get("tipo")))
                     .mapToDouble(m -> ((Number) (m.get(KEY_VALOR) == null ? 0 : m.get(KEY_VALOR))).doubleValue())
                     .sum();
-            double sumVendasAll = lista.stream()
-                    .filter(m -> TIPO_VENDA.equals(m.get("tipo")))
-                    .mapToDouble(m -> ((Number) (m.get(KEY_VALOR) == null ? 0 : m.get(KEY_VALOR))).doubleValue())
-                    .sum();
+
+            // Avoid double-counting cash: build keys of entrada rows
+            // (caixa_status_id|valor)
+            java.util.Set<String> entradaCashKeysAll = lista.stream()
+                    .filter(m -> TIPO_ENTRADA.equals(m.get("tipo")))
+                    .filter(m -> m.get("caixa_status_id") != null && m.get(KEY_VALOR) != null)
+                    .map(m -> m.get("caixa_status_id").toString() + "|"
+                            + Double.toString(((Number) m.get(KEY_VALOR)).doubleValue()))
+                    .collect(java.util.stream.Collectors.toSet());
+
+            double sumVendasAll = lista.stream().filter(m -> TIPO_VENDA.equals(m.get("tipo"))).mapToDouble(m -> {
+                try {
+                    Object metodo = m.get(KEY_METODO_PAGAMENTO);
+                    Object caixaId = m.get("caixa_status_id");
+                    double val = ((Number) (m.get(KEY_VALOR) == null ? 0 : m.get(KEY_VALOR))).doubleValue();
+                    if ("dinheiro".equals(metodo) && caixaId != null) {
+                        String key = caixaId.toString() + "|" + Double.toString(val);
+                        if (entradaCashKeysAll.contains(key)) {
+                            return 0.0; // skip duplicate
+                        }
+                    }
+                    return val;
+                } catch (Exception e) {
+                    return 0.0;
+                }
+            }).sum();
             body.put(KEY_SUM_ENTRADAS, sumEntradasAll);
             body.put(KEY_SUM_RETIRADAS, sumRetiradasAll);
             body.put(KEY_SUM_VENDAS, sumVendasAll);

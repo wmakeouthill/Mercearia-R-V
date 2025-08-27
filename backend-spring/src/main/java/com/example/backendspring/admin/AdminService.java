@@ -438,19 +438,116 @@ public class AdminService {
             excluded.add("produtos");
         }
 
-        List<String> toTruncate = new ArrayList<>();
-        for (String t : tables) {
-            if (!excluded.contains(t.toLowerCase())) {
-                toTruncate.add("\"" + t + "\"");
+        // Carregar todas as FKs do schema public para análise de dependências
+        List<Map<String, Object>> fkRows = jdbcTemplate.queryForList(
+                "select tc.table_name as child_table, ccu.table_name as parent_table "
+                        + "from information_schema.table_constraints tc "
+                        + "join information_schema.key_column_usage kcu on tc.constraint_name = kcu.constraint_name and tc.table_schema = kcu.table_schema "
+                        + "join information_schema.constraint_column_usage ccu on tc.constraint_name = ccu.constraint_name and tc.table_schema = ccu.table_schema "
+                        + "where tc.constraint_type = 'FOREIGN KEY' and tc.table_schema = 'public'");
+
+        // Expandir exclusões transitivamente: se uma tabela excluída referencia outra,
+        // também
+        // devemos excluí-la para impedir que um TRUNCATE ... CASCADE acabe afetando a
+        // tabela
+        // que queremos proteger. Fazemos isso por closure sobre os pares FK.
+        Set<String> excludedLower = new HashSet<>();
+        for (String e : excluded)
+            excludedLower.add(e.toLowerCase());
+
+        boolean changed = true;
+        while (changed) {
+            changed = false;
+            for (Map<String, Object> r : fkRows) {
+                String child = (r.get("child_table") == null) ? "" : r.get("child_table").toString().toLowerCase();
+                String parent = (r.get("parent_table") == null) ? "" : r.get("parent_table").toString().toLowerCase();
+                if (excludedLower.contains(child) && !excludedLower.contains(parent)) {
+                    excludedLower.add(parent);
+                    changed = true;
+                }
             }
         }
 
-        if (toTruncate.isEmpty())
+        // Construir conjunto de tabelas que serão truncadas (mantendo nomes originais)
+        Set<String> truncateSet = new HashSet<>();
+        for (String t : tables) {
+            if (!excludedLower.contains(t.toLowerCase())) {
+                truncateSet.add(t);
+            }
+        }
+
+        if (truncateSet.isEmpty())
             return;
 
-        String sql = "TRUNCATE " + String.join(", ", toTruncate) + " RESTART IDENTITY CASCADE";
-        log.info("Executando reset de banco (truncate): {}", sql);
-        jdbcTemplate.execute(sql);
+        // Construir grafo de dependências (aresta: child -> parent) apenas entre
+        // tabelas a truncar
+        Map<String, List<String>> adj = new HashMap<>();
+        Map<String, Integer> indeg = new HashMap<>();
+        for (String t : truncateSet) {
+            adj.put(t, new ArrayList<>());
+            indeg.put(t, 0);
+        }
+
+        for (Map<String, Object> r : fkRows) {
+            String child = (r.get("child_table") == null) ? "" : r.get("child_table").toString();
+            String parent = (r.get("parent_table") == null) ? "" : r.get("parent_table").toString();
+            if (truncateSet.contains(child) && truncateSet.contains(parent)) {
+                // edge child -> parent (queremos truncar child antes de parent)
+                adj.get(child).add(parent);
+                indeg.put(parent, indeg.get(parent) + 1);
+            }
+        }
+
+        // Kahn topological sort to produce an order child-before-parent
+        Deque<String> q = new ArrayDeque<>();
+        for (Map.Entry<String, Integer> e : indeg.entrySet()) {
+            if (e.getValue() == 0)
+                q.add(e.getKey());
+        }
+
+        List<String> ordered = new ArrayList<>();
+        while (!q.isEmpty()) {
+            String n = q.removeFirst();
+            ordered.add(n);
+            for (String nb : adj.get(n)) {
+                indeg.put(nb, indeg.get(nb) - 1);
+                if (indeg.get(nb) == 0)
+                    q.add(nb);
+            }
+        }
+
+        // Se houver ciclos, os nós restantes em truncateSet mas não em 'ordered'
+        // pertencem a ciclos
+        Set<String> orderedSet = new HashSet<>(ordered);
+        List<String> cyc = new ArrayList<>();
+        for (String t : truncateSet) {
+            if (!orderedSet.contains(t))
+                cyc.add(t);
+        }
+
+        // Executar truncates em ordem topológica sem CASCADE (protege tabelas
+        // excluídas).
+        if (!ordered.isEmpty()) {
+            List<String> quoted = new ArrayList<>();
+            for (String t : ordered)
+                quoted.add('"' + t + '"');
+            String sql = "TRUNCATE " + String.join(", ", quoted) + " RESTART IDENTITY";
+            log.info("Executando reset de banco (truncate ordered, sem CASCADE): {}", sql);
+            jdbcTemplate.execute(sql);
+        }
+
+        // Para ciclos complexos, truncar com CASCADE como fallback (essas tabelas
+        // não possuem uma ordenação acíclica entre si). Como já expandimos a
+        // lista de excluídos transitivamente, esse CASCADE não deve afetar
+        // tabelas que queremos preservar.
+        if (!cyc.isEmpty()) {
+            List<String> quotedC = new ArrayList<>();
+            for (String t : cyc)
+                quotedC.add('"' + t + '"');
+            String sqlc = "TRUNCATE " + String.join(", ", quotedC) + " RESTART IDENTITY CASCADE";
+            log.info("Executando reset de banco (truncate cyclic, com CASCADE fallback): {}", sqlc);
+            jdbcTemplate.execute(sqlc);
+        }
 
         // Garantir que exista ao menos um usuário admin após o reset. Se não
         // existir, criar o admin padrão (username=admin,

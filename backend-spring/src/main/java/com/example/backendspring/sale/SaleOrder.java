@@ -34,6 +34,11 @@ public class SaleOrder {
     @Column(name = "total_final", nullable = false)
     private Double totalFinal;
 
+    // Optional net/adjusted total after adjustments (can be null when no
+    // adjustments)
+    @Column(name = "adjusted_total")
+    private Double adjustedTotal;
+
     // Customer contact fields (optional)
     @Column(name = "customer_name")
     private String customerName;
@@ -65,4 +70,8 @@ public class SaleOrder {
     @ManyToOne(optional = true)
     @JoinColumn(name = "caixa_status_id")
     private com.example.backendspring.caixa.CaixaStatus caixaStatus;
+
+    // optional status to indicate adjustments: e.g. 'DEVOLVIDA', 'TROCADA'
+    @Column(name = "status")
+    private String status;
 }

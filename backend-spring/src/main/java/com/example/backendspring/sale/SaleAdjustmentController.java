@@ -27,6 +27,15 @@ public class SaleAdjustmentController {
     private final com.example.backendspring.caixa.CaixaStatusRepository caixaStatusRepository;
     private final com.example.backendspring.user.UserRepository userRepository;
     private static final Logger log = LoggerFactory.getLogger(SaleAdjustmentController.class);
+    private final com.fasterxml.jackson.databind.ObjectMapper objectMapper;
+
+    private String objectToJson(Object o) {
+        try {
+            return objectMapper.writeValueAsString(o);
+        } catch (Exception e) {
+            return null;
+        }
+    }
 
     @PostMapping("/{id}/adjustments")
     @Transactional
@@ -172,27 +181,87 @@ public class SaleAdjustmentController {
                 caixaMovimentacaoRepository.save(mvb.build());
             }
 
-            // persist sale order
+            // persist sale order and mark as returned if no items remain
+            if (venda.getItens() == null || venda.getItens().isEmpty()) {
+                venda.setStatus("DEVOLVIDA");
+            } else {
+                // mark as ajustada
+                venda.setStatus("AJUSTADA");
+            }
             saleOrderRepository.save(venda);
 
-            // create adjustment record
-            SaleAdjustment adj = SaleAdjustment.builder()
-                    .saleOrder(venda)
-                    .saleItem(itemRemoved ? null : targetItem)
-                    .type("return")
-                    .quantity(qty)
-                    .replacementProductId(null)
-                    .priceDifference(-refundAmount)
-                    .paymentMethod(req.getPaymentMethod())
-                    .notes(req.getNotes())
-                    .operatorUsername(operatorUsername)
-                    .createdAt(OffsetDateTime.now())
-                    .build();
-            saleAdjustmentRepository.save(adj);
+            // create adjustment record with detail
+            // Build a JSON detail payload describing the adjustment
+            SaleAdjustment savedAdj = null;
+            try {
+                java.util.Map<String, Object> detail = new java.util.LinkedHashMap<>();
+                detail.put("removed_item",
+                        itemRemoved ? null
+                                : java.util.Map.of("sale_item_id", targetItem.getId(), "produto_id",
+                                        targetItem.getProduto() != null ? targetItem.getProduto().getId() : null,
+                                        "quantidade", qty, "preco_unitario", targetItem.getPrecoUnitario()));
+                detail.put("refund_amount", refundAmount);
+                detail.put("payments",
+                        pays == null ? java.util.List.of()
+                                : pays.stream()
+                                        .map(p -> java.util.Map.of("metodo", p.getMetodo(), "valor", p.getValor()))
+                                        .toList());
+                String jsonDetail = objectToJson(detail);
+
+                SaleAdjustment adj = SaleAdjustment.builder()
+                        .saleOrder(venda)
+                        .saleItem(itemRemoved ? null : targetItem)
+                        .type("return")
+                        .quantity(qty)
+                        .replacementProductId(null)
+                        .priceDifference(-refundAmount)
+                        .paymentMethod(req.getPaymentMethod())
+                        .notes(req.getNotes())
+                        .operatorUsername(operatorUsername)
+                        .createdAt(OffsetDateTime.now())
+                        .detailJson(jsonDetail)
+                        .build();
+                saleAdjustmentRepository.save(adj);
+                savedAdj = adj;
+            } catch (Exception ex) {
+                // fallback to saving without detail
+                SaleAdjustment adj = SaleAdjustment.builder()
+                        .saleOrder(venda)
+                        .saleItem(itemRemoved ? null : targetItem)
+                        .type("return")
+                        .quantity(qty)
+                        .replacementProductId(null)
+                        .priceDifference(-refundAmount)
+                        .paymentMethod(req.getPaymentMethod())
+                        .notes(req.getNotes())
+                        .operatorUsername(operatorUsername)
+                        .createdAt(OffsetDateTime.now())
+                        .build();
+                saleAdjustmentRepository.save(adj);
+                savedAdj = adj;
+            }
+
+            // update adjusted total on sale order (net total after this adjustment)
+            try {
+                double net = venda.getTotalFinal();
+                // subtract refunds and add extras from caixa_movimentacoes linked to this
+                // sale's caixa_status
+                // For now, compute as totalFinal minus sum of adjustments' priceDifference
+                var adjs = saleAdjustmentRepository.findBySaleOrderId(venda.getId());
+                if (adjs != null && !adjs.isEmpty()) {
+                    double sumDiffs = adjs.stream()
+                            .mapToDouble(a -> a.getPriceDifference() == null ? 0.0 : a.getPriceDifference()).sum();
+                    net = venda.getTotalFinal() + sumDiffs; // priceDifference is negative for refunds
+                }
+                venda.setAdjustedTotal(net);
+                saleOrderRepository.save(venda);
+            } catch (Exception ignored) {
+            }
 
             log.info("Return processed: saleId={} itemId={} qty={} refund={}", venda.getId(), targetItem.getId(), qty,
                     refundAmount);
-            return ResponseEntity.status(201).body(Map.of("message", "Return processed", "adjustmentId", adj.getId()));
+            return ResponseEntity.status(201).body(
+                    Map.of("message", "Return processed", "adjustmentId", savedAdj != null ? savedAdj.getId() : null));
 
         } else if (type.equalsIgnoreCase("exchange")) {
             // exchange flow: replacementProductId required

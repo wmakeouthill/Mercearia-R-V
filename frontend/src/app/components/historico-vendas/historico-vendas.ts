@@ -235,6 +235,10 @@ export class HistoricoVendasComponent implements OnInit {
           if (m.preco_total == null) {
             m.preco_total = m.total_final ?? m.totalFinal ?? itens.reduce((s: number, it: any) => s + (Number(it.preco_total ?? it.precoTotal ?? it.precoUnitario * (it.quantidade ?? it.quantidade_vendida ?? 0)) || 0), 0);
           }
+          // prefer adjusted_total when present
+          if (m.adjusted_total != null) {
+            m.preco_total = m.adjusted_total;
+          }
           return m;
         }).sort((a: any, b: any) => {
           const ta = a?.data_venda ? new Date(a.data_venda).getTime() : 0;

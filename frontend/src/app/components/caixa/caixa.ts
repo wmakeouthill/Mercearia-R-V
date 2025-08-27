@@ -27,6 +27,7 @@ export class CaixaComponent implements OnInit {
   mesSelecionado = getCurrentDateForInput().substring(0, 7);
   resumo: { data: string; saldo_movimentacoes: number } | null = null;
   resumoVendasDia: RelatorioResumo | null = null;
+  lastAggs: any = null;
   movimentacoes: Array<{ id: number; tipo: TipoMovLista; valor: number | null; descricao?: string; usuario?: string; data_movimento: string; produto_nome?: string; metodo_pagamento?: string; pagamento_valor?: number; caixa_status_id?: number; caixa_status?: any }> = [];
   // When we fetch the full dataset (e.g. dia mode) keep it to paginate client-side
   fullMovimentacoes: any[] | null = null;
@@ -305,6 +306,8 @@ export class CaixaComponent implements OnInit {
 
     this.currentRequestSub = request$.subscribe({
       next: ({ resumoVendas, resumoMovs, movimentacoes, aggs }) => {
+        // store last aggregates for use in getters to avoid double-counting
+        try { this.lastAggs = aggs || null; } catch (e) { this.lastAggs = null; }
         // DEBUG: log raw responses
         try {
           logger.info('CAIXA_COMPONENT', 'DEBUG_RESPONSES', 'Received responses from forkJoin', {
@@ -485,16 +488,99 @@ export class CaixaComponent implements OnInit {
           if (this.filtroModo !== 'mes') {
             this.sumEntradas = consolidated.filter((c: any) => c.tipo === 'entrada').reduce((s: number, it: any) => s + (Number(it.valor || 0) || 0), 0);
             this.sumRetiradas = consolidated.filter((c: any) => c.tipo === 'retirada').reduce((s: number, it: any) => s + (Number(it.valor || 0) || 0), 0);
-            this.sumVendas = consolidated.filter((c: any) => c.tipo === 'venda').reduce((s: number, it: any) => s + (Number(it.valor || 0) || 0), 0);
+
+            // Adjust sumVendas to avoid double-counting cash that is already represented
+            // as a caixa 'entrada' movimentacao. Strategy:
+            // - Build a map of entrada amounts per caixa_status_id (consume matches)
+            // - For each venda, if multi-payment (pagamentos_badges) parse parts and
+            //   exclude dinheiro parts that match an existing entrada for the same
+            //   caixa_status_id. For single-method vendas, exclude the whole venda
+            //   if a matching entrada exists.
+            const entradasBySession = new Map<string, number[]>();
+            for (const e of consolidated.filter((c: any) => c.tipo === 'entrada' && c.caixa_status_id != null)) {
+              const key = String(e.caixa_status_id);
+              const arr = entradasBySession.get(key) || [];
+              arr.push(Number(e.valor || 0));
+              entradasBySession.set(key, arr);
+            }
+
+            const parseBadgeValue = (badge: string): number => {
+              try {
+                // badge format: 'Dinheiro · R$ 20,00' or similar
+                const parts = badge.split('·');
+                const valPart = parts.length > 1 ? parts[1] : parts[0];
+                let cleaned = String(valPart).replace(/[^0-9,\.]/g, '').trim();
+                // remove thousands separators and normalize decimal
+                cleaned = cleaned.replace(/\./g, '').replace(/,/g, '.');
+                const n = parseFloat(cleaned);
+                return isNaN(n) ? 0 : n;
+              } catch {
+                return 0;
+              }
+            };
+
+            let sumVendasAdj = 0;
+            for (const v of consolidated.filter((c: any) => c.tipo === 'venda')) {
+              let contribution = 0;
+              const sessionKey = v.caixa_status_id != null ? String(v.caixa_status_id) : null;
+              if (Array.isArray(v.pagamentos_badges) && v.pagamentos_badges.length) {
+                // multi-payment: parse each badge
+                for (const b of v.pagamentos_badges) {
+                  const parts = String(b).split('·');
+                  const metodo = parts[0] ? parts[0].trim().toLowerCase() : '';
+                  const val = parseBadgeValue(b);
+                  if (metodo === 'dinheiro' && sessionKey) {
+                    const arr = entradasBySession.get(sessionKey) || [];
+                    const idx = arr.findIndex(a => Math.abs(a - val) < 0.01);
+                    if (idx >= 0) {
+                      arr.splice(idx, 1); // consume
+                      entradasBySession.set(sessionKey, arr);
+                      continue; // skip this cash part
+                    }
+                  }
+                  contribution += val;
+                }
+              } else {
+                // single-payment: use metodo_pagamento and valor
+                const metodo = (v.metodo_pagamento || '').toLowerCase();
+                const val = Number(v.valor || 0);
+                if (metodo === 'dinheiro' && sessionKey) {
+                  const arr = entradasBySession.get(sessionKey) || [];
+                  const idx = arr.findIndex(a => Math.abs(a - val) < 0.01);
+                  if (idx >= 0) {
+                    arr.splice(idx, 1);
+                    entradasBySession.set(sessionKey, arr);
+                    contribution = 0;
+                  } else {
+                    contribution = val;
+                  }
+                } else {
+                  contribution = val;
+                }
+              }
+              sumVendasAdj += contribution;
+            }
+            this.sumVendas = sumVendasAdj;
           }
-          // Synthesize resumoVendasDia and resumo from consolidated totals for all modes
-          this.resumoVendasDia = { receita_total: Number(this.sumVendas || 0), total_vendas: Number(this.sumVendas || 0), quantidade_vendida: 0 } as any;
-          if (this.filtroModo === 'dia') {
+          // Synthesize resumoVendasDia and resumo from consolidated totals for all modes.
+          // For 'dia' prefer server-provided aggregates (lastAggs) when available to avoid double-counting.
+          // If we have the full day's list cached, prefer client-side deduplicated
+          // totals to avoid relying on server aggregates that may double-count.
+          if (this.filtroModo === 'dia' && (!this.fullMovimentacoes || !this.fullMovimentacoes.length) && this.lastAggs && typeof this.lastAggs.sum_vendas === 'number') {
+            this.sumEntradas = Number(this.lastAggs.sum_entradas || 0);
+            this.sumRetiradas = Number(this.lastAggs.sum_retiradas || 0);
+            this.sumVendas = Number(this.lastAggs.sum_vendas || 0);
+            this.resumoVendasDia = { receita_total: Number(this.sumVendas || 0), total_vendas: Number(this.sumVendas || 0), quantidade_vendida: 0 } as any;
             this.resumo = { data: this.dataSelecionada, saldo_movimentacoes: Number(this.sumEntradas || 0) - Number(this.sumRetiradas || 0) } as any;
-          } else if (this.filtroModo === 'mes') {
-            this.resumo = { data: this.mesSelecionado, saldo_movimentacoes: Number(this.sumEntradas || 0) - Number(this.sumRetiradas || 0) } as any;
-          } else { // tudo
-            this.resumo = { data: 'Total', saldo_movimentacoes: Number(this.sumEntradas || 0) - Number(this.sumRetiradas || 0) } as any;
+          } else {
+            this.resumoVendasDia = { receita_total: Number(this.sumVendas || 0), total_vendas: Number(this.sumVendas || 0), quantidade_vendida: 0 } as any;
+            if (this.filtroModo === 'dia') {
+              this.resumo = { data: this.dataSelecionada, saldo_movimentacoes: Number(this.sumEntradas || 0) - Number(this.sumRetiradas || 0) } as any;
+            } else if (this.filtroModo === 'mes') {
+              this.resumo = { data: this.mesSelecionado, saldo_movimentacoes: Number(this.sumEntradas || 0) - Number(this.sumRetiradas || 0) } as any;
+            } else { // tudo
+              this.resumo = { data: 'Total', saldo_movimentacoes: Number(this.sumEntradas || 0) - Number(this.sumRetiradas || 0) } as any;
+            }
           }
 
           // clamp page to available pages and re-slice if necessary
@@ -783,6 +869,11 @@ export class CaixaComponent implements OnInit {
     if (this.filtroModo === 'dia' && (this.filtroTipo || this.filtroMetodo || this.filtroHoraInicio || this.filtroHoraFim)) {
       return Number(this.sumVendas || 0);
     }
+    // prefer server resumoVendasDia (order totals) when available, otherwise fallback
+    if (this.filtroModo === 'dia' && this.lastAggs && typeof this.lastAggs.sum_vendas === 'number') {
+      // The backend 'sum_vendas' already attempts to dedupe cash duplicates; prefer it
+      return Number(this.lastAggs.sum_vendas || this.resumoVendasDia?.receita_total || 0);
+    }
     return Number(this.resumoVendasDia?.receita_total || 0);
   }
 
@@ -796,6 +887,12 @@ export class CaixaComponent implements OnInit {
 
   get totalNoCaixaHoje(): number {
     if (this.filtroModo === 'dia') {
+      // Prefer server-provided aggregates for day mode when available to avoid double-counting
+      if (this.lastAggs && typeof this.lastAggs.sum_vendas === 'number' && typeof this.lastAggs.sum_entradas === 'number' && typeof this.lastAggs.sum_retiradas === 'number') {
+        const vendas = Number(this.lastAggs.sum_vendas || 0);
+        const movs = Number(this.lastAggs.sum_entradas || 0) - Number(this.lastAggs.sum_retiradas || 0);
+        return vendas + movs;
+      }
       return this.totalVendasHoje + this.saldoMovimentacoesHoje;
     }
     const saldoMovPeriodo = (this.sumEntradas || 0) - (this.sumRetiradas || 0);

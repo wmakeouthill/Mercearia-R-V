@@ -48,4 +48,8 @@ public class SaleAdjustment {
 
     @Column(name = "created_at")
     private OffsetDateTime createdAt;
+
+    // Optional JSON payload with detail of removed/added items and payments
+    @Column(name = "detail_json", columnDefinition = "text")
+    private String detailJson;
 }
