@@ -37,6 +37,10 @@ public interface SaleOrderRepository extends JpaRepository<SaleOrder, Long> {
         @Query("select so from SaleOrder so order by so.dataVenda desc")
         List<SaleOrder> findAllOrderByData();
 
+        @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+        @org.springframework.data.jpa.repository.Query("select so from SaleOrder so where so.id = :id")
+        java.util.Optional<SaleOrder> findByIdForUpdate(@org.springframework.data.repository.query.Param("id") Long id);
+
         List<SaleOrder> findByClienteIdOrderByDataVendaDesc(Long clienteId);
 
         // Contador rápido para verificar existência de ordens por cliente

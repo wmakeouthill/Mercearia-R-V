@@ -42,6 +42,16 @@ export class ExchangeReturnDetailModalComponent implements OnInit {
     // value adjustments (troco / pagamento adicional)
     valueAdjustments: { [itemId: number]: { type: 'refund' | 'charge' | null, amount: number } } = {};
 
+    // payment method and notes per sale item
+    paymentMethodByItem: { [itemId: number]: string } = {};
+    notesByItem: { [itemId: number]: string } = {};
+    // multiple payments per item: map saleItemId -> array of { metodo, valor }
+    paymentsByItem: { [itemId: number]: Array<{ metodo: string; valor: number }> } = {};
+
+    // adjusted quantities already applied (sale_item_id -> adjusted qty)
+    adjustedQuantities: { [saleItemId: number]: number } = {};
+    remainingQuantityByProdutoId: { [produtoId: number]: number } = {};
+
     loading = false;
 
     constructor(private readonly api: ApiService) { }
@@ -70,8 +80,16 @@ export class ExchangeReturnDetailModalComponent implements OnInit {
                     if (saleItemId != null) this.saleItemByProdutoId[prodId] = saleItemId;
                     // record original sold quantity
                     this.saleItemOriginalQty[prodId] = this.quantities[prodId];
+                    // defaults
+                    this.paymentMethodByItem[prodId] = 'dinheiro';
+                    this.notesByItem[prodId] = '';
+                    this.paymentsByItem[prodId] = [{ metodo: 'dinheiro', valor: 0 }];
                 });
                 console.debug('saleDetails.itens loaded', r.itens);
+                // compute already applied adjustments to clamp quantities
+                try {
+                    this.computeAdjustedQuantities();
+                } catch (e) { /* ignore */ }
                 // fetch available products for replacement dropdown (simple list)
                 this.api.getProdutos().subscribe({
                     next: (ps) => {
@@ -91,6 +109,32 @@ export class ExchangeReturnDetailModalComponent implements OnInit {
                 });
                 this.loading = false;
             }, error: () => { this.loading = false; }
+        });
+    }
+
+    private computeAdjustedQuantities(): void {
+        this.adjustedQuantities = {};
+        this.remainingQuantityByProdutoId = {};
+        const adjustments = (this.saleDetails && Array.isArray(this.saleDetails.adjustments)) ? this.saleDetails.adjustments : [];
+        for (const adj of adjustments) {
+            try {
+                const sid = adj.sale_item_id;
+                const qty = Number(adj.quantity) || 0;
+                if (sid != null) {
+                    this.adjustedQuantities[sid] = (this.adjustedQuantities[sid] || 0) + qty;
+                }
+            } catch { /* ignore malformed */ }
+        }
+        // compute remaining per produto_id by matching sale items
+        (this.saleDetails.itens || []).forEach((it: any) => {
+            const prodId = Number(it.produto_id ?? it.produtoId ?? (it.produto && it.produto.id) ?? NaN);
+            const saleItemId = it.item_id ?? it.id ?? it.sale_item_id ?? it.saleItemId ?? null;
+            const origQty = Number(it.quantidade ?? it.quantidade_vendida ?? it.quantity ?? 0) || 0;
+            const adjusted = saleItemId != null ? (this.adjustedQuantities[saleItemId] || 0) : 0;
+            const remaining = Math.max(0, origQty - adjusted);
+            this.remainingQuantityByProdutoId[prodId] = remaining;
+            // ensure quantities input clamps to remaining
+            this.quantities[prodId] = Math.min(this.quantities[prodId] || 0, remaining) || remaining;
         });
     }
 
@@ -317,13 +361,28 @@ export class ExchangeReturnDetailModalComponent implements OnInit {
                 console.debug('Return check', { produtoKey, saleItemId, requestedQty: Number(qty), origQtyCheck, origCheck });
                 if (origQtyCheck === undefined) { alert('Não foi possível validar quantidade original da venda. Ação cancelada.'); continue; }
                 if (Number(qty) > origQtyCheck) { alert(`Quantidade a devolver maior que a vendida (solicitado: ${qty}, vendido: ${origQtyCheck})`); continue; }
-                const payload = { type: 'return', saleItemId: saleItemId, quantity: Number(qty), paymentMethod: 'dinheiro' };
+                const payload = {
+                    type: 'return',
+                    saleItemId: saleItemId,
+                    quantity: Number(qty),
+                    paymentMethod: this.paymentMethodByItem[produtoKey] || 'dinheiro',
+                    notes: this.notesByItem[produtoKey] || '',
+                    payments: (this.paymentsByItem[produtoKey] || []).map(p => ({ metodo: p.metodo, valor: Number(p.valor || 0) }))
+                };
                 console.debug('POST adjustment payload', payload);
                 calls.push(this.api.postSaleAdjustment(this.saleDetails.id, payload));
             } else if (action === 'exchange') {
                 const replacementId = this.replacementProductIds[produtoKey];
                 // include priceDifference if user set it in valueAdjustments
-                const adjPayload: any = { type: 'exchange', saleItemId: saleItemId, quantity: qty, replacementProductId: replacementId, paymentMethod: 'dinheiro' };
+                const adjPayload: any = {
+                    type: 'exchange',
+                    saleItemId: saleItemId,
+                    quantity: qty,
+                    replacementProductId: replacementId,
+                    paymentMethod: this.paymentMethodByItem[produtoKey] || 'dinheiro',
+                    notes: this.notesByItem[produtoKey] || '',
+                    payments: (this.paymentsByItem[produtoKey] || []).map(p => ({ metodo: p.metodo, valor: Number(p.valor || 0) }))
+                };
                 const va = this.valueAdjustments[produtoKey];
                 if (va && va.amount && va.type) {
                     adjPayload.priceDifference = va.type === 'charge' ? Number(va.amount) : -Number(va.amount);

@@ -31,6 +31,8 @@ public class SaleController {
     private final SaleReportService saleReportService;
     private final ObjectMapper objectMapper;
     private final CaixaStatusRepository caixaStatusRepository;
+    private final com.example.backendspring.caixa.CaixaMovimentacaoRepository caixaMovimentacaoRepository;
+    private final SaleAdjustmentRepository saleAdjustmentRepository;
 
     private static final String KEY_ERROR = "error";
     private static final String KEY_QTD_VENDIDA = "quantidade_vendida";
@@ -189,6 +191,27 @@ public class SaleController {
                         }).toList();
                 m.put("pagamentos", pagamentos);
                 m.put("itens", itens);
+                // include adjustments when available
+                try {
+                    var adjs = saleAdjustmentRepository.findBySaleOrderId(o.getId());
+                    var adjsMapped = adjs == null ? java.util.List.of()
+                            : adjs.stream().map(a -> {
+                                var mm = new java.util.LinkedHashMap<String, Object>();
+                                mm.put("id", a.getId());
+                                mm.put("type", a.getType());
+                                mm.put("sale_item_id", a.getSaleItem() != null ? a.getSaleItem().getId() : null);
+                                mm.put("quantity", a.getQuantity());
+                                mm.put("replacement_product_id", a.getReplacementProductId());
+                                mm.put("price_difference", a.getPriceDifference());
+                                mm.put("payment_method", a.getPaymentMethod());
+                                mm.put("notes", a.getNotes());
+                                mm.put("operator_username", a.getOperatorUsername());
+                                mm.put("created_at", a.getCreatedAt());
+                                return mm;
+                            }).toList();
+                    m.put("adjustments", adjsMapped);
+                } catch (Exception ignored) {
+                }
                 m.put("_isCheckout", true);
                 m.put("row_id", "checkout-" + o.getId());
                 rows.add(m);
@@ -297,6 +320,28 @@ public class SaleController {
                 .troco(0.0)
                 .build();
         order.getPagamentos().add(sp);
+
+        // create caixa movimentacao for cash payment when session is active
+        try {
+            var statusAtual = caixaStatusRepository.findTopByOrderByIdDesc().orElse(null);
+            if (statusAtual != null && "dinheiro".equals(metodo)) {
+                com.example.backendspring.caixa.CaixaMovimentacao mv = com.example.backendspring.caixa.CaixaMovimentacao
+                        .builder()
+                        .tipo("entrada")
+                        .valor(req.getPrecoTotal())
+                        .descricao("Venda " + order.getId())
+                        .dataMovimento(OffsetDateTime.now())
+                        .criadoEm(OffsetDateTime.now())
+                        .operador(null)
+                        .caixaStatus(statusAtual)
+                        .build();
+                try {
+                    caixaMovimentacaoRepository.save(mv);
+                } catch (Exception ignored) {
+                }
+            }
+        } catch (Exception ignored) {
+        }
 
         if (req.getClienteId() != null) {
             Client cliente = clientRepository.findById(req.getClienteId()).orElse(null);

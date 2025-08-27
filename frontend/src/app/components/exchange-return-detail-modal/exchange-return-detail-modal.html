@@ -3,6 +3,24 @@
     <h3>Venda #{{ saleSummary.id }} - Detalhes</h3>
     <div *ngIf="loading">Carregando...</div>
     <div *ngIf="!loading && saleDetails">
+      <div class="adjustments" *ngIf="saleDetails.adjustments && saleDetails.adjustments.length>0">
+        <h4>Histórico de Ajustes</h4>
+        <table class="adjustments-table">
+          <thead><tr><th>Tipo</th><th>Item</th><th>Qtd</th><th>Prod.Rep</th><th>Diff</th><th>Operador</th><th>Data</th><th>Notas</th></tr></thead>
+          <tbody>
+            <tr *ngFor="let a of saleDetails.adjustments">
+              <td>{{a.type}}</td>
+              <td>{{a.sale_item_id || '-'}}</td>
+              <td>{{a.quantity}}</td>
+              <td>{{a.replacement_product_id || '-'}}</td>
+              <td>{{a.price_difference | currencyBR}}</td>
+              <td>{{a.operator_username || '-'}}</td>
+              <td>{{a.created_at | date:'short'}}</td>
+              <td>{{a.notes || ''}}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
       <table>
         <thead><tr><th>Produto</th><th>Qtd Vendida</th><th>Preço</th><th>Ação</th><th>Qtd</th><th>Substituto</th><th>Valores</th></tr></thead>
         <tbody>
@@ -40,6 +58,21 @@
                   <label><input type="radio" name="valtype-{{it.produto_id}}" [(ngModel)]="valueAdjustments[it.produto_id].type" [ngModelOptions]="{standalone: true}" [value]="'charge'"> <span>Adicionar</span></label>
                 </div>
                 <input type="number" step="0.01" [(ngModel)]="valueAdjustments[it.produto_id].amount" [ngModelOptions]="{standalone: true}" [disabled]="selections[it.produto_id] !== 'exchange'" class="value-input" placeholder="0,00">
+                <div class="payments-area" *ngIf="selections[it.produto_id] === 'exchange'">
+                  <div *ngFor="let p of paymentsByItem[it.produto_id]; let i = index" class="payment-row">
+                    <select [(ngModel)]="paymentsByItem[it.produto_id][i].metodo" [ngModelOptions]="{standalone: true}">
+                      <option value="dinheiro">Dinheiro</option>
+                      <option value="cartao">Cartão</option>
+                      <option value="pix">PIX</option>
+                      <option value="outro">Outro</option>
+                    </select>
+                    <input type="number" step="0.01" [(ngModel)]="paymentsByItem[it.produto_id][i].valor" [ngModelOptions]="{standalone: true}" placeholder="0,00">
+                    <button type="button" (click)="paymentsByItem[it.produto_id].splice(i,1)">Remover</button>
+                  </div>
+                  <div class="payments-controls">
+                    <button type="button" (click)="paymentsByItem[it.produto_id].push({ metodo: 'dinheiro', valor: 0 })">Adicionar pagamento</button>
+                  </div>
+                </div>
               </div>
             </td>
           </tr>

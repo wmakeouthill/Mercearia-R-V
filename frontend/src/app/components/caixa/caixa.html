@@ -78,6 +78,7 @@
       <label class="min-width">
         Exibir
         <select class="compact" [(ngModel)]="pageSize" (change)="setPageSize(pageSize)">
+          <option [ngValue]="10">10</option>
           <option [ngValue]="20">20</option>
           <option [ngValue]="50">50</option>
           <option [ngValue]="100">100</option>
@@ -157,7 +158,7 @@
             </tr>
           </thead>
           <tbody>
-            <tr *ngFor="let m of movimentacoes">
+            <tr *ngFor="let m of movimentacoesPagina">
               <td class="center">
                 <span class="badge" [ngClass]="{entrada: m.tipo === 'entrada', retirada: m.tipo === 'retirada', venda: m.tipo === 'venda'}">
                   <span *ngIf="m.tipo === 'entrada'" class="icon">➕</span>

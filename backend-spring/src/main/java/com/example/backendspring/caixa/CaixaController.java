@@ -8,7 +8,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.OffsetDateTime;
-import com.example.backendspring.utils.DateTimeUtils;
+// import com.example.backendspring.utils.DateTimeUtils; // unused
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import jakarta.persistence.EntityManager;
@@ -266,6 +266,13 @@ public class CaixaController {
                     var orders = saleOrderRepository.findByPeriodoTimestampsRaw(fFrom, fTo);
                     for (var vo : orders) {
                         for (var pg : vo.getPagamentos()) {
+                            // Skip sale payment rows for cash payments that already generated
+                            // caixa_movimentacao to avoid double-counting. We detect this by
+                            // checking if payment is cash and linked to a caixa_status.
+                            // Previously we skipped cash payments already linked to a caixa_status
+                            // to avoid double-counting. Per business decision, include all sale
+                            // payment rows here so 'tudo' and period views count all sales and
+                            // the caixa session records remain an audit artifact.
                             java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
                             row.put("id", vo.getId());
                             row.put("tipo", TIPO_VENDA);
@@ -393,6 +400,11 @@ public class CaixaController {
                         .filter(m -> TIPO_VENDA.equals(m.get("tipo")))
                         .mapToDouble(m -> ((Number) m.get(KEY_VALOR)).doubleValue())
                         .sum();
+                // Diagnostic log to help compare server-side aggregates vs frontend
+                log.info(
+                        "DIAG_CAIXA_AGGS: periodoInicio={} periodoFim={} tipo={} metodo_pagamento={} -> sums: entradas={} retiradas={} vendas={} totalItems={}",
+                        periodoInicio, periodoFim, tipo, metodoPagamento, sumEntradasAgg, sumRetiradasAgg, sumVendasAgg,
+                        filtrada.size());
                 return ResponseEntity.ok(java.util.Map.of(
                         KEY_SUM_ENTRADAS, sumEntradasAgg,
                         KEY_SUM_RETIRADAS, sumRetiradasAgg,
@@ -626,13 +638,113 @@ public class CaixaController {
         try {
             java.time.LocalDate inicio = java.time.LocalDate.of(ano, mes, 1);
             java.time.LocalDate fim = inicio.plusMonths(1).minusDays(1);
-            // Delegate to the main listing path; preserve pagination
-            return listarMovimentacoes(null, inicio.toString(), fim.toString(), null, null, null, null, null, null,
-                    null, null,
-                    page == null ? 1 : page, size == null ? 20 : size);
+            // Force timestamp-based path to ensure consistent behavior with
+            // payments that are linked to caixa_status (avoids double-counting
+            // differences between the LocalDate and timestamp branches).
+            try {
+                java.time.ZoneId sp = java.time.ZoneId.of("America/Sao_Paulo");
+                var zdtFrom = java.time.ZonedDateTime.of(inicio, java.time.LocalTime.MIDNIGHT, sp);
+                var zdtTo = java.time.ZonedDateTime.of(fim.plusDays(1), java.time.LocalTime.MIDNIGHT, sp).minusNanos(1);
+                java.time.OffsetDateTime fromTs = zdtFrom.toOffsetDateTime();
+                java.time.OffsetDateTime toTs = zdtTo.toOffsetDateTime();
+                return listarMovimentacoes(null, null, null, fromTs.toString(), toTs.toString(), null, null, null, null,
+                        null, null, page == null ? 1 : page, size == null ? 20 : size);
+            } catch (Exception ex) {
+                // Fallback to LocalDate path if timezone conversion fails
+                return listarMovimentacoes(null, inicio.toString(), fim.toString(), null, null, null, null, null, null,
+                        null, null, page == null ? 1 : page, size == null ? 20 : size);
+            }
         } catch (Exception e) {
             log.error("listarMovimentacoes/mes: exception", e);
             return ResponseEntity.status(500).body(Map.of(KEY_ERROR, "Falha ao listar por mês"));
+        }
+    }
+
+    /**
+     * Diagnostic endpoint: compare items returned by LocalDate path vs Timestamp
+     * path
+     * for the same period. Useful to detect differences caused by payment-row
+     * skipping
+     * or timezone boundaries.
+     */
+    @GetMapping("/movimentacoes/diagnose-diff")
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    public ResponseEntity<java.util.Map<String, Object>> diagnosticarDivergencia(
+            @RequestParam(value = "periodo_inicio") String periodoInicio,
+            @RequestParam(value = "periodo_fim") String periodoFim) {
+        try {
+            // Call LocalDate path (all=true) => uses buildSaleOrderRows/buildManualMovRows
+            ResponseEntity<java.util.Map<String, Object>> localResp = listarMovimentacoes(null, periodoInicio,
+                    periodoFim, null, null, Boolean.TRUE, null, null, null, null, null, 1, Integer.MAX_VALUE);
+
+            // Compute timestamp bounds in America/Sao_Paulo and call timestamp path
+            // (all=true)
+            java.time.LocalDate inicio = java.time.LocalDate.parse(periodoInicio);
+            java.time.LocalDate fim = java.time.LocalDate.parse(periodoFim);
+            java.time.ZoneId sp = java.time.ZoneId.of("America/Sao_Paulo");
+            var zdtFrom = java.time.ZonedDateTime.of(inicio, java.time.LocalTime.MIDNIGHT, sp);
+            var zdtTo = java.time.ZonedDateTime.of(fim.plusDays(1), java.time.LocalTime.MIDNIGHT, sp).minusNanos(1);
+            java.time.OffsetDateTime fromTs = zdtFrom.toOffsetDateTime();
+            java.time.OffsetDateTime toTs = zdtTo.toOffsetDateTime();
+
+            ResponseEntity<java.util.Map<String, Object>> tsResp = listarMovimentacoes(null, null, null,
+                    fromTs.toString(), toTs.toString(), Boolean.TRUE, null, null, null, null, null, 1,
+                    Integer.MAX_VALUE);
+
+            java.util.List<java.util.Map<String, Object>> localItems = (java.util.List<java.util.Map<String, Object>>) (localResp
+                    .getBody().getOrDefault(KEY_ITEMS, java.util.List.of()));
+            java.util.List<java.util.Map<String, Object>> tsItems = (java.util.List<java.util.Map<String, Object>>) (tsResp
+                    .getBody().getOrDefault(KEY_ITEMS, java.util.List.of()));
+
+            // Build dedupe key function consistent with listing code
+            java.util.function.Function<java.util.Map<String, Object>, String> keyFn = m -> {
+                try {
+                    Object idObj = m.get("id");
+                    if (idObj == null) {
+                        Object dm = m.get(KEY_DATA_MOVIMENTO);
+                        Object desc = m.get(KEY_DESCRICAO);
+                        return (dm == null ? java.util.UUID.randomUUID().toString() : dm.toString()) + "|"
+                                + (desc == null ? "" : desc.toString());
+                    } else {
+                        if (TIPO_VENDA.equals(m.get("tipo"))) {
+                            Object metodo = m.get(KEY_METODO_PAGAMENTO);
+                            Object pgVal = m.get("pagamento_valor");
+                            return idObj.toString() + "|" + (metodo == null ? "" : metodo.toString()) + "|"
+                                    + (pgVal == null ? "" : pgVal.toString());
+                        }
+                        return idObj.toString();
+                    }
+                } catch (Exception e) {
+                    return java.util.UUID.randomUUID().toString();
+                }
+            };
+
+            java.util.Map<String, java.util.Map<String, Object>> mapLocal = new java.util.LinkedHashMap<>();
+            for (var m : localItems)
+                mapLocal.put(keyFn.apply(m), m);
+            java.util.Map<String, java.util.Map<String, Object>> mapTs = new java.util.LinkedHashMap<>();
+            for (var m : tsItems)
+                mapTs.put(keyFn.apply(m), m);
+
+            java.util.List<java.util.Map<String, Object>> inLocalNotInTs = new java.util.ArrayList<>();
+            for (var k : mapLocal.keySet())
+                if (!mapTs.containsKey(k))
+                    inLocalNotInTs.add(mapLocal.get(k));
+
+            java.util.List<java.util.Map<String, Object>> inTsNotInLocal = new java.util.ArrayList<>();
+            for (var k : mapTs.keySet())
+                if (!mapLocal.containsKey(k))
+                    inTsNotInLocal.add(mapTs.get(k));
+
+            java.util.Map<String, Object> resp = new java.util.LinkedHashMap<>();
+            resp.put("local_count", mapLocal.size());
+            resp.put("ts_count", mapTs.size());
+            resp.put("in_local_not_in_ts", inLocalNotInTs);
+            resp.put("in_ts_not_in_local", inTsNotInLocal);
+            return ResponseEntity.ok(resp);
+        } catch (Exception e) {
+            log.error("diagnosticarDivergencia: exception", e);
+            return ResponseEntity.status(500).body(Map.of(KEY_ERROR, "Falha ao diagnosticar divergência"));
         }
     }
 
@@ -1374,28 +1486,12 @@ public class CaixaController {
         } catch (Exception ignored) {
         }
 
-        double vendasSessao = 0.0;
-        try {
-            var inicio = sess.getDataAbertura() != null ? sess.getDataAbertura().toLocalDate() : null;
-            var fim = sess.getDataFechamento() != null ? sess.getDataFechamento().toLocalDate() : agora.toLocalDate();
-            if (inicio != null && fim != null) {
-                // legacy sales no longer used; ignore legacy cash contribution
-            }
-        } catch (Exception ignored) {
-        }
-
-        try {
-            double ordersCash = saleOrderRepository.findAllOrderByData().stream()
-                    .filter(o -> o.getCaixaStatus() != null && sessionId != null
-                            && sessionId.equals(o.getCaixaStatus().getId()))
-                    .flatMap(o -> o.getPagamentos().stream())
-                    .filter(p -> p.getMetodo() != null && p.getMetodo().equals("dinheiro"))
-                    .mapToDouble(p -> p.getValor() == null ? 0.0 : p.getValor()).sum();
-            vendasSessao += ordersCash;
-        } catch (Exception ignored) {
-        }
-
-        return (sess.getSaldoInicial() == null ? 0.0 : sess.getSaldoInicial()) + movimentacoesSessao + vendasSessao;
+        // Caixa saldo deve ser calculado a partir das movimentações registradas
+        // (entradas/retiradas)
+        // e do saldo inicial. Não somamos separadamente pagamentos de vendas aqui para
+        // evitar
+        // dupla contagem — as vendas geram movimentações quando apropriado.
+        return (sess.getSaldoInicial() == null ? 0.0 : sess.getSaldoInicial()) + movimentacoesSessao;
     }
 
     /**

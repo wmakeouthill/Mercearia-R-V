@@ -28,6 +28,8 @@ export class CaixaComponent implements OnInit {
   resumo: { data: string; saldo_movimentacoes: number } | null = null;
   resumoVendasDia: RelatorioResumo | null = null;
   movimentacoes: Array<{ id: number; tipo: TipoMovLista; valor: number | null; descricao?: string; usuario?: string; data_movimento: string; produto_nome?: string; metodo_pagamento?: string; pagamento_valor?: number; caixa_status_id?: number; caixa_status?: any }> = [];
+  // When we fetch the full dataset (e.g. dia mode) keep it to paginate client-side
+  fullMovimentacoes: any[] | null = null;
   filtroTipo = '';
   filtroMetodo = '';
   filtroHoraInicio = '';
@@ -154,9 +156,9 @@ export class CaixaComponent implements OnInit {
     this.loadResumoTimer = setTimeout(() => { this.loadResumoEMovimentacoes(); this.loadResumoTimer = null; }, ms);
   }
 
-  onChangeData(): void { this.page = 1; this.scheduleLoadResumo(); }
-  onChangeMes(): void { this.page = 1; this.scheduleLoadResumo(); }
-  onChangeModo(): void { this.page = 1; this.scheduleLoadResumo(); }
+  onChangeData(): void { this.page = 1; this.fullMovimentacoes = null; this.scheduleLoadResumo(); }
+  onChangeMes(): void { this.page = 1; this.fullMovimentacoes = null; this.scheduleLoadResumo(); }
+  onChangeModo(): void { this.page = 1; this.fullMovimentacoes = null; this.scheduleLoadResumo(); }
 
   private loadResumoEMovimentacoes(): void {
     this.error = '';
@@ -277,16 +279,39 @@ export class CaixaComponent implements OnInit {
       });
     }
 
-    const request$ = forkJoin({ resumoVendas: resumoVendasObs, resumoMovs: resumoMovsObs, movimentacoes: movimentacoesObs });
+    // Also request aggregated sums (aggs) together so we can rely on server
+    // aggregates for 'mes' mode instead of using page-scoped values.
+    let aggsObs: any = of(null);
+    try {
+      const aggsParams: any = {
+        tipo: this.filtroTipo || undefined,
+        metodo_pagamento: this.filtroMetodo || undefined,
+        hora_inicio: this.filtroHoraInicio || undefined,
+        hora_fim: this.filtroHoraFim || undefined,
+        aggs: true
+      };
+      if (this.filtroModo === 'dia') {
+        aggsParams.data = this.dataSelecionada;
+      } else if (this.filtroModo === 'mes') {
+        aggsParams.periodo_inicio = listingPeriodoInicio;
+        aggsParams.periodo_fim = listingPeriodoFim;
+      }
+      aggsObs = this.caixaService.listarMovimentacoesSummary(aggsParams);
+    } catch (e) {
+      aggsObs = of(null);
+    }
+
+    const request$ = forkJoin({ resumoVendas: resumoVendasObs, resumoMovs: resumoMovsObs, movimentacoes: movimentacoesObs, aggs: aggsObs });
 
     this.currentRequestSub = request$.subscribe({
-      next: ({ resumoVendas, resumoMovs, movimentacoes }) => {
+      next: ({ resumoVendas, resumoMovs, movimentacoes, aggs }) => {
         // DEBUG: log raw responses
         try {
           logger.info('CAIXA_COMPONENT', 'DEBUG_RESPONSES', 'Received responses from forkJoin', {
             resumoVendasRaw: resumoVendas,
             resumoMovsRaw: resumoMovs,
-            movimentacoesRaw: movimentacoes
+            movimentacoesRaw: movimentacoes,
+            aggsRaw: aggs
           });
         } catch (e) {
           // ignore
@@ -315,6 +340,16 @@ export class CaixaComponent implements OnInit {
             payload.items = [];
           }
         }
+        // Diagnostic front-end aggs log to correlate with backend DIAG_CAIXA_AGGS
+        try {
+          logger.info('CAIXA_COMPONENT', 'DIAG_CAIXA_FRONT', 'Frontend received aggregations and payload stats', {
+            filtroModo: this.filtroModo,
+            periodStart: listingPeriodoInicio,
+            periodEnd: listingPeriodoFim,
+            payloadTotal: payload?.total ?? (payload?.items ? payload.items.length : null),
+            aggs: aggs || null
+          });
+        } catch (e) { /* ignore logging failures */ }
         // resumo objects may also be string-encoded
         if (typeof resumoVendas === 'string') {
           try { resumoVendas = JSON.parse(resumoVendas); } catch { resumoVendas = null as any; }
@@ -367,7 +402,7 @@ export class CaixaComponent implements OnInit {
             if (resumoMovs) {
               this.resumo = resumoMovs as any;
             } else {
-              this.resumo = { data: periodoInicio || 'periodo', saldo_movimentacoes: Number(payloadObj?.sum_entradas || 0) - Number(payloadObj?.sum_retiradas || 0) } as any;
+              this.resumo = { data: periodoInicio || 'periodo', saldo_movimentacoes: Number(payload?.sum_entradas || 0) - Number(payload?.sum_retiradas || 0) } as any;
             }
           }
 
@@ -379,12 +414,79 @@ export class CaixaComponent implements OnInit {
           // Consolidar vendas multi (que vêm uma linha por método do backend) em uma única linha por venda
           const consolidated = this.consolidarVendasMulti(lista);
           this.movimentacoes = consolidated;
-          this.hasMore = !!payloadObj?.hasNext;
-          this.total = Number(payloadObj?.total || consolidated.length);
+          this.hasMore = !!payload?.hasNext;
+          this.total = Number(payload?.total || consolidated.length);
+          // If backend pagination is by payment rows, consolidation can reduce
+          // number of visible rows. If consolidated length < pageSize and there
+          // are more pages, fetch subsequent pages until we accumulate enough
+          // consolidated rows to fill the requested page (or no more pages).
+          // Only auto-fetch additional pages to fill a page when in 'tudo' mode.
+          // For 'mes' we must respect server pagination and not merge pages.
+          if (this.filtroModo === 'tudo' && consolidated.length < Number(this.pageSize || 1) && payload?.hasNext) {
+            const self = this;
+            const params = {
+              data: this.filtroModo === 'tudo' ? listingDataParam : undefined,
+              tipo: this.filtroTipo || undefined,
+              metodo_pagamento: this.filtroMetodo || undefined,
+              hora_inicio: this.filtroHoraInicio || undefined,
+              hora_fim: this.filtroHoraFim || undefined,
+              periodo_inicio: listingPeriodoInicio,
+              periodo_fim: listingPeriodoFim,
+              size: this.pageSize
+            };
+            const needed = Number(this.pageSize || 1) - consolidated.length;
+            const fetchNext = (nextPage: number) => {
+              this.caixaService.listarMovimentacoes({ ...params, page: nextPage, size: this.pageSize }).subscribe({
+                next: (more: any) => {
+                  let morePayload: any = more;
+                  if (typeof morePayload === 'string') {
+                    try { morePayload = JSON.parse(morePayload); } catch { morePayload = { items: [] }; }
+                  }
+                  const moreItems = Array.isArray(morePayload?.items) ? morePayload.items : [];
+                  // append and recompute
+                  lista = lista.concat(moreItems);
+                  const newConsol = self.consolidarVendasMulti(lista);
+                  self.movimentacoes = newConsol.slice(0, Number(self.pageSize || 1));
+                  // stop if we've filled the page or no further pages
+                  if (newConsol.length >= Number(self.pageSize || 1) || !morePayload?.hasNext) {
+                    // update totals
+                    self.total = Number(payload?.total || newConsol.length);
+                    self.hasMore = !!morePayload?.hasNext;
+                    self.applySorting();
+                    return;
+                  }
+                  // else fetch next
+                  fetchNext(nextPage + 1);
+                },
+                error: () => {
+                  // ignore fetch errors and leave current consolidated as-is
+                  this.applySorting();
+                }
+              });
+            };
+            // start fetching from next page
+            fetchNext(this.page + 1);
+          }
+          // Apply pagination client-side only for 'dia' when we have the full day's list.
+          if (this.filtroModo === 'dia') {
+            // cache full day's list for client-side pagination
+            this.fullMovimentacoes = consolidated;
+            const start = (this.page - 1) * Number(this.pageSize || 1);
+            const end = start + Number(this.pageSize || 1);
+            logger.info('CAIXA_COMPONENT', 'DIA_PAGINACAO', 'Paginating day-mode client-side', { page: this.page, pageSize: this.pageSize, consolidatedLength: consolidated.length, start, end });
+            this.movimentacoes = consolidated.slice(start, end);
+            this.total = consolidated.length;
+            this.hasMore = false;
+          }
           // Recompute sums from consolidated list to reflect client-side filtering
-          this.sumEntradas = consolidated.filter((c: any) => c.tipo === 'entrada').reduce((s: number, it: any) => s + (Number(it.valor || 0) || 0), 0);
-          this.sumRetiradas = consolidated.filter((c: any) => c.tipo === 'retirada').reduce((s: number, it: any) => s + (Number(it.valor || 0) || 0), 0);
-          this.sumVendas = consolidated.filter((c: any) => c.tipo === 'venda').reduce((s: number, it: any) => s + (Number(it.valor || 0) || 0), 0);
+          // NOTE: for 'mes' mode prefer server-provided aggregates (summaryObs)
+          // because `consolidated` may contain only the current page. Only
+          // recompute here when not in 'mes' mode.
+          if (this.filtroModo !== 'mes') {
+            this.sumEntradas = consolidated.filter((c: any) => c.tipo === 'entrada').reduce((s: number, it: any) => s + (Number(it.valor || 0) || 0), 0);
+            this.sumRetiradas = consolidated.filter((c: any) => c.tipo === 'retirada').reduce((s: number, it: any) => s + (Number(it.valor || 0) || 0), 0);
+            this.sumVendas = consolidated.filter((c: any) => c.tipo === 'venda').reduce((s: number, it: any) => s + (Number(it.valor || 0) || 0), 0);
+          }
           // Synthesize resumoVendasDia and resumo from consolidated totals for all modes
           this.resumoVendasDia = { receita_total: Number(this.sumVendas || 0), total_vendas: Number(this.sumVendas || 0), quantidade_vendida: 0 } as any;
           if (this.filtroModo === 'dia') {
@@ -395,6 +497,18 @@ export class CaixaComponent implements OnInit {
             this.resumo = { data: 'Total', saldo_movimentacoes: Number(this.sumEntradas || 0) - Number(this.sumRetiradas || 0) } as any;
           }
 
+          // clamp page to available pages and re-slice if necessary
+          try {
+            const computedTotal = Number(this.total || 0);
+            const perPage = Number(this.pageSize || 1) || 1;
+            const totalPages = Math.max(1, Math.ceil(computedTotal / perPage));
+            if (this.page > totalPages) this.page = totalPages;
+            // If we have a full cached list, re-slice based on (possibly adjusted) page
+            if (this.fullMovimentacoes && this.fullMovimentacoes.length) {
+              const start2 = (this.page - 1) * perPage;
+              this.movimentacoes = (this.fullMovimentacoes || []).slice(start2, start2 + perPage);
+            }
+          } catch (e) { /* ignore clamp errors */ }
           this.applySorting();
           this.loading = false;
         };
@@ -450,9 +564,9 @@ export class CaixaComponent implements OnInit {
                   this.sumEntradas = Number(aggResp?.sum_entradas || 0);
                   this.sumRetiradas = Number(aggResp?.sum_retiradas || 0);
                   this.sumVendas = Number(aggResp?.sum_vendas || 0);
-                  // Do not overwrite `this.resumo` here: the day-specific cards
-                  // (resumo/resumoVendasDia) must be derived from resumoMovsObs/
-                  // resumoVendasObs so they reflect today's/day-selected numbers.
+                  // Do not overwrite the day-specific cards (`resumo`/`resumoVendasDia`) here: they
+                  // must always reflect the current real day (fetched above). Keep only the
+                  // aggregate sums (sumEntradas/sumRetiradas/sumVendas) for reporting purposes.
                 }
               } catch (e) { logger.warn('CAIXA_COMPONENT', 'AGGS_PARSE_FAIL', 'Failed to parse summary response', e); }
             },
@@ -462,86 +576,6 @@ export class CaixaComponent implements OnInit {
           logger.warn('CAIXA_COMPONENT', 'AGGS_SUBSCRIBE_FAIL', 'Failed to subscribe to summary call', e);
         }
         return;
-        // prefer backend-provided day resumo when in 'dia' mode; otherwise
-        // synthesize a resumo object from the listing sums so the UI cards
-        // continue to display meaningful totals for 'mes' and 'tudo'.
-        if (resumoVendas) {
-          this.resumoVendasDia = resumoVendas;
-        } else {
-          this.resumoVendasDia = {
-            receita_total: Number(payload?.sum_vendas || 0),
-            total_vendas: Number(payload?.sum_vendas || 0),
-            quantidade_vendida: 0
-          } as any;
-        }
-        // resumoMovs is only requested for 'dia' mode. When not present,
-        // synthesize a resumo from the listing sums so UI cards show
-        // meaningful values for 'mes' and 'tudo'.
-        // We'll prefer recomputing aggregates from the final list when in
-        // 'dia' mode because we fetch the full dataset and apply client-side
-        // filtering to match the 'tudo' dataset filtered by date.
-        let lista = payload?.items || [];
-        if (this.filtroModo === 'dia') {
-          // filter by selected local date
-          try {
-            lista = (Array.isArray(lista) ? lista : []).filter((m: any) => {
-              try {
-                const mvDateLocal = extractLocalDate(m.data_movimento);
-                if (mvDateLocal !== this.dataSelecionada) return false;
-                // apply hora filters if present
-                if (this.filtroHoraInicio || this.filtroHoraFim) {
-                  const vendaTs = new Date(m.data_movimento).getTime();
-                  if (this.filtroHoraInicio) {
-                    const sIso = this.normalizeDateTimeLocal(this.dataSelecionada, this.filtroHoraInicio);
-                    if (vendaTs < new Date(sIso).getTime()) return false;
-                  }
-                  if (this.filtroHoraFim) {
-                    const eIso = this.normalizeDateTimeLocal(this.dataSelecionada, this.filtroHoraFim);
-                    if (vendaTs > new Date(eIso).getTime()) return false;
-                  }
-                }
-                return true;
-              } catch {
-                return false;
-              }
-            });
-          } catch (e) {
-            lista = [];
-          }
-          // prefer backend resumo when available, otherwise synthesize from filtered list
-          if (resumoMovs) {
-            this.resumo = resumoMovs as any;
-          } else {
-            this.resumo = { data: this.dataSelecionada, saldo_movimentacoes: 0 } as any;
-          }
-        } else {
-          if (resumoMovs) {
-            this.resumo = resumoMovs as any;
-          } else {
-            this.resumo = { data: periodoInicio || 'periodo', saldo_movimentacoes: Number(payload?.sum_entradas || 0) - Number(payload?.sum_retiradas || 0) } as any;
-          }
-        }
-        // garantir que o campo usuario seja preenchido com operador quando disponível
-        lista = lista.map((m: any) => ({
-          ...m,
-          usuario: m.usuario || (m.operador ? (m.operador.username || m.operador) : null)
-        }));
-        // Consolidar vendas multi (que vêm uma linha por método do backend) em uma única linha por venda
-        const consolidated = this.consolidarVendasMulti(lista);
-        this.movimentacoes = consolidated;
-        this.hasMore = !!payload?.hasNext;
-        this.total = Number(payload?.total || consolidated.length);
-        // Recompute sums from consolidated list to reflect client-side filtering
-        this.sumEntradas = consolidated.filter((c: any) => c.tipo === 'entrada').reduce((s: number, it: any) => s + (Number(it.valor || 0) || 0), 0);
-        this.sumRetiradas = consolidated.filter((c: any) => c.tipo === 'retirada').reduce((s: number, it: any) => s + (Number(it.valor || 0) || 0), 0);
-        this.sumVendas = consolidated.filter((c: any) => c.tipo === 'venda').reduce((s: number, it: any) => s + (Number(it.valor || 0) || 0), 0);
-        // If in 'dia' mode synthesize resumoVendasDia from consolidated vendas
-        if (this.filtroModo === 'dia') {
-          this.resumoVendasDia = { receita_total: Number(this.sumVendas || 0), total_vendas: Number(this.sumVendas || 0), quantidade_vendida: 0 } as any;
-          this.resumo = { data: this.dataSelecionada, saldo_movimentacoes: Number(this.sumEntradas || 0) - Number(this.sumRetiradas || 0) } as any;
-        }
-        this.applySorting();
-        this.loading = false;
       },
       error: (err) => {
         this.error = 'Erro ao carregar dados do caixa';
@@ -554,11 +588,36 @@ export class CaixaComponent implements OnInit {
 
   // paginação
   page = 1;
-  pageSize: 20 | 50 | 100 = 20;
-  setPageSize(n: 20 | 50 | 100) {
+  pageSize: 10 | 20 | 50 | 100 = 20;
+  setPageSize(n: 10 | 20 | 50 | 100) {
     this.pageSize = n;
     this.page = 1;
+    // if in 'dia' mode we already fetch the full day dataset and paginate client-side
+    if (this.filtroModo === 'dia') {
+      // Just re-apply sorting/pagination client-side
+      this.applySorting();
+      return;
+    }
     this.scheduleLoadResumo(0);
+  }
+
+  get movimentacoesPagina(): any[] {
+    try {
+      // If we have a full cached list (day or month), paginate it client-side
+      if (this.fullMovimentacoes && this.fullMovimentacoes.length) {
+        const start = (this.page - 1) * Number(this.pageSize || 1);
+        return (this.fullMovimentacoes || []).slice(start, start + Number(this.pageSize || 1));
+      }
+      // Day mode with no full cache: slice current movimentacoes as fallback
+      if (this.filtroModo === 'dia') {
+        const start = (this.page - 1) * Number(this.pageSize || 1);
+        return (this.movimentacoes || []).slice(start, start + Number(this.pageSize || 1));
+      }
+      // For other modes, backend provides already-paged results in this.movimentacoes
+      return this.movimentacoes || [];
+    } catch (e) {
+      return this.movimentacoes || [];
+    }
   }
 
   get totalPages(): number {
@@ -602,7 +661,14 @@ export class CaixaComponent implements OnInit {
   goToPage(targetPage: number): void {
     const page = Math.max(1, Math.min(this.totalPages, Math.floor(Number(targetPage) || 1)));
     if (page === this.page) return;
+    // set the page and either paginate client-side or request server page
     this.page = page;
+    if (this.filtroModo === 'dia') {
+      logger.info('CAIXA_COMPONENT', 'GO_TO_PAGE_DIA', 'Changing page in dia mode', { page: this.page, pageSize: this.pageSize, fullLength: this.fullMovimentacoes ? this.fullMovimentacoes.length : null });
+      // client-side pagination when we have fullMovimentacoes
+      this.applySorting();
+      return;
+    }
     this.scheduleLoadResumo(0);
   }
 
@@ -662,6 +728,24 @@ export class CaixaComponent implements OnInit {
 
   private applySorting(): void {
     const dir = this.sortDir === 'asc' ? 1 : -1;
+    // If we have a full cached list (e.g. day mode), operate on the cached list and then slice
+    if (this.fullMovimentacoes && this.fullMovimentacoes.length) {
+      logger.info('CAIXA_COMPONENT', 'APPLY_SORT_FULL_CACHE', 'Sorting fullMovimentacoes before pagination', { sortKey: this.sortKey, sortDir: this.sortDir, fullLength: this.fullMovimentacoes.length });
+      this.fullMovimentacoes.sort((a, b) => {
+        switch (this.sortKey) {
+          case 'valor': return (Number(a.valor ?? 0) - Number(b.valor ?? 0)) * dir;
+          case 'tipo': return a.tipo.localeCompare(b.tipo) * dir;
+          case 'metodo': return this.getMetodosTexto(a).toLowerCase().localeCompare(this.getMetodosTexto(b).toLowerCase()) * dir;
+          case 'data':
+          default: return (new Date(a.data_movimento).getTime() - new Date(b.data_movimento).getTime()) * dir;
+        }
+      });
+      // re-slice based on page
+      const start = (this.page - 1) * Number(this.pageSize || 1);
+      const end = start + Number(this.pageSize || 1);
+      this.movimentacoes = (this.fullMovimentacoes || []).slice(start, end);
+      return;
+    }
     this.movimentacoes.sort((a, b) => {
       switch (this.sortKey) {
         case 'valor': {

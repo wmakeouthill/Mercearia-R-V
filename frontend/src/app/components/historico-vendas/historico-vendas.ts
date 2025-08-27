@@ -111,6 +111,14 @@ export class HistoricoVendasComponent implements OnInit {
   goToPage(targetPage: number): void {
     const page = Math.max(1, Math.min(this.totalPages, Math.floor(Number(targetPage) || 1)));
     if (page === this.page) return;
+    // If any client-side filters are active or we have fetched the full dataset,
+    // paginate locally instead of refetching from the server which would reset
+    // filters. Otherwise request the server page.
+    const clientSideFilteringActive = Boolean(this.dataFiltro || this.horaInicioFiltro || this.horaFimFiltro || this.produtoFiltro || this.metodoPagamentoFiltro || this.vendasFiltradasAll);
+    if (clientSideFilteringActive) {
+      this.page = page;
+      return;
+    }
     // fetch the requested page from server
     this.loadPage(page);
   }

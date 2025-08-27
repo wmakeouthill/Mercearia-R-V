@@ -31,6 +31,8 @@ public class CheckoutController {
     private final com.example.backendspring.client.ClientRepository clientRepository;
     private final ProductRepository productRepository;
     private final SaleDeletionRepository saleDeletionRepository;
+    private final SaleAdjustmentRepository saleAdjustmentRepository;
+    private final com.example.backendspring.caixa.CaixaMovimentacaoRepository caixaMovimentacaoRepository;
     private final ObjectMapper objectMapper;
     private final com.example.backendspring.caixa.CaixaStatusRepository caixaStatusRepository;
     private final com.example.backendspring.user.UserRepository userRepository;
@@ -523,6 +525,24 @@ public class CheckoutController {
                 sp.setCaixaStatus(caixaAtiva);
             }
             venda.getPagamentos().add(sp);
+            // Persist a caixa movimentacao for cash payments so sales generate caixa
+            // entries
+            try {
+                if (caixaAtiva != null && "dinheiro".equals(metodo) && p.getValor() != null && p.getValor() > 0.0) {
+                    com.example.backendspring.caixa.CaixaMovimentacao mv = com.example.backendspring.caixa.CaixaMovimentacao
+                            .builder()
+                            .tipo("entrada")
+                            .valor(p.getValor())
+                            .descricao("Venda " + venda.getId())
+                            .dataMovimento(OffsetDateTime.now())
+                            .criadoEm(OffsetDateTime.now())
+                            .operador(venda.getOperador())
+                            .caixaStatus(caixaAtiva)
+                            .build();
+                    caixaMovimentacaoRepository.save(mv);
+                }
+            } catch (Exception ignored) {
+            }
         }
     }
 
@@ -560,6 +580,11 @@ public class CheckoutController {
         resp.put("total_final", venda.getTotalFinal());
         resp.put("itens", itens);
         resp.put("pagamentos", pagamentos);
+        // attach adjustments history when available
+        try {
+            resp.put("adjustments", buildAdjustments(venda));
+        } catch (Exception ignored) {
+        }
         // include customer contact fields if present
         if (venda.getCustomerName() != null)
             resp.put("customer_name", venda.getCustomerName());
@@ -586,6 +611,33 @@ public class CheckoutController {
         } catch (Exception ignored) {
         }
         return resp;
+    }
+
+    // Include adjustments in the response for frontend visibility
+    private java.util.List<java.util.Map<String, Object>> buildAdjustments(SaleOrder venda) {
+        try {
+            var list = new java.util.ArrayList<java.util.Map<String, Object>>();
+            var adjustments = saleAdjustmentRepository.findBySaleOrderId(venda.getId());
+            if (adjustments == null)
+                return list;
+            for (var a : adjustments) {
+                var m = new java.util.LinkedHashMap<String, Object>();
+                m.put("id", a.getId());
+                m.put("type", a.getType());
+                m.put("sale_item_id", a.getSaleItem() != null ? a.getSaleItem().getId() : null);
+                m.put("quantity", a.getQuantity());
+                m.put("replacement_product_id", a.getReplacementProductId());
+                m.put("price_difference", a.getPriceDifference());
+                m.put("payment_method", a.getPaymentMethod());
+                m.put("notes", a.getNotes());
+                m.put("operator_username", a.getOperatorUsername());
+                m.put("created_at", a.getCreatedAt());
+                list.add(m);
+            }
+            return list;
+        } catch (Exception e) {
+            return java.util.List.of();
+        }
     }
 
     // generate a name unique among clients by appending (2), (3), ... if needed

@@ -152,11 +152,65 @@ export class ExchangeReturnListComponent implements OnInit, OnDestroy {
                         return it;
                     });
 
+                    // Merge in any checkout-only orders (completas) that are not present
+                    // in the detailed results so recently created checkout orders appear
+                    // in the exchange/return list.
+                    try {
+                        const existingIds = new Set(list.map((it: any) => String(it.id)));
+                        for (const c of completasMapped) {
+                            try {
+                                const cid = c && c.id != null ? String(c.id) : null;
+                                if (cid && !existingIds.has(cid)) {
+                                    list.push(c);
+                                    existingIds.add(cid);
+                                }
+                            } catch {
+                                /* ignore malformed completa */
+                            }
+                        }
+                    } catch {
+                        // ignore merge errors
+                    }
+
+                    // If the user provided from/to, additionally enforce the date range
+                    // client-side to guard against backend returning out-of-range results.
+                    try {
+                        if (fromUtc || toUtc) {
+                            const fromMs = fromUtc ? new Date(fromUtc).getTime() : null;
+                            const toMs = toUtc ? new Date(toUtc).getTime() : null;
+                            list = list.filter((it: any) => {
+                                try {
+                                    const ds = it.data_venda || it.dataVenda || it.dataVenda || it.data_venda || it.created_at || it.data_venda;
+                                    if (!ds) return false;
+                                    const dt = new Date(ds).getTime();
+                                    if (isNaN(dt)) return false;
+                                    if (fromMs != null && dt < fromMs) return false;
+                                    if (toMs != null && dt > toMs) return false;
+                                    return true;
+                                } catch {
+                                    return false;
+                                }
+                            });
+                        }
+                    } catch (e) {
+                        // ignore parse errors and fall back to server result
+                    }
+
                     // apply operator filter if present
                     if (this.operatorFilter) {
                         list = list.filter((it: any) => (it.operator || '').toLowerCase() === String(this.operatorFilter).toLowerCase());
                     }
 
+                    // sort by date desc (newest first)
+                    try {
+                        list.sort((x: any, y: any) => {
+                            const xs = x.data_venda || x.dataVenda || x.created_at || x.createdAt || x.data_venda;
+                            const ys = y.data_venda || y.dataVenda || y.created_at || y.createdAt || y.data_venda;
+                            const dx = xs ? new Date(xs).getTime() : 0;
+                            const dy = ys ? new Date(ys).getTime() : 0;
+                            return dy - dx;
+                        });
+                    } catch (e) { /* ignore sort errors */ }
                     this.items = list;
                     this.page = (r.page || 0);
                     this.size = (r.size || this.size);
@@ -169,18 +223,51 @@ export class ExchangeReturnListComponent implements OnInit, OnDestroy {
 
                 // If detailed search returned nothing (legacy endpoint removed), paginate checkout results locally
                 const completasFull = completasMapped;
-                // apply operator filter
+                // apply optional date range filter (from/to) to checkout results so UI filters behave
+                // consistently with the server-side detailed search
                 let completasFiltered = completasFull;
+                try {
+                    if (fromUtc || toUtc) {
+                        const fromMs = fromUtc ? new Date(fromUtc).getTime() : null;
+                        const toMs = toUtc ? new Date(toUtc).getTime() : null;
+                        completasFiltered = completasFull.filter((it: any) => {
+                            try {
+                                const dt = it.data_venda ? new Date(it.data_venda).getTime() : null;
+                                if (dt == null) return false;
+                                if (fromMs != null && dt < fromMs) return false;
+                                if (toMs != null && dt > toMs) return false;
+                                return true;
+                            } catch {
+                                return false;
+                            }
+                        });
+                    }
+                } catch (e) {
+                    // fallback to unfiltered completasFull on parse errors
+                    completasFiltered = completasFull;
+                }
+                // apply operator filter
                 if (this.operatorFilter) {
-                    completasFiltered = completasFull.filter((it: any) => (it.operator || '').toLowerCase() === String(this.operatorFilter).toLowerCase());
+                    completasFiltered = completasFiltered.filter((it: any) => (it.operator || '').toLowerCase() === String(this.operatorFilter).toLowerCase());
                 }
                 const total = completasFiltered.length;
                 const start = p * this.size;
                 const end = start + this.size;
+                // sort checkout fallback by date desc before paginating
+                try {
+                    completasFiltered.sort((x: any, y: any) => {
+                        const xs = x.data_venda || x.dataVenda || x.created_at || x.createdAt || x.data_venda;
+                        const ys = y.data_venda || y.dataVenda || y.created_at || y.createdAt || y.data_venda;
+                        const dx = xs ? new Date(xs).getTime() : 0;
+                        const dy = ys ? new Date(ys).getTime() : 0;
+                        return dy - dx;
+                    });
+                } catch (e) { /* ignore */ }
                 const pageSlice = completasFiltered.slice(start, end);
                 this.items = pageSlice;
                 this.page = p;
-                this.size = this.size;
+                // ensure size reflects user's selector
+                this.size = this.size || 10;
                 this.total = total;
                 this.totalPages = Math.max(1, Math.ceil(total / this.size));
                 this.buildPaginationItems();
