@@ -645,3 +645,25 @@ databaseChangeLog:
         - dropColumn:
             tableName: venda_cabecalho
             columnName: status
+
+  - changeSet:
+      id: 20250828-add-detail-json-to-sale-adjustments
+      author: assistant
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - columnExists:
+                tableName: sale_adjustments
+                columnName: detail_json
+      changes:
+        - addColumn:
+            tableName: sale_adjustments
+            columns:
+              - column:
+                  name: detail_json
+                  type: TEXT
+                  remarks: "Optional JSON payload with detail of removed/added items and payments"
+      rollback:
+        - dropColumn:
+            tableName: sale_adjustments
+            columnName: detail_json
