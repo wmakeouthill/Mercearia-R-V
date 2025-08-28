@@ -178,6 +178,50 @@
   .valor { font-size: 22px; margin-top: 6px; width: 100%; text-align: center; }
   .valor.positivo { color: #16a34a; }
   .valor.negativo { color: #dc2626; }
+
+  // Estilos para cards combinados (dia + mês + total)
+  .card-combinado {
+    min-height: 160px;
+
+    .valor-duplo {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      width: 100%;
+      margin-top: 8px;
+    }
+
+    .valor-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 10px;
+      background: rgba(0, 46, 89, 0.05);
+      border-radius: 6px;
+      border: 1px solid rgba(0, 46, 89, 0.15);
+      transition: background-color 0.2s ease;
+    }
+
+    .valor-item:hover {
+      background: rgba(0, 46, 89, 0.08);
+    }
+
+    .label-pequeno {
+      font-size: 10px;
+      color: var(--primary-blue);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      opacity: 0.9;
+    }
+
+    .valor-item .valor {
+      font-size: 16px;
+      margin: 0;
+      text-align: right;
+      font-weight: 600;
+    }
+  }
 }
 
 .mensagens .erro, .mensagens .sucesso {

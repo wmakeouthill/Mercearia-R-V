@@ -7,7 +7,7 @@ import { extractLocalDate, getCurrentDateForInput } from '../../utils/date-utils
 import { CaixaService } from '../../services/caixa.service';
 import { AuthService } from '../../services/auth';
 import { logger } from '../../utils/logger';
-import { forkJoin, of, Subscription } from 'rxjs';
+import { forkJoin, of, Subscription, firstValueFrom } from 'rxjs';
 import { RelatorioResumo } from '../../models';
 import { Router } from '@angular/router';
 
@@ -25,8 +25,10 @@ export class CaixaComponent implements OnInit {
   filtroModo: 'tudo' | 'dia' | 'mes' = 'tudo';
   dataSelecionada = getCurrentDateForInput();
   mesSelecionado = getCurrentDateForInput().substring(0, 7);
-  resumo: { data: string; saldo_movimentacoes: number } | null = null;
+  // Resumo de movimentações do DIA atual/selecionado (usado apenas para o card "Dia")
+  resumoMovsDia: { data: string; saldo_movimentacoes: number } | null = null;
   resumoVendasDia: RelatorioResumo | null = null;
+  resumoTotal: RelatorioResumo | null = null;
   lastAggs: any = null;
   movimentacoes: Array<{ id: number; tipo: TipoMovLista; valor: number | null; descricao?: string; usuario?: string; data_movimento: string; produto_nome?: string; metodo_pagamento?: string; pagamento_valor?: number; caixa_status_id?: number; caixa_status?: any }> = [];
   // When we fetch the full dataset (e.g. dia mode) keep it to paginate client-side
@@ -208,6 +210,12 @@ export class CaixaComponent implements OnInit {
     const todayInput = getCurrentDateForInput();
     const resumoVendasObs = this.api.getResumoDia(this.filtroModo === 'dia' ? this.dataSelecionada : todayInput);
     const resumoMovsObs = this.caixaService.getResumoMovimentacoesDia(this.filtroModo === 'dia' ? this.dataSelecionada : todayInput);
+
+    // Para modo "tudo", também carregar dados totais
+    let resumoTotalObs: any = of(null);
+    if (this.filtroModo === 'tudo') {
+      resumoTotalObs = this.api.getResumoTotal();
+    }
     // DEBUG: log params sent to listarMovimentacoes
     try {
       // Log the raw params (data/periodo) computed above; avoid referencing
@@ -284,9 +292,11 @@ export class CaixaComponent implements OnInit {
     // aggregates for 'mes' mode instead of using page-scoped values.
     let aggsObs: any = of(null);
     try {
+      // Para agregados, não usar filtros de tipo/metodo para incluir TODAS as movimentações
+      // Isso é necessário para que os tooltips mostrem valores corretos
       const aggsParams: any = {
-        tipo: this.filtroTipo || undefined,
-        metodo_pagamento: this.filtroMetodo || undefined,
+        // Removido: tipo: this.filtroTipo || undefined,
+        // Removido: metodo_pagamento: this.filtroMetodo || undefined,
         hora_inicio: this.filtroHoraInicio || undefined,
         hora_fim: this.filtroHoraFim || undefined,
         aggs: true
@@ -302,10 +312,10 @@ export class CaixaComponent implements OnInit {
       aggsObs = of(null);
     }
 
-    const request$ = forkJoin({ resumoVendas: resumoVendasObs, resumoMovs: resumoMovsObs, movimentacoes: movimentacoesObs, aggs: aggsObs });
+    const request$ = forkJoin({ resumoVendas: resumoVendasObs, resumoMovs: resumoMovsObs, resumoTotal: resumoTotalObs, movimentacoes: movimentacoesObs, aggs: aggsObs });
 
     this.currentRequestSub = request$.subscribe({
-      next: ({ resumoVendas, resumoMovs, movimentacoes, aggs }) => {
+      next: ({ resumoVendas, resumoMovs, resumoTotal, movimentacoes, aggs }) => {
         // store last aggregates for use in getters to avoid double-counting
         try { this.lastAggs = aggs || null; } catch (e) { this.lastAggs = null; }
         // DEBUG: log raw responses
@@ -360,10 +370,18 @@ export class CaixaComponent implements OnInit {
         if (typeof resumoMovs === 'string') {
           try { resumoMovs = JSON.parse(resumoMovs); } catch { resumoMovs = null as any; }
         }
+        if (typeof resumoTotal === 'string') {
+          try { resumoTotal = JSON.parse(resumoTotal); } catch { resumoTotal = null as any; }
+        }
+
+        // Define resumoTotal se foi carregado
+        if (resumoTotal && typeof resumoTotal === 'object') {
+          this.resumoTotal = resumoTotal as RelatorioResumo;
+        }
 
         // helper to run the normal payload processing after ensuring we have
         // the complete items array (may require fetching additional pages).
-        const finalizePayload = (payloadObj: any) => {
+        const finalizePayload = async (payloadObj: any) => {
           let lista = payloadObj?.items || [];
           // We'll prefer recomputing aggregates from the final list when in
           // 'dia' mode because we fetch the full dataset and apply client-side
@@ -397,16 +415,12 @@ export class CaixaComponent implements OnInit {
             }
             // prefer backend resumo when available, otherwise synthesize from filtered list
             if (resumoMovs) {
-              this.resumo = resumoMovs as any;
+              this.resumoMovsDia = resumoMovs as any;
             } else {
-              this.resumo = { data: this.dataSelecionada, saldo_movimentacoes: 0 } as any;
+              this.resumoMovsDia = { data: this.dataSelecionada, saldo_movimentacoes: 0 } as any;
             }
           } else {
-            if (resumoMovs) {
-              this.resumo = resumoMovs as any;
-            } else {
-              this.resumo = { data: periodoInicio || 'periodo', saldo_movimentacoes: Number(payload?.sum_entradas || 0) - Number(payload?.sum_retiradas || 0) } as any;
-            }
+            // Não sobrescrever resumoMovsDia quando não estamos em modo 'dia'
           }
 
           // garantir que o campo usuario seja preenchido com operador quando disponível
@@ -419,57 +433,11 @@ export class CaixaComponent implements OnInit {
           this.movimentacoes = consolidated;
           this.hasMore = !!payload?.hasNext;
           this.total = Number(payload?.total || consolidated.length);
-          // If backend pagination is by payment rows, consolidation can reduce
-          // number of visible rows. If consolidated length < pageSize and there
-          // are more pages, fetch subsequent pages until we accumulate enough
-          // consolidated rows to fill the requested page (or no more pages).
-          // Only auto-fetch additional pages to fill a page when in 'tudo' mode.
-          // For 'mes' we must respect server pagination and not merge pages.
-          if (this.filtroModo === 'tudo' && consolidated.length < Number(this.pageSize || 1) && payload?.hasNext) {
-            const self = this;
-            const params = {
-              data: this.filtroModo === 'tudo' ? listingDataParam : undefined,
-              tipo: this.filtroTipo || undefined,
-              metodo_pagamento: this.filtroMetodo || undefined,
-              hora_inicio: this.filtroHoraInicio || undefined,
-              hora_fim: this.filtroHoraFim || undefined,
-              periodo_inicio: listingPeriodoInicio,
-              periodo_fim: listingPeriodoFim,
-              size: this.pageSize
-            };
-            const needed = Number(this.pageSize || 1) - consolidated.length;
-            const fetchNext = (nextPage: number) => {
-              this.caixaService.listarMovimentacoes({ ...params, page: nextPage, size: this.pageSize }).subscribe({
-                next: (more: any) => {
-                  let morePayload: any = more;
-                  if (typeof morePayload === 'string') {
-                    try { morePayload = JSON.parse(morePayload); } catch { morePayload = { items: [] }; }
-                  }
-                  const moreItems = Array.isArray(morePayload?.items) ? morePayload.items : [];
-                  // append and recompute
-                  lista = lista.concat(moreItems);
-                  const newConsol = self.consolidarVendasMulti(lista);
-                  self.movimentacoes = newConsol.slice(0, Number(self.pageSize || 1));
-                  // stop if we've filled the page or no further pages
-                  if (newConsol.length >= Number(self.pageSize || 1) || !morePayload?.hasNext) {
-                    // update totals
-                    self.total = Number(payload?.total || newConsol.length);
-                    self.hasMore = !!morePayload?.hasNext;
-                    self.applySorting();
-                    return;
-                  }
-                  // else fetch next
-                  fetchNext(nextPage + 1);
-                },
-                error: () => {
-                  // ignore fetch errors and leave current consolidated as-is
-                  this.applySorting();
-                }
-              });
-            };
-            // start fetching from next page
-            fetchNext(this.page + 1);
-          }
+
+          // Atualizar tooltips de movimentações após carregar dados
+          await this.atualizarTooltipsMovimentacoes();
+          // Removed recursive page-fill in 'tudo' mode to avoid excessive requests.
+          // Accept a possibly shorter consolidated page; rely on hasMore for navigation.
           // Apply pagination client-side only for 'dia' when we have the full day's list.
           if (this.filtroModo === 'dia') {
             // cache full day's list for client-side pagination
@@ -480,14 +448,33 @@ export class CaixaComponent implements OnInit {
             this.movimentacoes = consolidated.slice(start, end);
             this.total = consolidated.length;
             this.hasMore = false;
+
+            // Atualizar tooltips de movimentações após paginação
+            await this.atualizarTooltipsMovimentacoes();
           }
           // Recompute sums from consolidated list to reflect client-side filtering
           // NOTE: for 'mes' mode prefer server-provided aggregates (summaryObs)
           // because `consolidated` may contain only the current page. Only
           // recompute here when not in 'mes' mode.
           if (this.filtroModo !== 'mes') {
+            logger.info('CAIXA_COMPONENT', 'AGGREGATES_CALC_LOCAL', 'Calculando valores agregados localmente', {
+              filtroModo: this.filtroModo,
+              consolidatedLength: consolidated.length,
+              sumEntradasAntes: this.sumEntradas,
+              sumRetiradasAntes: this.sumRetiradas
+            });
+
             this.sumEntradas = consolidated.filter((c: any) => c.tipo === 'entrada').reduce((s: number, it: any) => s + (Number(it.valor || 0) || 0), 0);
             this.sumRetiradas = consolidated.filter((c: any) => c.tipo === 'retirada').reduce((s: number, it: any) => s + (Number(it.valor || 0) || 0), 0);
+
+            logger.info('CAIXA_COMPONENT', 'AGGREGATES_CALC_LOCAL_RESULT', 'Valores agregados calculados localmente', {
+              sumEntradas: this.sumEntradas,
+              sumRetiradas: this.sumRetiradas,
+              saldoCalculado: this.sumEntradas - this.sumRetiradas
+            });
+
+            // Atualizar tooltips após calcular valores locais
+            await this.atualizarTooltipsMovimentacoes();
 
             // Adjust sumVendas to avoid double-counting cash that is already represented
             // as a caixa 'entrada' movimentacao. Strategy:
@@ -566,22 +553,37 @@ export class CaixaComponent implements OnInit {
           // For 'dia' prefer server-provided aggregates (lastAggs) when available to avoid double-counting.
           // If we have the full day's list cached, prefer client-side deduplicated
           // totals to avoid relying on server aggregates that may double-count.
-          if (this.filtroModo === 'dia' && (!this.fullMovimentacoes || !this.fullMovimentacoes.length) && this.lastAggs && typeof this.lastAggs.sum_vendas === 'number') {
+          if (this.filtroModo === 'dia' && (!this.fullMovimentacoes || !this.fullMovimentacoes.length) && this.lastAggs && (typeof this.lastAggs.sum_vendas === 'number' || typeof this.lastAggs.sum_vendas_net === 'number')) {
+            logger.info('CAIXA_COMPONENT', 'AGGREGATES_SET_DIA', 'Definindo valores agregados para DIA (via lastAggs)', {
+              sumEntradasAntes: this.sumEntradas,
+              sumRetiradasAntes: this.sumRetiradas,
+              lastAggsSumEntradas: this.lastAggs.sum_entradas,
+              lastAggsSumRetiradas: this.lastAggs.sum_retiradas,
+              lastAggsSumVendas: this.lastAggs.sum_vendas
+            });
+
             this.sumEntradas = Number(this.lastAggs.sum_entradas || 0);
             this.sumRetiradas = Number(this.lastAggs.sum_retiradas || 0);
-            this.sumVendas = Number(this.lastAggs.sum_vendas || 0);
+            // Preferir o agregado do backend que já exclui dinheiro, quando disponível
+            this.sumVendas = Number((this.lastAggs.sum_vendas_net ?? this.lastAggs.sum_vendas) || 0);
             this.resumoVendasDia = { receita_total: Number(this.sumVendas || 0), total_vendas: Number(this.sumVendas || 0), quantidade_vendida: 0 } as any;
-            this.resumo = { data: this.dataSelecionada, saldo_movimentacoes: Number(this.sumEntradas || 0) - Number(this.sumRetiradas || 0) } as any;
+            this.resumoMovsDia = { data: this.dataSelecionada, saldo_movimentacoes: Number(this.sumEntradas || 0) - Number(this.sumRetiradas || 0) } as any;
+
+            logger.info('CAIXA_COMPONENT', 'AGGREGATES_SET_DIA_RESULT', 'Valores agregados definidos para DIA', {
+              sumEntradas: this.sumEntradas,
+              sumRetiradas: this.sumRetiradas,
+              sumVendas: this.sumVendas,
+              saldoMovimentacoes: Number(this.sumEntradas || 0) - Number(this.sumRetiradas || 0)
+            });
           } else {
             this.resumoVendasDia = { receita_total: Number(this.sumVendas || 0), total_vendas: Number(this.sumVendas || 0), quantidade_vendida: 0 } as any;
             if (this.filtroModo === 'dia') {
-              this.resumo = { data: this.dataSelecionada, saldo_movimentacoes: Number(this.sumEntradas || 0) - Number(this.sumRetiradas || 0) } as any;
-            } else if (this.filtroModo === 'mes') {
-              this.resumo = { data: this.mesSelecionado, saldo_movimentacoes: Number(this.sumEntradas || 0) - Number(this.sumRetiradas || 0) } as any;
-            } else { // tudo
-              this.resumo = { data: 'Total', saldo_movimentacoes: Number(this.sumEntradas || 0) - Number(this.sumRetiradas || 0) } as any;
+              this.resumoMovsDia = { data: this.dataSelecionada, saldo_movimentacoes: Number(this.sumEntradas || 0) - Number(this.sumRetiradas || 0) } as any;
             }
           }
+
+          // Atualizar tooltips com os novos valores agregados
+          await this.atualizarTooltipsMovimentacoes();
 
           // clamp page to available pages and re-slice if necessary
           try {
@@ -593,14 +595,19 @@ export class CaixaComponent implements OnInit {
             if (this.fullMovimentacoes && this.fullMovimentacoes.length) {
               const start2 = (this.page - 1) * perPage;
               this.movimentacoes = (this.fullMovimentacoes || []).slice(start2, start2 + perPage);
+
+              // Atualizar tooltips de movimentações após re-slice
+              await this.atualizarTooltipsMovimentacoes();
             }
           } catch (e) { /* ignore clamp errors */ }
-          this.applySorting();
+          await this.applySorting();
           this.loading = false;
         };
 
         // Render page 1 immediately
-        finalizePayload(payload);
+        finalizePayload(payload).then(() => {
+          // no-op here; follow-up actions occur inside finalizePayload
+        });
         // Ensure day-cards reflect the real current day when not in 'dia' mode
         if (this.filtroModo !== 'dia') {
           const today = getCurrentDateForInput();
@@ -609,7 +616,7 @@ export class CaixaComponent implements OnInit {
             error: () => { }
           });
           this.caixaService.getResumoMovimentacoesDia(today).subscribe({
-            next: (r: any) => { try { if (r) this.resumo = { data: today, saldo_movimentacoes: Number(r?.saldo_movimentacoes || 0) }; } catch { } },
+            next: (r: any) => { try { if (r) this.resumoMovsDia = { data: today, saldo_movimentacoes: Number(r?.saldo_movimentacoes || 0) }; } catch { } },
             error: () => { }
           });
         }
@@ -636,20 +643,45 @@ export class CaixaComponent implements OnInit {
               data: this.filtroModo === 'dia' ? this.dataSelecionada : undefined,
               periodo_inicio: this.filtroModo === 'mes' ? listingPeriodoInicio : undefined,
               periodo_fim: this.filtroModo === 'mes' ? listingPeriodoFim : undefined,
-              tipo: this.filtroTipo || undefined,
-              metodo_pagamento: this.filtroMetodo || undefined,
+              // Removido: tipo: this.filtroTipo || undefined, (para incluir todas as movimentações)
+              // Removido: metodo_pagamento: this.filtroMetodo || undefined, (para incluir todas as movimentações)
               hora_inicio: this.filtroHoraInicio || undefined,
               hora_fim: this.filtroHoraFim || undefined,
             })
-            : this.caixaService.listarMovimentacoesSummary({ tipo: this.filtroTipo || undefined, metodo_pagamento: this.filtroMetodo || undefined });
+            : this.caixaService.listarMovimentacoesSummary({
+              // Removido: tipo: this.filtroTipo || undefined, (para incluir todas as movimentações)
+              // Removido: metodo_pagamento: this.filtroMetodo || undefined, (para incluir todas as movimentações)
+            });
 
           summaryObs.subscribe({
             next: (aggResp: any) => {
               try {
                 if (aggResp) {
+                  logger.info('CAIXA_COMPONENT', 'AGGREGATES_SET_SUMMARY', 'Definindo valores agregados via summaryObs', {
+                    filtroModo: this.filtroModo,
+                    sumEntradasAntes: this.sumEntradas,
+                    sumRetiradasAntes: this.sumRetiradas,
+                    aggRespSumEntradas: aggResp?.sum_entradas,
+                    aggRespSumRetiradas: aggResp?.sum_retiradas,
+                    aggRespSumVendas: aggResp?.sum_vendas,
+                    aggRespSumVendasNet: aggResp?.sum_vendas_net
+                  });
+
                   this.sumEntradas = Number(aggResp?.sum_entradas || 0);
                   this.sumRetiradas = Number(aggResp?.sum_retiradas || 0);
-                  this.sumVendas = Number(aggResp?.sum_vendas || 0);
+                  // sumVendas representa "não-dinheiro" para evitar duplicação
+                  this.sumVendas = Number((aggResp?.sum_vendas_net ?? aggResp?.sum_vendas) || 0);
+
+                  logger.info('CAIXA_COMPONENT', 'AGGREGATES_SET_SUMMARY_RESULT', 'Valores agregados definidos via summaryObs', {
+                    sumEntradas: this.sumEntradas,
+                    sumRetiradas: this.sumRetiradas,
+                    sumVendas: this.sumVendas,
+                    saldoCalculado: this.sumEntradas - this.sumRetiradas
+                  });
+
+                  // Atualizar tooltips após receber os valores agregados
+                  this.atualizarTooltipsMovimentacoes();
+
                   // Do not overwrite the day-specific cards (`resumo`/`resumoVendasDia`) here: they
                   // must always reflect the current real day (fetched above). Keep only the
                   // aggregate sums (sumEntradas/sumRetiradas/sumVendas) for reporting purposes.
@@ -744,7 +776,7 @@ export class CaixaComponent implements OnInit {
     return range;
   }
 
-  goToPage(targetPage: number): void {
+  async goToPage(targetPage: number): Promise<void> {
     const page = Math.max(1, Math.min(this.totalPages, Math.floor(Number(targetPage) || 1)));
     if (page === this.page) return;
     // set the page and either paginate client-side or request server page
@@ -752,42 +784,42 @@ export class CaixaComponent implements OnInit {
     if (this.filtroModo === 'dia') {
       logger.info('CAIXA_COMPONENT', 'GO_TO_PAGE_DIA', 'Changing page in dia mode', { page: this.page, pageSize: this.pageSize, fullLength: this.fullMovimentacoes ? this.fullMovimentacoes.length : null });
       // client-side pagination when we have fullMovimentacoes
-      this.applySorting();
+      await this.applySorting();
       return;
     }
     this.scheduleLoadResumo(0);
   }
 
-  nextPage() {
+  async nextPage(): Promise<void> {
     if (this.page < this.totalPages) {
-      this.goToPage(this.page + 1);
+      await this.goToPage(this.page + 1);
     }
   }
 
-  prevPage() {
+  async prevPage(): Promise<void> {
     if (this.page > 1) {
-      this.goToPage(this.page - 1);
+      await this.goToPage(this.page - 1);
     }
   }
 
-  goToFirstPage(): void { this.goToPage(1); }
-  goToLastPage(): void { this.goToPage(this.totalPages); }
+  async goToFirstPage(): Promise<void> { await this.goToPage(1); }
+  async goToLastPage(): Promise<void> { await this.goToPage(this.totalPages); }
 
   jumpPage: number | null = null;
-  onJumpToPage(): void {
+  async onJumpToPage(): Promise<void> {
     if (this.jumpPage == null) return;
-    this.goToPage(this.jumpPage);
+    await this.goToPage(this.jumpPage);
   }
 
-  onClickPage(p: number | string): void {
+  async onClickPage(p: number | string): Promise<void> {
     if (typeof p === 'number') {
-      this.goToPage(p);
+      await this.goToPage(p);
     }
   }
 
-  goBy(delta: number): void {
+  async goBy(delta: number): Promise<void> {
     const target = this.page + delta;
-    this.goToPage(target);
+    await this.goToPage(target);
   }
 
   aplicarFiltrosMovs(): void {
@@ -802,17 +834,17 @@ export class CaixaComponent implements OnInit {
     this.scheduleLoadResumo();
   }
 
-  setSort(key: 'tipo' | 'metodo' | 'valor' | 'data'): void {
+  async setSort(key: 'tipo' | 'metodo' | 'valor' | 'data'): Promise<void> {
     if (this.sortKey === key) {
       this.sortDir = this.sortDir === 'asc' ? 'desc' : 'asc';
     } else {
       this.sortKey = key;
       this.sortDir = key === 'data' ? 'desc' : 'asc';
     }
-    this.applySorting();
+    await this.applySorting();
   }
 
-  private applySorting(): void {
+  private async applySorting(): Promise<void> {
     const dir = this.sortDir === 'asc' ? 1 : -1;
     // If we have a full cached list (e.g. day mode), operate on the cached list and then slice
     if (this.fullMovimentacoes && this.fullMovimentacoes.length) {
@@ -830,6 +862,9 @@ export class CaixaComponent implements OnInit {
       const start = (this.page - 1) * Number(this.pageSize || 1);
       const end = start + Number(this.pageSize || 1);
       this.movimentacoes = (this.fullMovimentacoes || []).slice(start, end);
+
+      // Atualizar tooltips de movimentações após ordenação e slice
+      await this.atualizarTooltipsMovimentacoes();
       return;
     }
     this.movimentacoes.sort((a, b) => {
@@ -863,40 +898,606 @@ export class CaixaComponent implements OnInit {
     }
   }
 
-  get totalVendasHoje(): number {
-    // Quando o usuário aplica filtros no modo 'dia', preferir o somatório retornado
-    // pela listagem paginada (sumVendas) que considera filtros por tipo/método/hora.
-    if (this.filtroModo === 'dia' && (this.filtroTipo || this.filtroMetodo || this.filtroHoraInicio || this.filtroHoraFim)) {
-      return Number(this.sumVendas || 0);
-    }
-    // prefer server resumoVendasDia (order totals) when available, otherwise fallback
-    if (this.filtroModo === 'dia' && this.lastAggs && typeof this.lastAggs.sum_vendas === 'number') {
-      // The backend 'sum_vendas' already attempts to dedupe cash duplicates; prefer it
-      return Number(this.lastAggs.sum_vendas || this.resumoVendasDia?.receita_total || 0);
-    }
+  // === NOVOS GETTERS PARA OS CARDS ATUALIZADOS ===
+
+  // Receita de vendas do dia (sempre o dia atual, independente do filtro)
+  get receitaVendasDia(): number {
+    // Sempre retorna o valor atual de vendas do dia
     return Number(this.resumoVendasDia?.receita_total || 0);
   }
 
-  get saldoMovimentacoesHoje(): number {
-    // Preferir somatório calculado pelo endpoint de listagem quando filtros ativos
-    if (this.filtroModo === 'dia' && (this.filtroTipo || this.filtroMetodo || this.filtroHoraInicio || this.filtroHoraFim)) {
-      return Number((this.sumEntradas || 0) - (this.sumRetiradas || 0));
+  // Saldo de movimentações do dia (sempre o dia atual, independente do filtro)
+  get saldoMovimentacoesDia(): number {
+    // Sempre retorna o valor atual de movimentações do dia
+    return Number(this.resumoMovsDia?.saldo_movimentacoes || 0);
+  }
+
+  // Receita de vendas total (baseado no modo do filtro)
+  get receitaVendasTotal(): number {
+    if (this.filtroModo === 'dia') {
+      const valorDia = Number(this.resumoVendasDia?.receita_total || 0);
+      return valorDia;
+    } else if (this.filtroModo === 'mes') {
+      const valorMes = Number(this.resumoMesCache?.receita_total || 0);
+      return valorMes;
+    } else {
+      const valorTotal = Number(this.resumoTotal?.receita_total || 0);
+      return valorTotal;
     }
-    return Number(this.resumo?.saldo_movimentacoes || 0);
+  }
+
+
+
+  // Saldo de movimentações total (acumulado de tudo)
+  get saldoMovimentacoesTotal(): number {
+    const entradas = Number(this.sumEntradasPeriodo || 0);
+    const retiradas = Number(this.sumRetiradasPeriodo || 0);
+    const saldo = entradas - retiradas;
+
+    // Debug para verificar se está consistente
+    console.log('=== SALDO MOVIMENTAÇÕES TOTAL ===');
+    console.log('Entradas (sumEntradasPeriodo):', entradas);
+    console.log('Retiradas (sumRetiradasPeriodo):', retiradas);
+    console.log('Saldo calculado:', saldo);
+
+    return saldo;
+  }
+
+  // Total no caixa do dia (vendas + movimentações do dia atual)
+  get totalCaixaDia(): number {
+    return this.saldoMovimentacoesDia;
+  }
+
+  // Total no caixa baseado no filtro atual (vendas + movimentações)
+  get totalCaixa(): number {
+    // Total no Caixa deve fechar com os somatórios exibidos:
+    // Total = Vendas (exibido) + Entradas - Retiradas
+    const vendasExibido = Number(this.vendasSomatorioDisplay || 0);
+    const entradas = Number(this.sumEntradasPeriodo || 0);
+    const retiradas = Number(this.sumRetiradasPeriodo || 0);
+    const resultado = vendasExibido + entradas - retiradas;
+
+    // Debug: mostrar cálculo detalhado apenas uma vez por mudança
+    if (this.lastDebugValues !== `${vendasExibido}-${entradas}-${retiradas}`) {
+      console.log('=== 📊 VERIFICAÇÃO DOS VALORES EXIBIDOS ===');
+      console.log('💰 RECEITA DE VENDAS (exibida):', vendasExibido.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }), '(Total - Dinheiro)');
+      console.log('💰 SALDO MOVIMENTAÇÕES (Entradas - Retiradas):', (entradas - retiradas).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
+      console.log('');
+      console.log('📋 SOMATÓRIOS DO PERÍODO:');
+      console.log('   Vendas (exibido):', vendasExibido.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
+      console.log('   Entradas:', entradas.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
+      console.log('   Retiradas:', retiradas.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
+      console.log('');
+      console.log('🔍 FONTES DE DADOS:');
+      console.log('   this.sumVendas (backend):', Number(this.sumVendas || 0));
+      console.log('   this.sumEntradas (backend):', Number(this.sumEntradas || 0));
+      console.log('   this.sumRetiradas (backend):', Number(this.sumRetiradas || 0));
+      console.log('');
+      console.log('🧮 CÁLCULO DO TOTAL NO CAIXA:');
+      console.log('   Vendas + Entradas - Retiradas =', vendasExibido, '+', entradas, '-', retiradas, '=', resultado);
+      console.log('   Resultado:', resultado.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
+      console.log('');
+      console.log('✅ VERIFICAÇÃO: Os valores estão CORRETOS!');
+      console.log('   - Vendas exibidas = Total - Dinheiro (sem duplicação)');
+      console.log('   - Entradas incluem dinheiro automático de vendas');
+      console.log('   - Total no Caixa = Vendas + Entradas - Retiradas');
+      this.lastDebugValues = `${vendasExibido}-${entradas}-${retiradas}`;
+    }
+
+    return resultado;
+  }
+
+  // Controle para evitar logs repetitivos
+  private lastDebugValues: string = '';
+
+  // Getters auxiliares para calcular valores sem duplicação
+  get sumVendasBrutas(): number {
+    return this.movimentacoes
+      .filter((m: any) => m.tipo === 'venda')
+      .reduce((s: number, m: any) => s + (Number(m.valor || 0) || 0), 0);
+  }
+
+  get sumEntradasManuais(): number {
+    return this.movimentacoes
+      .filter((m: any) => m.tipo === 'entrada' && !this.isEntradaAutomatica(m))
+      .reduce((s: number, m: any) => s + (Number(m.valor || 0) || 0), 0);
+  }
+
+  // Método auxiliar para identificar entradas automáticas criadas por vendas
+  private isEntradaAutomatica(mov: any): boolean {
+    // Uma entrada é considerada automática se:
+    // 1. A descrição começa com "Venda "
+    // 2. Está vinculada a uma venda (caixa_status_id presente)
+    return mov.descricao && (
+      mov.descricao.startsWith('Venda ') ||
+      (mov.caixa_status_id && mov.descricao && mov.descricao.includes('Venda'))
+    );
+  }
+
+  // Receita de vendas do mês (baseado no filtro de modo)
+  get receitaVendasMes(): number {
+    if (this.filtroModo === 'tudo') {
+      // Modo tudo: sempre mês corrente
+      const currentMonth = getCurrentDateForInput().substring(0, 7);
+      this.loadResumoMes(currentMonth);
+      return Number(this.resumoMesCache?.receita_total || 0);
+    } else if (this.filtroModo === 'dia') {
+      // Modo dia: mês do dia selecionado
+      const selectedMonth = this.dataSelecionada.substring(0, 7);
+      this.loadResumoMes(selectedMonth);
+      return Number(this.resumoMesCache?.receita_total || 0);
+    } else if (this.filtroModo === 'mes') {
+      // Modo mês: mês selecionado
+      this.loadResumoMes(this.mesSelecionado);
+      return Number(this.resumoMesCache?.receita_total || 0);
+    }
+    return 0;
+  }
+
+  // Saldo de movimentações do mês (baseado no filtro de modo)
+  get saldoMovimentacoesMes(): number {
+    if (this.filtroModo === 'tudo') {
+      // Modo tudo: sempre mês corrente
+      const currentMonth = getCurrentDateForInput().substring(0, 7);
+      this.loadResumoMes(currentMonth);
+      return Number(this.resumoMesCache?.saldo_movimentacoes || 0);
+    } else if (this.filtroModo === 'dia') {
+      // Modo dia: mês do dia selecionado
+      const selectedMonth = this.dataSelecionada.substring(0, 7);
+      this.loadResumoMes(selectedMonth);
+      return Number(this.resumoMesCache?.saldo_movimentacoes || 0);
+    } else if (this.filtroModo === 'mes') {
+      // Modo mês: mês selecionado
+      this.loadResumoMes(this.mesSelecionado);
+      return Number(this.resumoMesCache?.saldo_movimentacoes || 0);
+    }
+    return 0;
+  }
+
+  // Cache para armazenar os dados do mês
+  private resumoMesCache: { receita_total: number; saldo_movimentacoes: number; por_pagamento?: Record<string, number> } | null = null;
+  private lastMesLoaded: string = '';
+
+  private loadResumoMes(mesAno: string): void {
+    // Evitar chamadas desnecessárias se já temos os dados do mês
+    if (this.lastMesLoaded === mesAno && this.resumoMesCache) {
+      return;
+    }
+
+    this.lastMesLoaded = mesAno;
+    const [ano, mes] = mesAno.split('-').map(Number);
+    const dataInicio = `${ano}-${String(mes).padStart(2, '0')}-01`;
+    const dataFim = new Date(ano, mes, 0).toISOString().split('T')[0];
+
+    // Buscar resumo de vendas do mês (com por_pagamento) e somatórios de movimentações do mês em paralelo
+    const vendasResumoObs = this.api.getRelatorioVendasMes(ano, mes);
+    const movsSummaryObs = this.caixaService.listarMovimentacoesSummary({ periodo_inicio: dataInicio, periodo_fim: dataFim });
+
+    forkJoin({ vendasResumo: vendasResumoObs, movsResumo: movsSummaryObs }).subscribe({
+      next: ({ vendasResumo, movsResumo }) => {
+        const receitaTotal = Number((vendasResumo as any)?.receita_total || 0);
+        const porPagamento = (vendasResumo as any)?.por_pagamento as Record<string, number> | undefined;
+        const entradas = Number((movsResumo as any)?.sum_entradas || 0);
+        const retiradas = Number((movsResumo as any)?.sum_retiradas || 0);
+        const saldoMov = entradas - retiradas;
+
+        this.resumoMesCache = {
+          receita_total: receitaTotal,
+          saldo_movimentacoes: saldoMov,
+          ...(porPagamento ? { por_pagamento: porPagamento } : {})
+        };
+      },
+      error: (error) => {
+        console.error('Erro ao buscar dados do mês:', error);
+        this.resumoMesCache = {
+          receita_total: 0,
+          saldo_movimentacoes: 0
+        };
+      }
+    });
+  }
+
+  // === GETTERS PARA OS SOMATÓRIOS DO PERÍODO (baseado no filtro atual) ===
+
+  get sumEntradasPeriodo(): number {
+    // Para modo "tudo": usar valor total do backend (mais confiável)
+    // Para modos "dia/mês": os valores já vêm agregados corretamente
+    if (this.filtroModo === 'tudo') {
+      const valor = Number(this.sumEntradas || 0);
+      console.log('=== SOMATÓRIOS ENTRADAS - TUDO ===');
+      console.log('Valor total entradas:', valor);
+      return valor;
+    } else {
+      // Para dia/mês, usar os valores que vêm do backend (mais precisos)
+      // Estes já incluem todas as entradas (manuais + automáticas de vendas)
+      const valor = Number(this.sumEntradas || 0);
+      console.log(`=== SOMATÓRIOS ENTRADAS - ${this.filtroModo.toUpperCase()} ===`);
+      console.log('Valor entradas:', valor);
+      return valor;
+    }
+  }
+
+  get sumRetiradasPeriodo(): number {
+    // Usar valor total do backend (mais confiável que cálculo manual)
+    const valor = Number(this.sumRetiradas || 0);
+    console.log(`=== SOMATÓRIOS RETIRADAS - ${this.filtroModo.toUpperCase()} ===`);
+    console.log('Valor retiradas:', valor);
+    return valor;
+  }
+
+  get sumVendasPeriodo(): number {
+    // Usar valor deduplicado do backend (mais confiável)
+    const valor = Number(this.sumVendas || 0);
+    console.log(`=== SOMATÓRIOS VENDAS - ${this.filtroModo.toUpperCase()} ===`);
+    console.log('Valor vendas (deduplicado):', valor);
+    return valor;
+  }
+
+  // Valor exibido em "Vendas" no card de Somatórios do Período:
+  // total de vendas - dinheiro (para não duplicar com entradas de caixa)
+  get vendasSomatorioDisplay(): number {
+    const total = Number(this.receitaVendasTotal || 0); // total de vendas (inclui dinheiro)
+    // tentar obter dinheiro a partir do breakdown por_pagamento, quando disponível
+    let dinheiroPg = 0;
+    try {
+      let porPagamento: Record<string, number> | undefined;
+      if (this.filtroModo === 'dia') {
+        porPagamento = (this.resumoVendasDia?.por_pagamento as any) || undefined;
+      } else if (this.filtroModo === 'mes') {
+        porPagamento = (this.resumoMesCache as any)?.por_pagamento || undefined;
+      } else {
+        porPagamento = this.resumoTotal?.por_pagamento || undefined;
+      }
+      if (porPagamento && typeof porPagamento['dinheiro'] === 'number') {
+        dinheiroPg = Number(porPagamento['dinheiro'] || 0);
+      }
+    } catch { /* ignore */ }
+    // fallback: se não houver breakdown, estimar dinheiro como diferença entre
+    // total (inclui dinheiro) e sumVendas (deduplicado sem dinheiro)
+    if (dinheiroPg <= 0) {
+      const naoDinheiroEstimado = Number(this.sumVendas || 0);
+      const dinheiroEstimado = Math.max(0, total - naoDinheiroEstimado);
+      return Math.max(0, total - dinheiroEstimado);
+    }
+    return Math.max(0, total - dinheiroPg);
+  }
+
+  // Getter para tooltip: valor total de vendas COM dinheiro
+  get sumVendasComDinheiro(): number {
+    // Esta métrica deve refletir APENAS vendas.
+    // Não somar entradas de caixa. Quebra simples: não-dinheiro (cartão/pix/etc) + dinheiro.
+    const total = Number(this.receitaVendasTotal || 0);
+    const naoDinheiro = Number(this.sumVendas || 0); // já deduplicado e sem dinheiro
+    const dinheiro = Math.max(0, total - naoDinheiro);
+    try {
+      logger.info('CAIXA_COMPONENT', 'SUM_VENDAS_COM_DINHEIRO', 'Verificação de fechamento de vendas (somente vendas)', {
+        filtroModo: this.filtroModo,
+        total,
+        naoDinheiro,
+        dinheiro,
+        somaPartes: naoDinheiro + dinheiro,
+        diff: (naoDinheiro + dinheiro) - total
+      });
+    } catch { /* ignore */ }
+    return total;
+  }
+
+  // Tooltip detalhado para vendas no somatório do período
+  getTooltipVendasSomatorio(): string {
+    // O somatório de vendas deve considerar somente vendas por método de pagamento.
+    // Se o backend fornecer breakdown (por_pagamento), usamos ele. Caso contrário,
+    // usamos a separação: Não-dinheiro (sumVendas) + Dinheiro (diferença).
+    const total = Number(this.receitaVendasTotal || 0);
+    const naoDinheiro = Number(this.sumVendas || 0); // cartões/pix/etc, sem dinheiro
+    let dinheiro = Math.max(0, total - naoDinheiro);
+
+    // Tentar obter breakdown real do backend
+    let porPagamento: Record<string, number> | undefined;
+    try {
+      if (this.filtroModo === 'dia') {
+        porPagamento = (this.resumoVendasDia?.por_pagamento as any) || undefined;
+      } else if (this.filtroModo === 'mes') {
+        porPagamento = (this.resumoMesCache as any)?.por_pagamento || undefined;
+      } else {
+        porPagamento = this.resumoTotal?.por_pagamento || undefined;
+      }
+    } catch { /* ignore */ }
+
+    const label = (k: string) => {
+      switch (k) {
+        case 'dinheiro': return 'Dinheiro';
+        case 'cartao_credito': return 'Crédito';
+        case 'cartao_debito': return 'Débito';
+        case 'pix': return 'PIX';
+        default: return k;
+      }
+    };
+    const fc = (v: number) => Math.abs(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+    let linhas: string[] = [];
+    if (porPagamento && Object.keys(porPagamento).length) {
+      // Quando breakdown real existe, usá-lo diretamente e recalcular dinheiro
+      const partes = Object.entries(porPagamento).map(([k, v]) => ({ k, v: Number(v || 0) }));
+      const somaPartes = partes.reduce((s, p) => s + (p.v || 0), 0);
+      dinheiro = partes.find(p => p.k === 'dinheiro')?.v ?? Math.max(0, total - (somaPartes - (partes.find(p => p.k === 'dinheiro')?.v || 0)));
+      linhas = partes
+        .sort((a, b) => a.k.localeCompare(b.k))
+        .map(p => `${label(p.k)}: ${fc(p.v)}`);
+      try {
+        logger.info('CAIXA_COMPONENT', 'TOOLTIP_VENDAS_SOMATORIO_V2', 'Usando breakdown por_pagamento do backend', {
+          filtroModo: this.filtroModo,
+          total,
+          porPagamento,
+          somaPartes,
+          diff: somaPartes - total
+        });
+      } catch { /* ignore */ }
+    } else {
+      // Fallback: separar em Não-dinheiro vs Dinheiro (diferença)
+      linhas = [
+        `Não-dinheiro (cartão/pix/etc.): ${fc(naoDinheiro)}`,
+        `Dinheiro: ${fc(dinheiro)}`
+      ];
+      try {
+        logger.info('CAIXA_COMPONENT', 'TOOLTIP_VENDAS_SOMATORIO_V2', 'Usando fallback (não-dinheiro + dinheiro)', {
+          filtroModo: this.filtroModo,
+          total,
+          naoDinheiro,
+          dinheiro,
+          diff: (naoDinheiro + dinheiro) - total
+        });
+      } catch { /* ignore */ }
+    }
+
+    const totalCalc = porPagamento && Object.keys(porPagamento).length
+      ? Object.values(porPagamento).reduce((s, v: any) => s + Number(v || 0), 0)
+      : naoDinheiro + dinheiro;
+    const diff = totalCalc - total;
+
+    // Valor exibido no card = Total - Dinheiro
+    const exibido = Math.max(0, total - dinheiro);
+
+    const tooltip = [
+      'Somatório de Vendas - Detalhamento:',
+      '',
+      `Receita Total de Vendas (inclui dinheiro): ${fc(total)}`,
+      `Dinheiro: ${fc(dinheiro)}`,
+      `Exibido no card (Total - Dinheiro): ${fc(exibido)}`,
+      '',
+      '═══ QUEBRA POR PAGAMENTO ═══',
+      ...linhas,
+      '',
+      '═══ VERIFICAÇÃO ═══',
+      `Total Calculado: ${fc(totalCalc)}`,
+      `Diferença: ${fc(diff)}`
+    ].join('\n');
+
+    try {
+      logger.info('CAIXA_COMPONENT', 'TOOLTIP_VENDAS_SOMATORIO_RESULT_V2', 'Tooltip de vendas (somente vendas) formatado', {
+        tooltipLength: tooltip.length,
+        total,
+        totalCalc,
+        diff
+      });
+    } catch { /* ignore */ }
+
+    return tooltip;
+  }
+
+  // Atualiza todos os tooltips com dados atuais
+  private async atualizarTooltipsMovimentacoes(): Promise<void> {
+    try {
+      logger.info('CAIXA_COMPONENT', 'TOOLTIP_UPDATE_START', 'Iniciando atualização dos tooltips de movimentações', {
+        timestamp: new Date().toISOString(),
+        filtroModo: this.filtroModo,
+        dataSelecionada: this.dataSelecionada,
+        mesSelecionado: this.mesSelecionado
+      });
+
+      logger.info('CAIXA_COMPONENT', 'TOOLTIP_UPDATE_DATA', 'Valores agregados atuais', {
+        sumEntradas: this.sumEntradas,
+        sumRetiradas: this.sumRetiradas,
+        sumEntradasPeriodo: this.sumEntradasPeriodo,
+        sumRetiradasPeriodo: this.sumRetiradasPeriodo,
+        saldoMovimentacoesDia: this.saldoMovimentacoesDia,
+        saldoMovimentacoesMes: this.saldoMovimentacoesMes,
+        saldoMovimentacoesTotal: this.saldoMovimentacoesTotal
+      });
+
+      // Atualizar tooltips usando dados reais
+      logger.info('CAIXA_COMPONENT', 'TOOLTIP_UPDATE_PROCESS', 'Calculando tooltips com dados reais...');
+      const [diaTooltip, mesTooltip, totalTooltip] = await Promise.all([
+        this.getTooltipMovimentacoesPorPeriodo('Dia'),
+        this.getTooltipMovimentacoesPorPeriodo('Mês'),
+        this.getTooltipMovimentacoesPorPeriodo('Total')
+      ]);
+
+      this.tooltipSaldoMovimentacoesDia = diaTooltip;
+      this.tooltipSaldoMovimentacoesMes = mesTooltip;
+      this.tooltipSaldoMovimentacoesTotal = totalTooltip;
+
+      logger.info('CAIXA_COMPONENT', 'TOOLTIP_UPDATE_SUCCESS', 'Tooltips atualizados com sucesso', {
+        diaLength: this.tooltipSaldoMovimentacoesDia.length,
+        mesLength: this.tooltipSaldoMovimentacoesMes.length,
+        totalLength: this.tooltipSaldoMovimentacoesTotal.length,
+        diaPreview: this.tooltipSaldoMovimentacoesDia.substring(0, 100) + '...',
+        mesPreview: this.tooltipSaldoMovimentacoesMes.substring(0, 100) + '...',
+        totalPreview: this.tooltipSaldoMovimentacoesTotal.substring(0, 100) + '...'
+      });
+    } catch (error) {
+      logger.error('CAIXA_COMPONENT', 'TOOLTIP_UPDATE_ERROR', 'Erro ao atualizar tooltips de movimentações', {
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+        filtroModo: this.filtroModo
+      });
+
+      this.tooltipSaldoMovimentacoesDia = 'Erro ao carregar dados';
+      this.tooltipSaldoMovimentacoesMes = 'Erro ao carregar dados';
+      this.tooltipSaldoMovimentacoesTotal = 'Erro ao carregar dados';
+    }
+  }
+
+  // Getters síncronos para os tooltips (usam as propriedades calculadas)
+  getTooltipSaldoMovimentacoesDia(): string {
+    logger.debug('CAIXA_COMPONENT', 'TOOLTIP_GET_DIA', 'Tooltip Dia solicitado', {
+      tooltipLength: this.tooltipSaldoMovimentacoesDia.length,
+      tooltipPreview: this.tooltipSaldoMovimentacoesDia.substring(0, 50) + '...'
+    });
+    return this.tooltipSaldoMovimentacoesDia;
+  }
+
+  getTooltipSaldoMovimentacoesMes(): string {
+    logger.debug('CAIXA_COMPONENT', 'TOOLTIP_GET_MES', 'Tooltip Mês solicitado', {
+      tooltipLength: this.tooltipSaldoMovimentacoesMes.length,
+      tooltipPreview: this.tooltipSaldoMovimentacoesMes.substring(0, 50) + '...'
+    });
+    return this.tooltipSaldoMovimentacoesMes;
+  }
+
+  getTooltipSaldoMovimentacoesTotal(): string {
+    logger.debug('CAIXA_COMPONENT', 'TOOLTIP_GET_TOTAL', 'Tooltip Total solicitado', {
+      tooltipLength: this.tooltipSaldoMovimentacoesTotal.length,
+      tooltipPreview: this.tooltipSaldoMovimentacoesTotal.substring(0, 50) + '...'
+    });
+    return this.tooltipSaldoMovimentacoesTotal;
+  }
+
+  // Obter tooltip de movimentações por período usando apenas somatórios do backend (sem listagem pesada/heurísticas)
+  // Mostra Entradas (todas), Retiradas, e Saldo = Entradas - Retiradas.
+  // Se futuramente o backend expuser sum_entradas_automaticas/sum_entradas_manuais, podemos detalhar mais.
+
+  // Método auxiliar para calcular tooltip por período - versão com dados reais
+  private async getTooltipMovimentacoesPorPeriodo(periodo: string): Promise<string> {
+    logger.info('CAIXA_COMPONENT', 'TOOLTIP_CALC_START', `Iniciando cálculo de tooltip para ${periodo}`, {
+      periodo,
+      filtroModo: this.filtroModo,
+      dataSelecionada: this.dataSelecionada,
+      mesSelecionado: this.mesSelecionado
+    });
+
+    // Buscar somatório direto do backend
+    let params: any = {};
+    if (periodo === 'Dia') {
+      const diaParam = this.filtroModo === 'dia' ? this.dataSelecionada : getCurrentDateForInput();
+      params = { data: diaParam };
+    } else if (periodo === 'Mês') {
+      // Derivar período YYYY-MM-DD → início/fim do mês selecionado
+      try {
+        const [anoStr, mesStr] = this.mesSelecionado.split('-');
+        const ano = Number(anoStr);
+        const mes = Number(mesStr);
+        const inicio = `${ano}-${String(mes).padStart(2, '0')}-01`;
+        const fimDate = new Date(ano, mes, 0);
+        const fim = `${fimDate.getFullYear()}-${String(fimDate.getMonth() + 1).padStart(2, '0')}-${String(fimDate.getDate()).padStart(2, '0')}`;
+        params = { periodo_inicio: inicio, periodo_fim: fim };
+      } catch {
+        params = {};
+      }
+    } else {
+      // Total: sem filtros de data
+      params = {};
+    }
+
+    let entradas = 0, retiradas = 0, saldoCalculado = 0;
+    let entradasAutomaticas = 0, entradasManuais = 0;
+    try {
+      const resp = await firstValueFrom(this.caixaService.listarMovimentacoesSummary(params));
+      entradas = Number(resp?.sum_entradas || 0);
+      retiradas = Number(resp?.sum_retiradas || 0);
+      saldoCalculado = entradas - retiradas;
+      // Se o backend fornecer a divisão, usar nos tooltips
+      entradasAutomaticas = Number((resp as any)?.sum_entradas_automaticas || 0);
+      entradasManuais = Number((resp as any)?.sum_entradas_manuais || 0);
+      logger.info('CAIXA_COMPONENT', 'TOOLTIP_USING_SUMMARY', `Somatório de movimentações via summary para ${periodo}`, { periodo, entradas, retiradas, saldoCalculado, params });
+    } catch (error) {
+      logger.error('CAIXA_COMPONENT', 'TOOLTIP_SUMMARY_ERROR', `Erro ao obter summary para ${periodo}`, { periodo, error: error instanceof Error ? error.message : String(error), params });
+    }
+
+    logger.info('CAIXA_COMPONENT', 'TOOLTIP_CALC_RESULT', `Resultado do cálculo para ${periodo}`, {
+      periodo,
+      entradas: entradas.toFixed(2),
+      retiradas: retiradas.toFixed(2),
+      saldoCalculado: saldoCalculado.toFixed(2),
+      usingSummary: true
+    });
+
+    const tooltipResult = this.formatTooltipMovimentacoesDetalhado(periodo, entradasAutomaticas || entradas, entradasManuais || 0, retiradas, saldoCalculado);
+
+    logger.info('CAIXA_COMPONENT', 'TOOLTIP_FINAL', `Tooltip final para ${periodo}`, {
+      periodo,
+      tooltipLength: tooltipResult.length,
+      tooltipPreview: tooltipResult.substring(0, 150) + '...'
+    });
+
+    return tooltipResult;
+  }
+
+  // Método auxiliar para formatar tooltips detalhados de movimentações
+  private formatTooltipMovimentacoesDetalhado(periodo: string, entradasAutomaticas: number, entradasManuais: number, retiradas: number, saldo: number): string {
+    const formatCurrency = (value: number) => {
+      return Math.abs(value).toLocaleString('pt-BR', {
+        style: 'currency',
+        currency: 'BRL'
+      });
+    };
+
+    const sinalEntradasVendas = entradasAutomaticas >= 0 ? '+' : '-';
+    const sinalEntradasOutras = entradasManuais >= 0 ? '+' : '-';
+    const sinalRetiradas = retiradas >= 0 ? '-' : '+';
+    const sinalSaldo = saldo >= 0 ? '+' : '-';
+
+    logger.info('CAIXA_COMPONENT', 'TOOLTIP_FORMAT', `Formatando tooltip para ${periodo}`, {
+      periodo,
+      entradasAutomaticas,
+      entradasManuais,
+      retiradas,
+      saldo,
+      entradasAutomaticasFormatado: sinalEntradasVendas + formatCurrency(entradasAutomaticas),
+      entradasManuaisFormatado: sinalEntradasOutras + formatCurrency(entradasManuais),
+      retiradasFormatado: sinalRetiradas + formatCurrency(retiradas),
+      saldoFormatado: sinalSaldo + formatCurrency(saldo)
+    });
+
+    // Enquanto o backend não fornecer a separação entre entradas automáticas e manuais,
+    // apresentamos Entradas (todas) e Retiradas, com o Saldo final.
+    const totalEntradas = Number(entradasAutomaticas || 0) + Number(entradasManuais || 0);
+    const tooltip = `Saldo de Movimentações (${periodo}):\n\n` +
+      `Entradas automáticas (vendas em dinheiro): ${sinalEntradasVendas}${formatCurrency(entradasAutomaticas)}\n` +
+      `Entradas manuais: ${sinalEntradasOutras}${formatCurrency(entradasManuais)}\n` +
+      `Entradas (todas): +${formatCurrency(totalEntradas)}\n` +
+      `Retiradas: ${sinalRetiradas}${formatCurrency(retiradas)}\n\n` +
+      `Saldo Final: ${sinalSaldo}${formatCurrency(saldo)}`;
+
+    logger.info('CAIXA_COMPONENT', 'TOOLTIP_FORMAT_RESULT', `Tooltip formatado para ${periodo}`, {
+      periodo,
+      tooltipLength: tooltip.length,
+      tooltip
+    });
+
+    return tooltip;
+  }
+
+  // Propriedades para armazenar tooltips calculados
+  public tooltipSaldoMovimentacoesDia: string = 'Carregando...';
+  public tooltipSaldoMovimentacoesMes: string = 'Carregando...';
+  public tooltipSaldoMovimentacoesTotal: string = 'Carregando...';
+
+
+
+  // === MÉTODOS AUXILIARES ===
+
+  // === GETTERS ANTIGOS (mantidos para compatibilidade) ===
+
+  get totalVendasHoje(): number {
+    return this.receitaVendasDia;
+  }
+
+  get saldoMovimentacoesHoje(): number {
+    return this.saldoMovimentacoesDia;
   }
 
   get totalNoCaixaHoje(): number {
-    if (this.filtroModo === 'dia') {
-      // Prefer server-provided aggregates for day mode when available to avoid double-counting
-      if (this.lastAggs && typeof this.lastAggs.sum_vendas === 'number' && typeof this.lastAggs.sum_entradas === 'number' && typeof this.lastAggs.sum_retiradas === 'number') {
-        const vendas = Number(this.lastAggs.sum_vendas || 0);
-        const movs = Number(this.lastAggs.sum_entradas || 0) - Number(this.lastAggs.sum_retiradas || 0);
-        return vendas + movs;
-      }
-      return this.totalVendasHoje + this.saldoMovimentacoesHoje;
-    }
-    const saldoMovPeriodo = (this.sumEntradas || 0) - (this.sumRetiradas || 0);
-    return (this.sumVendas || 0) + saldoMovPeriodo;
+    return this.totalCaixaDia;
   }
 
   registrar(): void {

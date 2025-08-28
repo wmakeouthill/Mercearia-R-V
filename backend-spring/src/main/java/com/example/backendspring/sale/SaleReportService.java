@@ -160,4 +160,55 @@ public class SaleReportService {
                 result.put("vendas_com_multiplo_pagamento", vendasComMultiploPagamento);
                 return result;
         }
+
+        public Map<String, Object> getResumoTotal() {
+                Map<String, Object> result = new HashMap<>();
+
+                // Totais usando o modelo unificado (venda_cabecalho + venda_itens +
+                // venda_pagamentos)
+                // Sem filtro de data - TODAS as vendas
+                Long totalVendas = jdbcTemplate.queryForObject(
+                                "SELECT COUNT(*) FROM venda_cabecalho vc",
+                                Long.class);
+                Long qtdItens = jdbcTemplate.queryForObject(
+                                "SELECT COALESCE(SUM(vi.quantidade),0) FROM venda_itens vi JOIN venda_cabecalho vc ON vc.id = vi.venda_id",
+                                Long.class);
+                Double receitaTotal = jdbcTemplate.queryForObject(
+                                "SELECT COALESCE(SUM(vc.total_final),0) FROM venda_cabecalho vc",
+                                Double.class);
+
+                totalVendas = totalVendas != null ? totalVendas : 0L;
+                long quantidadeVendida = qtdItens != null ? qtdItens : 0L;
+                receitaTotal = receitaTotal != null ? receitaTotal : 0.0;
+
+                Map<String, Double> porPagamento = new HashMap<>();
+                porPagamento.put("dinheiro", 0.0);
+                porPagamento.put("cartao_credito", 0.0);
+                porPagamento.put("cartao_debito", 0.0);
+                porPagamento.put("pix", 0.0);
+
+                // breakdown por método usando venda_pagamentos (todas as vendas)
+                jdbcTemplate.query(
+                                ("SELECT vp.metodo, COALESCE(SUM(vp.valor),0) as " + ALIAS_VALOR
+                                                + " FROM venda_pagamentos vp JOIN venda_cabecalho vc ON vc.id = vp.venda_id GROUP BY vp.metodo"),
+                                rs -> {
+                                        String metodo = rs.getString("metodo");
+                                        double valor = rs.getDouble(ALIAS_VALOR);
+                                        porPagamento.merge(metodo, valor, Double::sum);
+                                });
+
+                Long vendasComMultiploPagamentoObj = jdbcTemplate.queryForObject(
+                                "SELECT COUNT(*) FROM (SELECT vp.venda_id FROM venda_pagamentos vp JOIN venda_cabecalho vc ON vc.id = vp.venda_id GROUP BY vp.venda_id HAVING COUNT(*) > 1) t",
+                                Long.class);
+                long vendasComMultiploPagamento = vendasComMultiploPagamentoObj != null ? vendasComMultiploPagamentoObj
+                                : 0L;
+
+                result.put("periodo", "Total acumulado");
+                result.put("total_vendas", totalVendas);
+                result.put("quantidade_vendida", quantidadeVendida);
+                result.put("receita_total", receitaTotal);
+                result.put("por_pagamento", porPagamento);
+                result.put("vendas_com_multiplo_pagamento", vendasComMultiploPagamento);
+                return result;
+        }
 }

@@ -613,3 +613,35 @@ databaseChangeLog:
             referencedTableName: usuarios
             referencedColumnNames: id
             constraintName: fk_vendas_operador_usuarios
+
+  - changeSet:
+      id: 20250828-add-missing-sale-columns
+      author: assistant
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - columnExists:
+                tableName: venda_cabecalho
+                columnName: adjusted_total
+      changes:
+        - addColumn:
+            tableName: venda_cabecalho
+            columns:
+              - column:
+                  name: adjusted_total
+                  type: DOUBLE PRECISION
+                  remarks: "Total ajustado após modificações/ajustes"
+        - addColumn:
+            tableName: venda_cabecalho
+            columns:
+              - column:
+                  name: status
+                  type: VARCHAR(50)
+                  remarks: "Status da venda (DEVOLVIDA, TROCADA, etc.)"
+      rollback:
+        - dropColumn:
+            tableName: venda_cabecalho
+            columnName: adjusted_total
+        - dropColumn:
+            tableName: venda_cabecalho
+            columnName: status

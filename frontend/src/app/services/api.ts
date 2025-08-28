@@ -412,6 +412,14 @@ export class ApiService {
     );
   }
 
+  getResumoTotal(): Observable<RelatorioResumo> {
+    const url = `${this.baseUrl}/vendas/relatorios/total`;
+    return this.makeRequest(
+      () => this.http.get<RelatorioResumo>(url),
+      'GET_RESUMO_TOTAL'
+    );
+  }
+
   // AUDIT
   getDeletedSales(): Observable<any[]> {
     return this.makeRequest(

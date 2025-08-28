@@ -157,7 +157,7 @@ public class CaixaController {
             } catch (Exception ex) {
                 log.warn("listarMovimentacoes[ALL]: debug counts failed", ex);
             }
-            log.info(
+            log.debug(
                     "listarMovimentacoes: request params data={} periodo_inicio={} periodo_fim={} from={} to={} all={} tipo={} metodo_pagamento={} hora_inicio={} hora_fim={} page={} size={}",
                     data, periodoInicio, periodoFim, from, to, all, tipo, metodoPagamento, horaInicio, horaFim, page,
                     size);
@@ -221,7 +221,7 @@ public class CaixaController {
 
                 // Log computed OffsetDateTime bounds for debugging timezone issues
                 if (fromTs != null || toTs != null) {
-                    log.info("listarMovimentacoes: computed fromTs={} toTs={}", fromTs, toTs);
+                    log.debug("listarMovimentacoes: computed fromTs={} toTs={}", fromTs, toTs);
                 }
             } catch (Exception ignored) {
             }
@@ -344,7 +344,7 @@ public class CaixaController {
                             return "err";
                         }
                     }).toList();
-                    log.info("listarMovimentacoes: after-db-instant-fetch count={} sampleInst={}", lista.size(),
+                    log.debug("listarMovimentacoes: after-db-instant-fetch count={} sampleInst={}", lista.size(),
                             sampleInst);
                 } catch (Exception ignored) {
                 }
@@ -376,7 +376,7 @@ public class CaixaController {
                             return "err";
                         }
                     }).toList();
-                    log.info("listarMovimentacoes: pre-local-time-filter count={} sampleTimes={}", lista.size(),
+                    log.debug("listarMovimentacoes: pre-local-time-filter count={} sampleTimes={}", lista.size(),
                             sample);
                 } catch (Exception ignored) {
                 }
@@ -384,7 +384,7 @@ public class CaixaController {
 
             // Filtros opcionais por tipo, método e faixa horária (local-time)
             var filtrada = applyFilters(lista, tipo, metodoPagamento, tIni, tFim);
-            log.info("listarMovimentacoes: after-local-time-filter count={}", filtrada.size());
+            log.debug("listarMovimentacoes: after-local-time-filter count={}", filtrada.size());
 
             // If client requested aggregations only, return sums without fetching pages
             if (Boolean.TRUE.equals(aggs)) {
@@ -426,7 +426,7 @@ public class CaixaController {
                     }
                 }).sum();
                 // Diagnostic log to help compare server-side aggregates vs frontend
-                log.info(
+                log.debug(
                         "DIAG_CAIXA_AGGS: periodoInicio={} periodoFim={} tipo={} metodo_pagamento={} -> sums: entradas={} retiradas={} vendas={} totalItems={}",
                         periodoInicio, periodoFim, tipo, metodoPagamento, sumEntradasAgg, sumRetiradasAgg, sumVendasAgg,
                         filtrada.size());
@@ -450,12 +450,37 @@ public class CaixaController {
                             }).sum();
                 } catch (Exception ignored) {
                 }
-                return ResponseEntity.ok(java.util.Map.of(
-                        KEY_SUM_ENTRADAS, sumEntradasAgg,
-                        KEY_SUM_RETIRADAS, sumRetiradasAgg,
-                        KEY_SUM_VENDAS, sumVendasAgg,
-                        "sum_vendas_net", sumVendasNet,
-                        KEY_TOTAL, filtrada.size()));
+                // Detalhar entradas automáticas (geradas por vendas) vs manuais
+                double sumEntradasAuto = 0.0;
+                try {
+                    sumEntradasAuto = filtrada.stream()
+                            .filter(m -> TIPO_ENTRADA.equals(m.get("tipo")))
+                            .filter(m -> {
+                                try {
+                                    Object d = m.get(KEY_DESCRICAO);
+                                    if (d == null)
+                                        return false;
+                                    String s = d.toString().toLowerCase();
+                                    return s.contains("venda");
+                                } catch (Exception e) {
+                                    return false;
+                                }
+                            })
+                            .mapToDouble(m -> ((Number) m.get(KEY_VALOR)).doubleValue())
+                            .sum();
+                } catch (Exception ignored) {
+                }
+                double sumEntradasManuais = Math.max(0.0, sumEntradasAgg - sumEntradasAuto);
+
+                java.util.Map<String, Object> aggsMap = new java.util.LinkedHashMap<>();
+                aggsMap.put(KEY_SUM_ENTRADAS, sumEntradasAgg);
+                aggsMap.put(KEY_SUM_RETIRADAS, sumRetiradasAgg);
+                aggsMap.put(KEY_SUM_VENDAS, sumVendasAgg);
+                aggsMap.put("sum_vendas_net", sumVendasNet);
+                aggsMap.put("sum_entradas_automaticas", sumEntradasAuto);
+                aggsMap.put("sum_entradas_manuais", sumEntradasManuais);
+                aggsMap.put(KEY_TOTAL, filtrada.size());
+                return ResponseEntity.ok(aggsMap);
             }
 
             // If client requested all matching items (no pagination), return them
@@ -480,9 +505,31 @@ public class CaixaController {
                         .filter(m -> TIPO_VENDA.equals(m.get("tipo")))
                         .mapToDouble(m -> ((Number) m.get(KEY_VALOR)).doubleValue())
                         .sum();
+                double sumEntradasAutoAll = 0.0;
+                try {
+                    sumEntradasAutoAll = filtrada.stream()
+                            .filter(m -> TIPO_ENTRADA.equals(m.get("tipo")))
+                            .filter(m -> {
+                                try {
+                                    Object d = m.get(KEY_DESCRICAO);
+                                    if (d == null)
+                                        return false;
+                                    String s = d.toString().toLowerCase();
+                                    return s.contains("venda");
+                                } catch (Exception e) {
+                                    return false;
+                                }
+                            })
+                            .mapToDouble(m -> ((Number) m.get(KEY_VALOR)).doubleValue())
+                            .sum();
+                } catch (Exception ignored) {
+                }
+                double sumEntradasManuaisAll = Math.max(0.0, sumEntradasAll - sumEntradasAutoAll);
                 bodyAll.put(KEY_SUM_ENTRADAS, sumEntradasAll);
                 bodyAll.put(KEY_SUM_RETIRADAS, sumRetiradasAll);
                 bodyAll.put(KEY_SUM_VENDAS, sumVendasAll);
+                bodyAll.put("sum_entradas_automaticas", sumEntradasAutoAll);
+                bodyAll.put("sum_entradas_manuais", sumEntradasManuaisAll);
                 return ResponseEntity.ok(bodyAll);
             }
 
@@ -685,6 +732,27 @@ public class CaixaController {
             body.put(KEY_SUM_ENTRADAS, sumEntradasAll);
             body.put(KEY_SUM_RETIRADAS, sumRetiradasAll);
             body.put(KEY_SUM_VENDAS, sumVendasAll);
+            try {
+                double sumEntradasAutoDia = lista.stream()
+                        .filter(m -> TIPO_ENTRADA.equals(m.get("tipo")))
+                        .filter(m -> {
+                            try {
+                                Object d = m.get(KEY_DESCRICAO);
+                                if (d == null)
+                                    return false;
+                                String s = d.toString().toLowerCase();
+                                return s.contains("venda");
+                            } catch (Exception e) {
+                                return false;
+                            }
+                        })
+                        .mapToDouble(m -> ((Number) (m.get(KEY_VALOR) == null ? 0 : m.get(KEY_VALOR))).doubleValue())
+                        .sum();
+                double sumEntradasManuaisDia = Math.max(0.0, sumEntradasAll - sumEntradasAutoDia);
+                body.put("sum_entradas_automaticas", sumEntradasAutoDia);
+                body.put("sum_entradas_manuais", sumEntradasManuaisDia);
+            } catch (Exception ignored) {
+            }
             return ResponseEntity.ok(body);
         } catch (Exception e) {
             log.error("listarMovimentacoes/dia: exception", e);

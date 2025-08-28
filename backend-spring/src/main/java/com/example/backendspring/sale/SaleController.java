@@ -417,6 +417,11 @@ public class SaleController {
         return saleReportService.getResumoMes(ym.getYear(), ym.getMonthValue());
     }
 
+    @GetMapping("/relatorios/total")
+    public Map<String, Object> relatorioTotal() {
+        return saleReportService.getResumoTotal();
+    }
+
     @Data
     public static class CreateSaleRequest {
         @JsonProperty("produto_id")
