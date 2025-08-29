@@ -26,14 +26,15 @@ public class SaleReportService {
                 // venda_pagamentos)
                 // Normalize data_venda to America/Sao_Paulo when extracting date
                 Long totalVendas = jdbcTemplate.queryForObject(
-                                "SELECT COUNT(*) FROM venda_cabecalho vc WHERE (vc.data_venda AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date = ?",
+                                "SELECT COUNT(*) FROM venda_cabecalho vc WHERE (vc.status <> 'DEVOLVIDA' OR vc.status IS NULL) AND (vc.data_venda AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date = ?",
                                 Long.class,
                                 dia);
                 Long qtdItens = jdbcTemplate.queryForObject(
                                 "SELECT COALESCE(SUM(vi.quantidade),0) FROM venda_itens vi JOIN venda_cabecalho vc ON vc.id = vi.venda_id WHERE (vc.data_venda AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date = ?",
                                 Long.class, dia);
+                // prefer adjusted_total quando não nulo; fallback total_final. Exclui DEVOLVIDA
                 Double receitaTotal = jdbcTemplate.queryForObject(
-                                "SELECT COALESCE(SUM(vc.total_final),0) FROM venda_cabecalho vc WHERE (vc.data_venda AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date = ?",
+                                "SELECT COALESCE(SUM(COALESCE(vc.adjusted_total, vc.total_final)),0) FROM venda_cabecalho vc WHERE (vc.status <> 'DEVOLVIDA' OR vc.status IS NULL) AND (vc.data_venda AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date = ?",
                                 Double.class, dia);
 
                 totalVendas = totalVendas != null ? totalVendas : 0L;
@@ -49,7 +50,7 @@ public class SaleReportService {
                 // breakdown por método usando venda_pagamentos
                 jdbcTemplate.query(
                                 ("SELECT vp.metodo, COALESCE(SUM(vp.valor),0) as " + ALIAS_VALOR
-                                                + " FROM venda_pagamentos vp JOIN venda_cabecalho vc ON vc.id = vp.venda_id WHERE (vc.data_venda AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date = ? GROUP BY vp.metodo"),
+                                                + " FROM venda_pagamentos vp JOIN venda_cabecalho vc ON vc.id = vp.venda_id WHERE (vc.status <> 'DEVOLVIDA' OR vc.status IS NULL) AND (vc.data_venda AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date = ? GROUP BY vp.metodo"),
                                 rs -> {
                                         String metodo = rs.getString("metodo");
                                         double valor = rs.getDouble(ALIAS_VALOR);
@@ -57,7 +58,7 @@ public class SaleReportService {
                                 }, dia);
 
                 Long vendasComMultiploPagamentoObj = jdbcTemplate.queryForObject(
-                                "SELECT COUNT(*) FROM (SELECT vp.venda_id FROM venda_pagamentos vp JOIN venda_cabecalho vc ON vc.id = vp.venda_id WHERE (vc.data_venda AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date = ? GROUP BY vp.venda_id HAVING COUNT(*) > 1) t",
+                                "SELECT COUNT(*) FROM (SELECT vp.venda_id FROM venda_pagamentos vp JOIN venda_cabecalho vc ON vc.id = vp.venda_id WHERE (vc.status <> 'DEVOLVIDA' OR vc.status IS NULL) AND (vc.data_venda AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date = ? GROUP BY vp.venda_id HAVING COUNT(*) > 1) t",
                                 Long.class, dia);
                 long vendasComMultiploPagamento = vendasComMultiploPagamentoObj != null ? vendasComMultiploPagamentoObj
                                 : 0L;
@@ -101,14 +102,13 @@ public class SaleReportService {
                 }
 
                 Long totalVendasNovo = jdbcTemplate.queryForObject(
-                                "SELECT COUNT(*) FROM venda_cabecalho vc WHERE (vc.data_venda AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date BETWEEN ? AND ?",
-                                Long.class, inicio,
-                                fim);
+                                "SELECT COUNT(*) FROM venda_cabecalho vc WHERE (vc.status <> 'DEVOLVIDA' OR vc.status IS NULL) AND (vc.data_venda AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date BETWEEN ? AND ?",
+                                Long.class, inicio, fim);
                 Double receitaNovo = jdbcTemplate.queryForObject(
-                                "SELECT COALESCE(SUM(vc.total_final),0) FROM venda_cabecalho vc WHERE (vc.data_venda AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date BETWEEN ? AND ?",
+                                "SELECT COALESCE(SUM(COALESCE(vc.adjusted_total, vc.total_final)),0) FROM venda_cabecalho vc WHERE (vc.status <> 'DEVOLVIDA' OR vc.status IS NULL) AND (vc.data_venda AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date BETWEEN ? AND ?",
                                 Double.class, inicio, fim);
                 Long qtdNovo = jdbcTemplate.queryForObject(
-                                "SELECT COALESCE(SUM(vi.quantidade),0) FROM venda_itens vi JOIN venda_cabecalho vc ON vc.id = vi.venda_id WHERE (vc.data_venda AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date BETWEEN ? AND ?",
+                                "SELECT COALESCE(SUM(vi.quantidade),0) FROM venda_itens vi JOIN venda_cabecalho vc ON vc.id = vi.venda_id WHERE (vc.status <> 'DEVOLVIDA' OR vc.status IS NULL) AND (vc.data_venda AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date BETWEEN ? AND ?",
                                 Long.class, inicio, fim);
 
                 long totalVendas = (totalVendasLegado != null ? totalVendasLegado : 0L)
@@ -138,7 +138,7 @@ public class SaleReportService {
 
                 jdbcTemplate.query(
                                 ("SELECT vp.metodo, COALESCE(SUM(vp.valor),0) as " + ALIAS_VALOR
-                                                + " FROM venda_pagamentos vp JOIN venda_cabecalho vc ON vc.id = vp.venda_id WHERE (vc.data_venda AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date BETWEEN ? AND ? GROUP BY vp.metodo"),
+                                                + " FROM venda_pagamentos vp JOIN venda_cabecalho vc ON vc.id = vp.venda_id WHERE (vc.status <> 'DEVOLVIDA' OR vc.status IS NULL) AND (vc.data_venda AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date BETWEEN ? AND ? GROUP BY vp.metodo"),
                                 rs -> {
                                         String metodo = rs.getString("metodo");
                                         double valor = rs.getDouble(ALIAS_VALOR);
@@ -146,7 +146,7 @@ public class SaleReportService {
                                 }, inicio, fim);
 
                 Long vendasComMultiploPagamentoObj2 = jdbcTemplate.queryForObject(
-                                "SELECT COUNT(*) FROM (SELECT vp.venda_id FROM venda_pagamentos vp JOIN venda_cabecalho vc ON vc.id = vp.venda_id WHERE (vc.data_venda AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date BETWEEN ? AND ? GROUP BY vp.venda_id HAVING COUNT(*) > 1) t",
+                                "SELECT COUNT(*) FROM (SELECT vp.venda_id FROM venda_pagamentos vp JOIN venda_cabecalho vc ON vc.id = vp.venda_id WHERE (vc.status <> 'DEVOLVIDA' OR vc.status IS NULL) AND (vc.data_venda AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date BETWEEN ? AND ? GROUP BY vp.venda_id HAVING COUNT(*) > 1) t",
                                 Long.class, inicio, fim);
                 long vendasComMultiploPagamento = vendasComMultiploPagamentoObj2 != null
                                 ? vendasComMultiploPagamentoObj2
@@ -168,13 +168,13 @@ public class SaleReportService {
                 // venda_pagamentos)
                 // Sem filtro de data - TODAS as vendas
                 Long totalVendas = jdbcTemplate.queryForObject(
-                                "SELECT COUNT(*) FROM venda_cabecalho vc",
+                                "SELECT COUNT(*) FROM venda_cabecalho vc WHERE (vc.status <> 'DEVOLVIDA' OR vc.status IS NULL)",
                                 Long.class);
                 Long qtdItens = jdbcTemplate.queryForObject(
                                 "SELECT COALESCE(SUM(vi.quantidade),0) FROM venda_itens vi JOIN venda_cabecalho vc ON vc.id = vi.venda_id",
                                 Long.class);
                 Double receitaTotal = jdbcTemplate.queryForObject(
-                                "SELECT COALESCE(SUM(vc.total_final),0) FROM venda_cabecalho vc",
+                                "SELECT COALESCE(SUM(COALESCE(vc.adjusted_total, vc.total_final)),0) FROM venda_cabecalho vc WHERE (vc.status <> 'DEVOLVIDA' OR vc.status IS NULL)",
                                 Double.class);
 
                 totalVendas = totalVendas != null ? totalVendas : 0L;
@@ -190,7 +190,7 @@ public class SaleReportService {
                 // breakdown por método usando venda_pagamentos (todas as vendas)
                 jdbcTemplate.query(
                                 ("SELECT vp.metodo, COALESCE(SUM(vp.valor),0) as " + ALIAS_VALOR
-                                                + " FROM venda_pagamentos vp JOIN venda_cabecalho vc ON vc.id = vp.venda_id GROUP BY vp.metodo"),
+                                                + " FROM venda_pagamentos vp JOIN venda_cabecalho vc ON vc.id = vp.venda_id WHERE (vc.status <> 'DEVOLVIDA' OR vc.status IS NULL) GROUP BY vp.metodo"),
                                 rs -> {
                                         String metodo = rs.getString("metodo");
                                         double valor = rs.getDouble(ALIAS_VALOR);
@@ -198,7 +198,7 @@ public class SaleReportService {
                                 });
 
                 Long vendasComMultiploPagamentoObj = jdbcTemplate.queryForObject(
-                                "SELECT COUNT(*) FROM (SELECT vp.venda_id FROM venda_pagamentos vp JOIN venda_cabecalho vc ON vc.id = vp.venda_id GROUP BY vp.venda_id HAVING COUNT(*) > 1) t",
+                                "SELECT COUNT(*) FROM (SELECT vp.venda_id FROM venda_pagamentos vp JOIN venda_cabecalho vc ON vc.id = vp.venda_id WHERE (vc.status <> 'DEVOLVIDA' OR vc.status IS NULL) GROUP BY vp.venda_id HAVING COUNT(*) > 1) t",
                                 Long.class);
                 long vendasComMultiploPagamento = vendasComMultiploPagamentoObj != null ? vendasComMultiploPagamentoObj
                                 : 0L;

@@ -40,6 +40,13 @@ public class SaleAdjustmentController {
     @PostMapping("/{id}/adjustments")
     @Transactional
     public ResponseEntity<Object> createAdjustment(@PathVariable Long id, @RequestBody AdjustmentRequest req) {
+        String corr = (req.getCorrelationId() == null || req.getCorrelationId().isBlank())
+                ? ("auto-" + System.currentTimeMillis())
+                : req.getCorrelationId();
+        log.info(
+                "[ADJ] START corr={} saleId={} payloadType={} saleItemId={} qty={} replacementProductId={} paymentsCount={}",
+                corr, id, req.getType(), req.getSaleItemId(), req.getQuantity(), req.getReplacementProductId(),
+                (req.getPayments() == null ? 0 : req.getPayments().size()));
         // lock sale order to avoid concurrent adjustments
         var venda = saleOrderRepository.findByIdForUpdate(id).orElse(null);
         if (venda == null)
@@ -77,15 +84,34 @@ public class SaleAdjustmentController {
             } catch (Exception ignored) {
             }
         }
-        if (item == null)
+        if (item == null) {
+            log.warn("[ADJ] ITEM_NOT_FOUND corr={} saleId={} requestedItem={} type={}", corr, id, req.getSaleItemId(),
+                    req.getType());
             return ResponseEntity.status(404).body(Map.of("error", "Item da venda não encontrado"));
+        }
+        // garante que o item pertence mesmo a esta venda (segurança extra)
+        if (item.getVenda() == null || !item.getVenda().getId().equals(venda.getId())) {
+            log.warn("[ADJ] ITEM_MISMATCH corr={} saleId={} itemId={} actualSaleId={} type={}", corr, id, item.getId(),
+                    (item.getVenda() == null ? null : item.getVenda().getId()), req.getType());
+            return ResponseEntity.status(400).body(Map.of("error", "Item não pertence à venda especificada"));
+        }
 
         // keep a final reference for use inside lambdas
         var targetItem = item;
 
         // basic validations
-        if (req.getQuantity() == null || req.getQuantity() <= 0)
+        if (req.getQuantity() == null || req.getQuantity() <= 0) {
+            log.warn("[ADJ] INVALID_QTY corr={} saleId={} itemId={} qty={} type={}", corr, id, item.getId(),
+                    req.getQuantity(), req.getType());
             return ResponseEntity.badRequest().body(Map.of("error", "Quantidade inválida"));
+        }
+        // valida método de pagamento (quando informado)
+        if (req.getPaymentMethod() != null) {
+            var metodo = req.getPaymentMethod();
+            if (!List.of("dinheiro", "cartao_credito", "cartao_debito", "pix", "cartao", "outro").contains(metodo)) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Método de pagamento inválido"));
+            }
+        }
 
         // determine operator (username) and operador User
         String operatorUsername = null;
@@ -102,168 +128,146 @@ public class SaleAdjustmentController {
         } catch (Exception ignored) {
         }
 
-        // perform business logic depending on type
         String type = (req.getType() == null) ? "return" : req.getType();
         int qty = req.getQuantity();
 
         if (type.equalsIgnoreCase("return")) {
-            // validate quantity
-            if (qty > targetItem.getQuantidade())
+            // validate quantity solicitada <= original
+            if (qty > targetItem.getQuantidade()) {
+                log.warn("[ADJ] RETURN_QTY_EXCEEDS corr={} saleId={} itemId={} requested={} available={} type=return",
+                        corr, id, targetItem.getId(), qty, targetItem.getQuantidade());
                 return ResponseEntity.badRequest().body(Map.of("error", "Quantidade a devolver maior que a vendida"));
-
-            // adjust stock
-            var produto = targetItem.getProduto();
-            produto.setQuantidadeEstoque(produto.getQuantidadeEstoque() + qty);
-            productRepository.save(produto);
-
-            // adjust sale item quantity / remove if zero
-            int newQty = targetItem.getQuantidade() - qty;
-            boolean itemRemoved = false;
-            if (newQty <= 0) {
-                // remove item
-                venda.getItens().removeIf(it -> it.getId().equals(targetItem.getId()));
-                saleItemRepository.delete(targetItem);
-                itemRemoved = true;
-            } else {
-                targetItem.setQuantidade(newQty);
-                targetItem.setPrecoTotal(targetItem.getPrecoUnitario() * newQty);
-                saleItemRepository.save(targetItem);
+            }
+            // Estoque volta
+            try {
+                var produto = targetItem.getProduto();
+                produto.setQuantidadeEstoque(produto.getQuantidadeEstoque() + qty);
+                productRepository.save(produto);
+            } catch (Exception e) {
+                log.warn("[ADJ] RETURN_STOCK_FAIL corr={} saleId={} itemId={} msg={}", corr, id, targetItem.getId(),
+                        e.getMessage());
             }
 
-            // recompute sale totals
-            double newSubtotal = venda.getItens().stream().mapToDouble(it -> it.getPrecoTotal()).sum();
-            venda.setSubtotal(newSubtotal);
-            venda.setTotalFinal(newSubtotal - (venda.getDesconto() == null ? 0.0 : venda.getDesconto())
-                    + (venda.getAcrescimo() == null ? 0.0 : venda.getAcrescimo()));
-
-            // register refund: if payments array provided, handle cash parts as caixa
-            // movimentacoes
             double refundAmount = targetItem.getPrecoUnitario() * qty;
-            java.util.List<PaymentDto> pays = req.getPayments();
-            if (pays != null && !pays.isEmpty()) {
-                double sum = pays.stream().mapToDouble(p -> p.getValor() == null ? 0.0 : p.getValor()).sum();
-                if (Math.abs(sum - refundAmount) > 0.01) {
-                    return ResponseEntity.badRequest()
-                            .body(Map.of("error", "Soma dos pagamentos de reembolso não confere com valor a devolver"));
+            // Sempre criar movimentação de caixa (retirada) em dinheiro – devolução é
+            // sempre dinheiro
+            java.util.List<Long> cashMovIds = new java.util.ArrayList<>();
+            try {
+                if (currentOpen != null) {
+                    com.example.backendspring.caixa.CaixaMovimentacao mv = com.example.backendspring.caixa.CaixaMovimentacao
+                            .builder()
+                            .tipo("retirada")
+                            .valor(refundAmount)
+                            .descricao("Reembolso venda " + venda.getId() + " item " + targetItem.getId())
+                            .dataMovimento(OffsetDateTime.now())
+                            .criadoEm(OffsetDateTime.now())
+                            .operador(operadorUser)
+                            .caixaStatus(currentOpen)
+                            .build();
+                    caixaMovimentacaoRepository.save(mv);
+                    cashMovIds.add(mv.getId());
+                    log.info("[ADJ] RETURN_CASH_MOV corr={} saleId={} itemId={} valor={} movId={} operador={}", corr,
+                            id, targetItem.getId(), refundAmount, mv.getId(), operatorUsername);
                 }
-                // create caixa movimentacao only for cash parts
-                for (var pd : pays) {
-                    if (pd.getMetodo() != null && "dinheiro".equals(pd.getMetodo()) && pd.getValor() != null
-                            && pd.getValor() > 0.01) {
-                        com.example.backendspring.caixa.CaixaMovimentacao mv = com.example.backendspring.caixa.CaixaMovimentacao
-                                .builder()
-                                .tipo("retirada")
-                                .valor(pd.getValor())
-                                .descricao("Reembolso venda " + venda.getId() + " item " + targetItem.getId())
-                                .dataMovimento(OffsetDateTime.now())
-                                .criadoEm(OffsetDateTime.now())
-                                .operador(operadorUser)
-                                .caixaStatus(currentOpen)
-                                .build();
-                        caixaMovimentacaoRepository.save(mv);
-                    }
-                }
-            } else {
-                com.example.backendspring.caixa.CaixaMovimentacao.CaixaMovimentacaoBuilder mvb = com.example.backendspring.caixa.CaixaMovimentacao
-                        .builder()
-                        .tipo("retirada")
-                        .valor(refundAmount)
-                        .descricao("Reembolso venda " + venda.getId() + " item " + targetItem.getId())
-                        .dataMovimento(OffsetDateTime.now())
-                        .criadoEm(OffsetDateTime.now())
-                        .operador(operadorUser);
-                try {
-                    currentOpen = caixaStatusRepository.findTopByAbertoTrueOrderByIdDesc().orElse(null);
-                    if (currentOpen != null)
-                        mvb.caixaStatus(currentOpen);
-                } catch (Exception ignored) {
-                }
-                caixaMovimentacaoRepository.save(mvb.build());
+            } catch (Exception e) {
+                log.error("[ADJ] RETURN_CASH_MOV_FAIL corr={} saleId={} itemId={}", corr, id, targetItem.getId(), e);
             }
 
-            // persist sale order and mark as returned if no items remain
-            if (venda.getItens() == null || venda.getItens().isEmpty()) {
-                venda.setStatus("DEVOLVIDA");
-            } else {
-                // mark as ajustada
-                venda.setStatus("AJUSTADA");
-            }
-            saleOrderRepository.save(venda);
-
-            // create adjustment record with detail
-            // Build a JSON detail payload describing the adjustment
-            SaleAdjustment savedAdj = null;
+            // Criar registro de ajuste (não remove item nem altera quantidade)
+            SaleAdjustment savedAdj;
             try {
                 java.util.Map<String, Object> detail = new java.util.LinkedHashMap<>();
-                detail.put("removed_item",
-                        itemRemoved ? null
-                                : java.util.Map.of("sale_item_id", targetItem.getId(), "produto_id",
-                                        targetItem.getProduto() != null ? targetItem.getProduto().getId() : null,
-                                        "quantidade", qty, "preco_unitario", targetItem.getPrecoUnitario()));
+                detail.put("correlation_id", corr);
+                detail.put("sale_item_id", targetItem.getId());
+                detail.put("produto_id", targetItem.getProduto() != null ? targetItem.getProduto().getId() : null);
+                detail.put("returned_quantity", qty);
                 detail.put("refund_amount", refundAmount);
-                detail.put("payments",
-                        pays == null ? java.util.List.of()
-                                : pays.stream()
-                                        .map(p -> java.util.Map.of("metodo", p.getMetodo(), "valor", p.getValor()))
-                                        .toList());
+                detail.put("cash_movements_ids", cashMovIds);
                 String jsonDetail = objectToJson(detail);
-
-                SaleAdjustment adj = SaleAdjustment.builder()
+                savedAdj = SaleAdjustment.builder()
                         .saleOrder(venda)
-                        .saleItem(itemRemoved ? null : targetItem)
+                        .saleItem(targetItem)
                         .type("return")
                         .quantity(qty)
                         .replacementProductId(null)
                         .priceDifference(-refundAmount)
-                        .paymentMethod(req.getPaymentMethod())
+                        .paymentMethod("dinheiro")
                         .notes(req.getNotes())
                         .operatorUsername(operatorUsername)
                         .createdAt(OffsetDateTime.now())
                         .detailJson(jsonDetail)
                         .build();
-                saleAdjustmentRepository.save(adj);
-                savedAdj = adj;
+                saleAdjustmentRepository.save(savedAdj);
             } catch (Exception ex) {
-                // fallback to saving without detail
-                SaleAdjustment adj = SaleAdjustment.builder()
+                savedAdj = SaleAdjustment.builder()
                         .saleOrder(venda)
-                        .saleItem(itemRemoved ? null : targetItem)
+                        .saleItem(targetItem)
                         .type("return")
                         .quantity(qty)
                         .replacementProductId(null)
                         .priceDifference(-refundAmount)
-                        .paymentMethod(req.getPaymentMethod())
+                        .paymentMethod("dinheiro")
                         .notes(req.getNotes())
                         .operatorUsername(operatorUsername)
                         .createdAt(OffsetDateTime.now())
                         .build();
-                saleAdjustmentRepository.save(adj);
-                savedAdj = adj;
+                saleAdjustmentRepository.save(savedAdj);
             }
 
-            // update adjusted total on sale order (net total after this adjustment)
+            // Recalcular adjustedTotal = total_final + soma(priceDifference) de todos
+            // ajustes
             try {
-                double net = venda.getTotalFinal();
-                // subtract refunds and add extras from caixa_movimentacoes linked to this
-                // sale's caixa_status
-                // For now, compute as totalFinal minus sum of adjustments' priceDifference
-                var adjs = saleAdjustmentRepository.findBySaleOrderId(venda.getId());
-                if (adjs != null && !adjs.isEmpty()) {
-                    double sumDiffs = adjs.stream()
-                            .mapToDouble(a -> a.getPriceDifference() == null ? 0.0 : a.getPriceDifference()).sum();
-                    net = venda.getTotalFinal() + sumDiffs; // priceDifference is negative for refunds
-                }
-                venda.setAdjustedTotal(net);
-                saleOrderRepository.save(venda);
-            } catch (Exception ignored) {
+                var adjsAll = saleAdjustmentRepository.findBySaleOrderId(venda.getId());
+                double sumDiff = adjsAll.stream()
+                        .mapToDouble(a -> a.getPriceDifference() == null ? 0.0 : a.getPriceDifference()).sum();
+                venda.setAdjustedTotal(venda.getTotalFinal() + sumDiff);
+            } catch (Exception e) {
+                log.warn("[ADJ] RECALC_ADJUSTED_FAIL corr={} saleId={} msg={}", corr, id, e.getMessage());
             }
 
-            log.info("Return processed: saleId={} itemId={} qty={} refund={}", venda.getId(), targetItem.getId(), qty,
-                    refundAmount);
-            return ResponseEntity.status(201).body(
-                    Map.of("message", "Return processed", "adjustmentId", savedAdj != null ? savedAdj.getId() : null));
+            // Determinar se totalmente devolvida: para cada item, soma qty returns >=
+            // quantidade original
+            try {
+                var adjsAll = saleAdjustmentRepository.findBySaleOrderId(venda.getId());
+                java.util.Map<Long, Integer> returnedByItem = new java.util.HashMap<>();
+                for (var a : adjsAll) {
+                    if ("return".equalsIgnoreCase(a.getType()) && a.getSaleItem() != null) {
+                        returnedByItem.merge(a.getSaleItem().getId(), a.getQuantity() == null ? 0 : a.getQuantity(),
+                                Integer::sum);
+                    }
+                }
+                boolean full = true;
+                for (var it : venda.getItens()) {
+                    int ret = returnedByItem.getOrDefault(it.getId(), 0);
+                    if (ret < (it.getQuantidade() == null ? 0 : it.getQuantidade())) {
+                        full = false;
+                        break;
+                    }
+                }
+                if (full)
+                    venda.setStatus("DEVOLVIDA");
+                else
+                    venda.setStatus("AJUSTADA");
+            } catch (Exception e) {
+                log.warn("[ADJ] STATUS_EVAL_FAIL corr={} saleId={} msg={}", corr, id, e.getMessage());
+            }
+
+            saleOrderRepository.save(venda);
+
+            log.info(
+                    "[ADJ] RETURN_DONE corr={} saleId={} itemId={} qty={} refund={} adjustedTotal={} status={} adjustmentId={}",
+                    corr, venda.getId(), targetItem.getId(), qty, refundAmount, venda.getAdjustedTotal(),
+                    venda.getStatus(), savedAdj.getId());
+            return ResponseEntity.status(201)
+                    .body(Map.of("message", "Return processed", "adjustmentId", savedAdj.getId()));
 
         } else if (type.equalsIgnoreCase("exchange")) {
+            // (exchange branch original permanece abaixo)
+        } else {
+            return ResponseEntity.badRequest().body(Map.of("error", "Tipo inválido"));
+        }
+        // Exchange branch (mantemos código existente a partir daqui)
+        if (type.equalsIgnoreCase("exchange")) {
             // exchange flow: replacementProductId required
             if (req.getReplacementProductId() == null)
                 return ResponseEntity.badRequest()
@@ -271,8 +275,16 @@ public class SaleAdjustmentController {
             var replacement = productRepository.findById(req.getReplacementProductId()).orElse(null);
             if (replacement == null)
                 return ResponseEntity.status(404).body(Map.of("error", "Produto de troca não encontrado"));
-            if (replacement.getQuantidadeEstoque() < qty)
+            if (replacement.getQuantidadeEstoque() < qty) {
+                log.warn(
+                        "[ADJ] EXCHANGE_NO_STOCK corr={} saleId={} originalItemId={} replacementProductId={} requestedQty={} stockReplacement={} type=exchange",
+                        corr, id, targetItem.getId(), replacement.getId(), qty, replacement.getQuantidadeEstoque());
                 return ResponseEntity.badRequest().body(Map.of("error", "Estoque insuficiente para produto de troca"));
+            }
+            log.info(
+                    "[ADJ] EXCHANGE_PREP corr={} saleId={} itemId={} replacementProductId={} qty={} origUnit={} replUnit={} subtotalBefore={} totalBefore={}",
+                    corr, id, targetItem.getId(), replacement.getId(), qty, targetItem.getPrecoUnitario(),
+                    replacement.getPrecoVenda(), venda.getSubtotal(), venda.getTotalFinal());
 
             // restore original product stock
             var original = targetItem.getProduto();
@@ -316,6 +328,7 @@ public class SaleAdjustmentController {
 
             // if positive -> customer pays extra (entrada); if negative -> refund
             // (retirada)
+            java.util.List<Long> cashMovIds = new java.util.ArrayList<>();
             if (Math.abs(totalPriceDiff) > 0.001) {
                 if (totalPriceDiff > 0) {
                     // customer must pay extra: support multiple payments (payments list) or
@@ -346,10 +359,14 @@ public class SaleAdjustmentController {
                                     .caixaStatus(currentOpen)
                                     .build();
                             caixaMovimentacaoRepository.save(mvCash);
+                            cashMovIds.add(mvCash.getId());
                         }
                     } else {
                         double sum = pays.stream().mapToDouble(p -> p.getValor() == null ? 0.0 : p.getValor()).sum();
                         if (Math.abs(sum - totalPriceDiff) > eps) {
+                            log.warn(
+                                    "[ADJ] EXCHANGE_PAYMENTS_MISMATCH corr={} saleId={} itemId={} expectedDiff={} sumPayments={}",
+                                    corr, id, targetItem.getId(), totalPriceDiff, sum);
                             return ResponseEntity.badRequest()
                                     .body(Map.of("error", "Soma dos pagamentos não confere com diferença de preço"));
                         }
@@ -377,29 +394,88 @@ public class SaleAdjustmentController {
                                         .caixaStatus(currentOpen)
                                         .build();
                                 caixaMovimentacaoRepository.save(mvCash);
+                                cashMovIds.add(mvCash.getId());
+                                log.info(
+                                        "[ADJ] EXCHANGE_CASH_IN_PART corr={} saleId={} itemId={} valor={} movId={} operador={}",
+                                        corr, id, targetItem.getId(), pd.getValor(), mvCash.getId(), operatorUsername);
                             }
                         }
                     }
                 } else {
-                    // refund difference to customer
+                    // diferença negativa => reembolso ao cliente
                     double refund = Math.abs(totalPriceDiff);
-                    // register refund difference as caixa movimentacao (money out) and do not add
-                    // negative payment
-                    com.example.backendspring.caixa.CaixaMovimentacao.CaixaMovimentacaoBuilder mvb3 = com.example.backendspring.caixa.CaixaMovimentacao
-                            .builder()
-                            .tipo("retirada")
-                            .valor(refund)
-                            .descricao("Reembolso por troca venda " + venda.getId())
-                            .dataMovimento(OffsetDateTime.now())
-                            .criadoEm(OffsetDateTime.now())
-                            .operador(operadorUser);
-                    try {
-                        currentOpen = caixaStatusRepository.findTopByAbertoTrueOrderByIdDesc().orElse(null);
+                    java.util.List<PaymentDto> pays = req.getPayments();
+                    if (pays != null && !pays.isEmpty()) {
+                        double sum = pays.stream().mapToDouble(p -> p.getValor() == null ? 0.0 : p.getValor()).sum();
+                        if (Math.abs(sum - refund) > 0.01) {
+                            log.warn(
+                                    "[ADJ] EXCHANGE_REFUND_MISMATCH corr={} saleId={} itemId={} expectedRefundDiff={} sumPayments={}",
+                                    corr, id, targetItem.getId(), refund, sum);
+                            return ResponseEntity.badRequest().body(Map.of("error",
+                                    "Soma dos pagamentos de reembolso não confere com diferença de preço"));
+                        }
+                        for (var pd : pays) {
+                            double val = pd.getValor() == null ? 0.0 : pd.getValor();
+                            if (val <= 0)
+                                continue;
+                            SalePayment neg = SalePayment.builder()
+                                    .venda(venda)
+                                    .metodo(pd.getMetodo() == null
+                                            ? (req.getPaymentMethod() == null ? "dinheiro" : req.getPaymentMethod())
+                                            : pd.getMetodo())
+                                    .valor(-val)
+                                    .troco(null)
+                                    .build();
+                            if (currentOpen != null)
+                                neg.setCaixaStatus(currentOpen);
+                            venda.getPagamentos().add(neg);
+                            if ("dinheiro".equalsIgnoreCase(neg.getMetodo())) {
+                                com.example.backendspring.caixa.CaixaMovimentacao mv = com.example.backendspring.caixa.CaixaMovimentacao
+                                        .builder()
+                                        .tipo("retirada")
+                                        .valor(val)
+                                        .descricao("Reembolso por troca venda " + venda.getId())
+                                        .dataMovimento(OffsetDateTime.now())
+                                        .criadoEm(OffsetDateTime.now())
+                                        .operador(operadorUser)
+                                        .caixaStatus(currentOpen)
+                                        .build();
+                                caixaMovimentacaoRepository.save(mv);
+                                cashMovIds.add(mv.getId());
+                                log.info(
+                                        "[ADJ] EXCHANGE_CASH_OUT_PART corr={} saleId={} itemId={} valor={} movId={} operador={}",
+                                        corr, id, targetItem.getId(), val, mv.getId(), operatorUsername);
+                            }
+                        }
+                    } else {
+                        String metodo = req.getPaymentMethod() == null ? "dinheiro" : req.getPaymentMethod();
+                        SalePayment neg = SalePayment.builder()
+                                .venda(venda)
+                                .metodo(metodo)
+                                .valor(-refund)
+                                .troco(null)
+                                .build();
                         if (currentOpen != null)
-                            mvb3.caixaStatus(currentOpen);
-                    } catch (Exception ignored) {
+                            neg.setCaixaStatus(currentOpen);
+                        venda.getPagamentos().add(neg);
+                        if ("dinheiro".equalsIgnoreCase(metodo)) {
+                            com.example.backendspring.caixa.CaixaMovimentacao mv = com.example.backendspring.caixa.CaixaMovimentacao
+                                    .builder()
+                                    .tipo("retirada")
+                                    .valor(refund)
+                                    .descricao("Reembolso por troca venda " + venda.getId())
+                                    .dataMovimento(OffsetDateTime.now())
+                                    .criadoEm(OffsetDateTime.now())
+                                    .operador(operadorUser)
+                                    .caixaStatus(currentOpen)
+                                    .build();
+                            caixaMovimentacaoRepository.save(mv);
+                            cashMovIds.add(mv.getId());
+                            log.info(
+                                    "[ADJ] EXCHANGE_CASH_OUT_SINGLE corr={} saleId={} itemId={} valor={} movId={} operador={}",
+                                    corr, id, targetItem.getId(), refund, mv.getId(), operatorUsername);
+                        }
                     }
-                    caixaMovimentacaoRepository.save(mvb3.build());
                 }
             }
 
@@ -409,25 +485,68 @@ public class SaleAdjustmentController {
             venda.setTotalFinal(newSubtotal - (venda.getDesconto() == null ? 0.0 : venda.getDesconto())
                     + (venda.getAcrescimo() == null ? 0.0 : venda.getAcrescimo()));
 
+            // status para diferenciar
+            venda.setStatus("TROCADA");
+            // recalcula adjustedTotal = soma pagamentos
+            try {
+                venda.setAdjustedTotal(venda.getPagamentos().stream()
+                        .mapToDouble(p -> p.getValor() == null ? 0.0 : p.getValor()).sum());
+            } catch (Exception ignored) {
+            }
             saleOrderRepository.save(venda);
 
-            // create adjustment record
-            SaleAdjustment adj = SaleAdjustment.builder()
-                    .saleOrder(venda)
-                    .saleItem(itemRemovedExchange ? null : targetItem)
-                    .type("exchange")
-                    .quantity(qty)
-                    .replacementProductId(replacement.getId())
-                    .priceDifference(totalPriceDiff)
-                    .paymentMethod(req.getPaymentMethod())
-                    .notes(req.getNotes())
-                    .operatorUsername(operatorUsername)
-                    .createdAt(OffsetDateTime.now())
-                    .build();
+            // create adjustment record (com detail JSON)
+            SaleAdjustment adj;
+            try {
+                java.util.Map<String, Object> detail = new java.util.LinkedHashMap<>();
+                detail.put("correlation_id", corr);
+                detail.put("original_item_id", targetItem.getId());
+                detail.put("removed_original", itemRemovedExchange);
+                detail.put("exchange_quantity", qty);
+                detail.put("replacement_product_id", replacement.getId());
+                detail.put("price_difference", totalPriceDiff);
+                detail.put("cash_movements_ids", cashMovIds);
+                detail.put("payments",
+                        (req.getPayments() == null ? java.util.List.of()
+                                : req.getPayments().stream()
+                                        .map(p -> java.util.Map.of("metodo", p.getMetodo(), "valor", p.getValor()))
+                                        .toList()));
+                String jsonDetail = objectToJson(detail);
+                adj = SaleAdjustment.builder()
+                        .saleOrder(venda)
+                        .saleItem(itemRemovedExchange ? null : targetItem)
+                        .type("exchange")
+                        .quantity(qty)
+                        .replacementProductId(replacement.getId())
+                        .priceDifference(totalPriceDiff)
+                        .paymentMethod(req.getPaymentMethod())
+                        .notes(req.getNotes())
+                        .operatorUsername(operatorUsername)
+                        .createdAt(OffsetDateTime.now())
+                        .detailJson(jsonDetail)
+                        .build();
+            } catch (Exception ex) {
+                adj = SaleAdjustment.builder()
+                        .saleOrder(venda)
+                        .saleItem(itemRemovedExchange ? null : targetItem)
+                        .type("exchange")
+                        .quantity(qty)
+                        .replacementProductId(replacement.getId())
+                        .priceDifference(totalPriceDiff)
+                        .paymentMethod(req.getPaymentMethod())
+                        .notes(req.getNotes())
+                        .operatorUsername(operatorUsername)
+                        .createdAt(OffsetDateTime.now())
+                        .build();
+            }
             saleAdjustmentRepository.save(adj);
 
-            log.info("Exchange processed: saleId={} itemId={} qty={} replacementId={} diff={}", venda.getId(),
-                    item.getId(), qty, replacement.getId(), totalPriceDiff);
+            log.info(
+                    "[ADJ] EXCHANGE_DONE corr={} saleId={} itemId={} qty={} replacementId={} diff={} adjustedTotal={} status={} adjustmentId={} remainingItems={} replacementItemId={}",
+                    corr, venda.getId(), item.getId(), qty, replacement.getId(), totalPriceDiff,
+                    venda.getAdjustedTotal(),
+                    venda.getStatus(), adj.getId(), (venda.getItens() == null ? 0 : venda.getItens().size()),
+                    newItem.getId());
             return ResponseEntity.status(201)
                     .body(Map.of("message", "Exchange processed", "adjustmentId", adj.getId()));
         }
@@ -562,6 +681,7 @@ public class SaleAdjustmentController {
         private String paymentMethod;
         private String notes;
         private java.util.List<PaymentDto> payments;
+        private String correlationId; // optional correlation id from frontend for log tracing
     }
 
     @Data

@@ -23,17 +23,33 @@
   <div *ngIf="loading">Carregando...</div>
   <table *ngIf="!loading">
     <thead>
-      <tr><th>ID</th><th>Produtos</th><th>Itens</th><th>Total</th><th>Operador</th><th>Cliente</th><th>Data</th><th>Ações</th></tr>
+      <tr>
+        <th>ID</th>
+        <th>Produtos</th>
+        <th>Itens</th>
+        <th>Total Bruto</th>
+        <th>Total Líquido</th>
+        <th>Operador</th>
+        <th>Cliente</th>
+        <th>Data</th>
+        <th>Status</th>
+        <th>Ações</th>
+      </tr>
     </thead>
     <tbody>
-      <tr *ngFor="let it of items">
+      <tr *ngFor="let it of items" [class.full-returned-row]="it.full_returned" [class.partial-returned-row]="it.partial_returned">
         <td>{{ it.id }}</td>
-        <td class="produtos-preview" title="{{ it.products_preview || '' }}">{{ it.products_preview || '' }}</td>
+        <td class="produtos-preview" [title]="it.products_preview || ''">{{ it.products_preview || '' }}</td>
         <td>{{ it.itens_count }}</td>
         <td class="tabela-total">{{ it.total_preview ? (it.total_preview | currencyBR) : '' }}</td>
+        <td class="tabela-total" [class.net-diff]="it.net_total !== it.total_preview">{{ (it.net_total ?? it.total_preview) | currencyBR }}</td>
         <td>{{ it.operator || '-' }}</td>
         <td>{{ it.customer_name || '-' }}</td>
         <td>{{ formatDate(it.data_venda) }}</td>
+        <td class="status-col">
+          <span *ngIf="it.full_returned" class="badge badge-full">Devolvida</span>
+          <span *ngIf="!it.full_returned && it.partial_returned" class="badge badge-partial">Parcial</span>
+        </td>
         <td class="acoes-col"><button class="btn-detalhar" (click)="openSaleDetail(it)">Detalhar</button></td>
       </tr>
     </tbody>

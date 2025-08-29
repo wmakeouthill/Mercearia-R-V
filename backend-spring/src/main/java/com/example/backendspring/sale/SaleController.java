@@ -11,7 +11,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,7 +28,6 @@ public class SaleController {
     private final ClientRepository clientRepository;
     private final SaleOrderRepository saleOrderRepository;
     private final SaleReportService saleReportService;
-    private final ObjectMapper objectMapper;
     private final CaixaStatusRepository caixaStatusRepository;
     private final com.example.backendspring.caixa.CaixaMovimentacaoRepository caixaMovimentacaoRepository;
     private final SaleAdjustmentRepository saleAdjustmentRepository;
@@ -43,38 +41,82 @@ public class SaleController {
     @Transactional(readOnly = true)
     public List<Map<String, Object>> getAll() {
         return saleOrderRepository.findAllOrderByData().stream()
-                // Exclude orders created via checkout (they are served by /api/checkout)
+                // Exclude checkout-created orders from this legacy endpoint
                 .filter(o -> o.getPagamentos() == null || o.getPagamentos().isEmpty())
                 .map(o -> {
                     java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
                     row.put("id", o.getId());
-                    int qtd = o.getItens() == null ? 0
-                            : o.getItens().stream().mapToInt(it -> it.getQuantidade() == null ? 0 : it.getQuantidade())
-                                    .sum();
-                    row.put(KEY_QTD_VENDIDA, qtd);
+
+                    // Original (bruto)
+                    int qtdBruta = o.getItens() == null ? 0
+                            : o.getItens().stream()
+                                    .mapToInt(it -> it.getQuantidade() == null ? 0 : it.getQuantidade()).sum();
+                    row.put(KEY_QTD_VENDIDA, qtdBruta);
                     row.put("preco_total", o.getTotalFinal());
                     row.put("adjusted_total", o.getAdjustedTotal());
                     row.put("data_venda", o.getDataVenda());
+
+                    // Devoluções: somar retornos por sale_item
+                    java.util.Map<Long, Integer> returnedByItem = new java.util.HashMap<>();
+                    try {
+                        var adjs = saleAdjustmentRepository.findBySaleOrderId(o.getId());
+                        for (var a : adjs) {
+                            if ("return".equalsIgnoreCase(a.getType()) && a.getSaleItem() != null) {
+                                returnedByItem.merge(a.getSaleItem().getId(),
+                                        a.getQuantity() == null ? 0 : a.getQuantity(), Integer::sum);
+                            }
+                        }
+                    } catch (Exception ignored) {
+                    }
+
+                    double netTotal = 0.0;
+                    int netQty = 0;
+                    if (o.getItens() != null) {
+                        for (var it : o.getItens()) {
+                            int orig = it.getQuantidade() == null ? 0 : it.getQuantidade();
+                            int ret = returnedByItem.getOrDefault(it.getId(), 0);
+                            int effective = Math.max(0, orig - ret);
+                            netQty += effective;
+                            // usar preço unitário * effective para líquido
+                            double unit = it.getPrecoUnitario() == null ? 0.0 : it.getPrecoUnitario();
+                            netTotal += unit * effective;
+                        }
+                    }
+                    row.put("net_quantidade_vendida", netQty);
+                    row.put("net_total", netTotal);
+
+                    // Resumo textual de devoluções para UI (ex: "2x Prod A, 1x Prod B")
+                    try {
+                        if (!returnedByItem.isEmpty() && o.getItens() != null) {
+                            java.util.List<String> parts = new java.util.ArrayList<>();
+                            for (var it : o.getItens()) {
+                                int ret = returnedByItem.getOrDefault(it.getId(), 0);
+                                if (ret > 0) {
+                                    String nome = it.getProduto() != null ? it.getProduto().getNome()
+                                            : ("Item " + it.getId());
+                                    parts.add(ret + "x " + nome);
+                                }
+                            }
+                            row.put("returned_resumo", String.join(", ", parts));
+                        }
+                    } catch (Exception ignored) {
+                    }
+
+                    // método pagamento (bruto / original)
                     String metodo = (o.getPagamentos() == null || o.getPagamentos().isEmpty()) ? ""
                             : (o.getPagamentos().size() == 1 ? o.getPagamentos().get(0).getMetodo() : "multiplo");
                     row.put("metodo_pagamento", metodo);
-                    // If order has no items (e.g. fully returned/exchanged), show a human-friendly
-                    // description based on adjustments instead of falling back to undefined product
-                    if (o.getItens() == null || o.getItens().isEmpty()) {
-                        var adjs = saleAdjustmentRepository.findBySaleOrderId(o.getId());
-                        if (adjs != null && !adjs.isEmpty()) {
-                            var ex = adjs.stream().filter(a -> "exchange".equalsIgnoreCase(a.getType())).findFirst();
-                            if (ex.isPresent()) {
-                                row.put("produto_nome", "Pedido #" + o.getId() + " (Trocado)");
-                            } else {
-                                row.put("produto_nome", "Pedido #" + o.getId() + " (Devolvido)");
-                            }
-                        } else {
-                            row.put("produto_nome", "Pedido #" + o.getId());
-                        }
+
+                    // Nome produto / status
+                    String labelPedido = "Pedido #" + o.getId();
+                    if ("DEVOLVIDA".equalsIgnoreCase(o.getStatus())) {
+                        row.put("produto_nome", labelPedido + " (Devolvido)");
+                    } else if (o.getItens() == null || o.getItens().isEmpty()) {
+                        row.put("produto_nome", labelPedido);
                     } else {
                         row.put("produto_nome", o.getItens().get(0).getProduto().getNome());
                     }
+
                     row.put("codigo_barras", o.getItens() == null || o.getItens().isEmpty() ? null
                             : o.getItens().get(0).getProduto().getCodigoBarras());
                     row.put("produto_imagem", o.getItens() == null || o.getItens().isEmpty() ? null
@@ -148,30 +190,67 @@ public class SaleController {
                 var m = new java.util.LinkedHashMap<String, Object>();
                 m.put("id", o.getId());
                 m.put("produto_id", o.getId());
-                if (o.getItens() != null && !o.getItens().isEmpty() && o.getItens().get(0).getProduto() != null) {
+                // Nome / status
+                if ("DEVOLVIDA".equalsIgnoreCase(o.getStatus())) {
+                    m.put("produto_nome", "Pedido #" + o.getId() + " (Devolvido)");
+                } else if (o.getItens() != null && !o.getItens().isEmpty()
+                        && o.getItens().get(0).getProduto() != null) {
                     m.put("produto_nome", o.getItens().get(0).getProduto().getNome());
                 } else {
-                    var adjs = saleAdjustmentRepository.findBySaleOrderId(o.getId());
-                    if (adjs != null && !adjs.isEmpty()) {
-                        var ex = adjs.stream().filter(a -> "exchange".equalsIgnoreCase(a.getType())).findFirst();
-                        if (ex.isPresent())
-                            m.put("produto_nome", "Pedido #" + o.getId() + " (Trocado)");
-                        else
-                            m.put("produto_nome", "Pedido #" + o.getId() + " (Devolvido)");
-                    } else {
-                        m.put("produto_nome", "Pedido #" + o.getId());
-                    }
+                    m.put("produto_nome", "Pedido #" + o.getId());
                 }
                 m.put("produto_imagem",
                         o.getItens() != null && !o.getItens().isEmpty() && o.getItens().get(0).getProduto() != null
                                 ? o.getItens().get(0).getProduto().getImagem()
                                 : null);
-                int qtd = 0;
-                if (o.getItens() != null)
+                int qtdBruta = 0;
+                if (o.getItens() != null) {
                     for (var it : o.getItens())
-                        qtd += (it.getQuantidade() == null ? 0 : it.getQuantidade());
-                m.put("quantidade_vendida", qtd);
+                        qtdBruta += (it.getQuantidade() == null ? 0 : it.getQuantidade());
+                }
+                m.put("quantidade_vendida", qtdBruta);
                 m.put("preco_total", o.getTotalFinal());
+
+                // Devoluções (liquido)
+                java.util.Map<Long, Integer> returnedByItem = new java.util.HashMap<>();
+                try {
+                    var adjs = saleAdjustmentRepository.findBySaleOrderId(o.getId());
+                    for (var a : adjs) {
+                        if ("return".equalsIgnoreCase(a.getType()) && a.getSaleItem() != null) {
+                            returnedByItem.merge(a.getSaleItem().getId(), a.getQuantity() == null ? 0 : a.getQuantity(),
+                                    Integer::sum);
+                        }
+                    }
+                } catch (Exception ignored) {
+                }
+                int netQty = 0;
+                double netTotal = 0.0;
+                if (o.getItens() != null) {
+                    for (var it : o.getItens()) {
+                        int orig = it.getQuantidade() == null ? 0 : it.getQuantidade();
+                        int ret = returnedByItem.getOrDefault(it.getId(), 0);
+                        int effective = Math.max(0, orig - ret);
+                        netQty += effective;
+                        double unit = it.getPrecoUnitario() == null ? 0.0 : it.getPrecoUnitario();
+                        netTotal += unit * effective;
+                    }
+                }
+                m.put("net_quantidade_vendida", netQty);
+                m.put("net_total", netTotal);
+                if (!returnedByItem.isEmpty()) {
+                    java.util.List<String> parts = new java.util.ArrayList<>();
+                    if (o.getItens() != null) {
+                        for (var it : o.getItens()) {
+                            int ret = returnedByItem.getOrDefault(it.getId(), 0);
+                            if (ret > 0) {
+                                String nome = it.getProduto() != null ? it.getProduto().getNome()
+                                        : ("Item " + it.getId());
+                                parts.add(ret + "x " + nome);
+                            }
+                        }
+                    }
+                    m.put("returned_resumo", String.join(", ", parts));
+                }
                 m.put("data_venda", o.getDataVenda());
                 // operador (username) and cliente info
                 if (o.getOperador() != null) {

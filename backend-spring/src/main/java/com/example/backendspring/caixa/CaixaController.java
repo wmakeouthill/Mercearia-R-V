@@ -50,6 +50,8 @@ public class CaixaController {
     private static final String KEY_SUM_ENTRADAS = "sum_entradas";
     private static final String KEY_SUM_RETIRADAS = "sum_retiradas";
     private static final String KEY_SUM_VENDAS = "sum_vendas";
+    private static final String LABEL_VENDA_MULTI_PREFIX = "Venda (multi) - total ";
+    private static final String LABEL_DEVOLVIDO_SUFFIX = " (devolvido)";
 
     @GetMapping("/status")
     public ResponseEntity<Map<String, Object>> status() {
@@ -285,13 +287,21 @@ public class CaixaController {
                             boolean multi = vo.getPagamentos().size() > 1;
                             if (multi) {
                                 String breakdown = vo.getPagamentos().stream()
-                                        .map(p -> labelMetodoPagamento(p.getMetodo()) + " " + nf.format(p.getValor()))
+                                        .map(p -> {
+                                            String labelPart = labelMetodoPagamento(p.getMetodo()) + " "
+                                                    + nf.format(p.getValor());
+                                            if (p.getValor() != null && p.getValor() < 0)
+                                                labelPart += LABEL_DEVOLVIDO_SUFFIX;
+                                            return labelPart;
+                                        })
                                         .collect(java.util.stream.Collectors.joining(" | "));
-                                row.put(KEY_DESCRICAO, "Venda (multi) - total " + totalFmt + " - " + breakdown);
+                                row.put(KEY_DESCRICAO, LABEL_VENDA_MULTI_PREFIX + totalFmt + " - " + breakdown);
                             } else {
-                                row.put(KEY_DESCRICAO,
-                                        "Venda - total " + totalFmt + " (" + labelMetodoPagamento(pg.getMetodo()) + " "
-                                                + nf.format(pg.getValor()) + ")");
+                                String single = "Venda - total " + totalFmt + " ("
+                                        + labelMetodoPagamento(pg.getMetodo()) + " " + nf.format(pg.getValor()) + ")";
+                                if (pg.getValor() != null && pg.getValor() < 0)
+                                    single += LABEL_DEVOLVIDO_SUFFIX;
+                                row.put(KEY_DESCRICAO, single);
                             }
                             row.put("produto_nome",
                                     vo.getItens().isEmpty() ? null : vo.getItens().get(0).getProduto().getNome());
@@ -655,7 +665,7 @@ public class CaixaController {
                             String breakdown = vo.getPagamentos().stream()
                                     .map(p -> labelMetodoPagamento(p.getMetodo()) + " " + nf.format(p.getValor()))
                                     .collect(java.util.stream.Collectors.joining(" | "));
-                            row.put(KEY_DESCRICAO, "Venda (multi) - total " + totalFmt + " - " + breakdown);
+                            row.put(KEY_DESCRICAO, LABEL_VENDA_MULTI_PREFIX + totalFmt + " - " + breakdown);
                         } else {
                             row.put(KEY_DESCRICAO,
                                     "Venda - total " + totalFmt + " (" + labelMetodoPagamento(pg.getMetodo()) + " "
@@ -1133,13 +1143,20 @@ public class CaixaController {
             boolean multi = vo.getPagamentos().size() > 1;
             if (multi) {
                 String breakdown = vo.getPagamentos().stream()
-                        .map(p -> labelMetodoPagamento(p.getMetodo()) + " " + nf.format(p.getValor()))
+                        .map(p -> {
+                            String labelPart = labelMetodoPagamento(p.getMetodo()) + " " + nf.format(p.getValor());
+                            if (p.getValor() != null && p.getValor() < 0)
+                                labelPart += LABEL_DEVOLVIDO_SUFFIX;
+                            return labelPart;
+                        })
                         .collect(java.util.stream.Collectors.joining(" | "));
-                row.put(KEY_DESCRICAO, "Venda (multi) - total " + totalFmt + " - " + breakdown);
+                row.put(KEY_DESCRICAO, LABEL_VENDA_MULTI_PREFIX + totalFmt + " - " + breakdown);
             } else {
-                // descrição simplificada para venda de único método
-                row.put(KEY_DESCRICAO, "Venda - total " + totalFmt + " (" + labelMetodoPagamento(pg.getMetodo()) + " "
-                        + nf.format(pg.getValor()) + ")");
+                String single = "Venda - total " + totalFmt + " (" + labelMetodoPagamento(pg.getMetodo()) + " "
+                        + nf.format(pg.getValor()) + ")";
+                if (pg.getValor() != null && pg.getValor() < 0)
+                    single += LABEL_DEVOLVIDO_SUFFIX;
+                row.put(KEY_DESCRICAO, single);
             }
             row.put("produto_nome",
                     vo.getItens().isEmpty() ? null : vo.getItens().get(0).getProduto().getNome());

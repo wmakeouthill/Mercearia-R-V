@@ -50,12 +50,27 @@ select[disabled] { opacity: 0.5; }
 .value-cell { width: 220px; }
 .value-controls { display:flex; gap:8px; align-items:center; }
 .value-controls.disabled { opacity:0.5; pointer-events:none; }
+.return-refund-box { display:flex; flex-direction:column; gap:6px; background:#fff8f2; border:1px solid #ffd7b3; padding:8px 10px; border-radius:8px; font-size:12px; }
+.return-refund-box strong { font-size:13px; }
+.return-refund-box .return-buttons { display:flex; gap:6px; }
+.return-refund-box .return-buttons button { background:#ff9f43; border:1px solid #ff932c; color:#222; padding:4px 10px; border-radius:6px; cursor:pointer; font-size:12px; font-weight:600; }
+.return-refund-box .return-buttons button:hover { background:#ffa958; }
+.return-refund-box .return-payments { display:flex; flex-direction:column; gap:4px; }
+.return-refund-box .payment-row { display:flex; gap:6px; align-items:center; }
+.return-refund-box select, .return-refund-box input[type="number"] { padding:4px 6px; border:1px solid #e2e2e2; border-radius:4px; font-size:12px; }
+.return-refund-box button { font-size:11px; }
 .value-type label { display:inline-flex; align-items:center; gap:6px; margin-right:6px; background:#f7f9fb; padding:6px 8px; border-radius:6px; }
 .value-input { width:100px; padding:6px 8px; border-radius:6px; border:1px solid #e6e6e6; }
 .actions { display:flex; gap: 10px; justify-content:flex-end; margin-top: 12px; }
 .actions button { padding: 8px 14px; border-radius:8px; border:none; cursor:pointer; font-weight:700; }
 .actions button:first-child { background: #007bff; color:#fff; }
 .actions button:last-child { background: transparent; border:1px solid #e0e0e0; color:#333; }
+.actions button.loading { opacity:0.7; pointer-events:none; position:relative; }
+.actions button.loading:after { content:'...'; margin-left:6px; font-weight:400; }
+
+/* badge style hook for devolvido (refund) lines that will be applied via caixa component */
+.badge-refund { background:#ffe5e5 !important; color:#b30000 !important; border-color:#ffb3b3 !important; }
+.badge-refund:before { content:'↶'; margin-right:4px; }
 
 .action-option input[type="radio"]:checked + span { font-weight: 700; color: #0b5ed7; }
 

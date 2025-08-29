@@ -23,5 +23,11 @@ td, th { border:1px solid #ddd; padding:6px; }
 .paginacao .btn-page:disabled { opacity: .5; cursor: not-allowed; }
 .paginacao .ellipsis { padding: 0 8px; color: var(--primary-blue); opacity: .7; }
 .paginacao .btn-go { background: var(--primary-blue); color: var(--white); border: none; border-radius: 8px; padding: 8px 12px; font-weight: 700; cursor: pointer; }
+.badge { display:inline-block; padding:2px 8px; border-radius:12px; font-size:12px; font-weight:600; }
+.badge-full { background:#c62828; color:#fff; }
+.badge-partial { background:#ff9800; color:#fff; }
+.full-returned-row { opacity:.75; }
+.tabela-total.net-diff { color:#c62828; font-weight:700; }
+.status-col { text-align:center; }
 
 
