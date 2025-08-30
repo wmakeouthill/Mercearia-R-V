@@ -813,7 +813,8 @@ export class RelatorioVendasComponent implements OnInit {
   calcularEstatisticas(vendasFiltradas?: Venda[]): void {
     const list = vendasFiltradas ?? this.computeVendasFiltradas();
     this.totalVendas = list.length;
-    this.receitaTotal = list.reduce((total, venda) => total + venda.preco_total, 0);
+    // Usar valor líquido quando disponível
+    this.receitaTotal = list.reduce((total, venda: any) => total + (venda.preco_total_liquido ?? venda.net_total ?? venda.preco_total ?? 0), 0);
     this.mediaVendas = this.totalVendas > 0 ? this.receitaTotal / this.totalVendas : 0;
 
     // Encontrar melhor dia
@@ -858,7 +859,8 @@ export class RelatorioVendasComponent implements OnInit {
       }
       acc[data].total_vendas++;
       acc[data].quantidade_vendida += venda.quantidade_vendida;
-      acc[data].receita_total += venda.preco_total;
+      (acc[data] as any).receita_total += (venda.preco_total_liquido ?? venda.net_total ?? venda.preco_total ?? 0);
+      (acc[data] as any).returned_total = ((acc[data] as any).returned_total || 0) + (venda.returned_total || 0);
       return acc;
     }, {} as Record<string, RelatorioVendas>);
 
@@ -907,7 +909,8 @@ export class RelatorioVendasComponent implements OnInit {
       }
       acc[mes].total_vendas++;
       acc[mes].quantidade_vendida += venda.quantidade_vendida;
-      acc[mes].receita_total += venda.preco_total;
+      (acc[mes] as any).receita_total += (venda.preco_total_liquido ?? venda.net_total ?? venda.preco_total ?? 0);
+      (acc[mes] as any).returned_total = ((acc[mes] as any).returned_total || 0) + (venda.returned_total || 0);
       return acc;
     }, {} as Record<string, RelatorioVendas>);
 

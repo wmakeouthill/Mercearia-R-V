@@ -71,6 +71,8 @@ public class SaleController {
 
                     double netTotal = 0.0;
                     int netQty = 0;
+                    double returnedTotal = 0.0;
+                    double exchangeDiffTotal = 0.0;
                     if (o.getItens() != null) {
                         for (var it : o.getItens()) {
                             int orig = it.getQuantidade() == null ? 0 : it.getQuantidade();
@@ -80,10 +82,24 @@ public class SaleController {
                             // usar preço unitário * effective para líquido
                             double unit = it.getPrecoUnitario() == null ? 0.0 : it.getPrecoUnitario();
                             netTotal += unit * effective;
+                            if (ret > 0)
+                                returnedTotal += unit * ret;
                         }
+                    }
+                    // Somar difs de troca (abs) para rastreio
+                    try {
+                        var adjs = saleAdjustmentRepository.findBySaleOrderId(o.getId());
+                        for (var a : adjs) {
+                            if ("exchange".equalsIgnoreCase(a.getType()) && a.getPriceDifference() != null) {
+                                exchangeDiffTotal += Math.abs(a.getPriceDifference());
+                            }
+                        }
+                    } catch (Exception ignored) {
                     }
                     row.put("net_quantidade_vendida", netQty);
                     row.put("net_total", netTotal);
+                    row.put("returned_total", returnedTotal);
+                    row.put("exchange_difference_total", exchangeDiffTotal);
 
                     // Resumo textual de devoluções para UI (ex: "2x Prod A, 1x Prod B")
                     try {
@@ -114,7 +130,26 @@ public class SaleController {
                     } else if (o.getItens() == null || o.getItens().isEmpty()) {
                         row.put("produto_nome", labelPedido);
                     } else {
-                        row.put("produto_nome", o.getItens().get(0).getProduto().getNome());
+                        // Detect se algum item teve devolução parcial ou total
+                        boolean anyReturn = !returnedByItem.isEmpty();
+                        boolean fullReturnAll = true;
+                        if (o.getItens() != null) {
+                            for (var it : o.getItens()) {
+                                int orig = it.getQuantidade() == null ? 0 : it.getQuantidade();
+                                int ret = returnedByItem.getOrDefault(it.getId(), 0);
+                                if (ret < orig) {
+                                    fullReturnAll = false;
+                                    break;
+                                }
+                            }
+                        }
+                        String baseNome = o.getItens().get(0).getProduto().getNome();
+                        if (anyReturn) {
+                            int totalRet = returnedByItem.values().stream().mapToInt(Integer::intValue).sum();
+                            row.put("produto_nome", baseNome + " (Devolvido qtd: " + totalRet + ")");
+                        } else {
+                            row.put("produto_nome", baseNome);
+                        }
                     }
 
                     row.put("codigo_barras", o.getItens() == null || o.getItens().isEmpty() ? null
@@ -195,7 +230,37 @@ public class SaleController {
                     m.put("produto_nome", "Pedido #" + o.getId() + " (Devolvido)");
                 } else if (o.getItens() != null && !o.getItens().isEmpty()
                         && o.getItens().get(0).getProduto() != null) {
-                    m.put("produto_nome", o.getItens().get(0).getProduto().getNome());
+                    // Calcular devoluções
+                    java.util.Map<Long, Integer> returnedByItem = new java.util.HashMap<>();
+                    try {
+                        var adjs = saleAdjustmentRepository.findBySaleOrderId(o.getId());
+                        for (var a : adjs) {
+                            if ("return".equalsIgnoreCase(a.getType()) && a.getSaleItem() != null) {
+                                returnedByItem.merge(a.getSaleItem().getId(),
+                                        a.getQuantity() == null ? 0 : a.getQuantity(), Integer::sum);
+                            }
+                        }
+                    } catch (Exception ignored) {
+                    }
+                    boolean anyReturn = !returnedByItem.isEmpty();
+                    boolean fullReturnAll = true;
+                    if (o.getItens() != null) {
+                        for (var it : o.getItens()) {
+                            int orig = it.getQuantidade() == null ? 0 : it.getQuantidade();
+                            int ret = returnedByItem.getOrDefault(it.getId(), 0);
+                            if (ret < orig) {
+                                fullReturnAll = false;
+                                break;
+                            }
+                        }
+                    }
+                    String baseNome = o.getItens().get(0).getProduto().getNome();
+                    if (anyReturn) {
+                        int totalRet = returnedByItem.values().stream().mapToInt(Integer::intValue).sum();
+                        m.put("produto_nome", baseNome + " (Devolvido qtd: " + totalRet + ")");
+                    } else {
+                        m.put("produto_nome", baseNome);
+                    }
                 } else {
                     m.put("produto_nome", "Pedido #" + o.getId());
                 }
@@ -210,6 +275,10 @@ public class SaleController {
                 }
                 m.put("quantidade_vendida", qtdBruta);
                 m.put("preco_total", o.getTotalFinal());
+                // If adjusted_total present and >0 propagate for clarity
+                if (o.getAdjustedTotal() != null) {
+                    m.put("adjusted_total", o.getAdjustedTotal());
+                }
 
                 // Devoluções (liquido)
                 java.util.Map<Long, Integer> returnedByItem = new java.util.HashMap<>();
@@ -225,6 +294,8 @@ public class SaleController {
                 }
                 int netQty = 0;
                 double netTotal = 0.0;
+                double returnedTotal = 0.0;
+                double exchangeDiffTotal = 0.0;
                 if (o.getItens() != null) {
                     for (var it : o.getItens()) {
                         int orig = it.getQuantidade() == null ? 0 : it.getQuantidade();
@@ -233,10 +304,25 @@ public class SaleController {
                         netQty += effective;
                         double unit = it.getPrecoUnitario() == null ? 0.0 : it.getPrecoUnitario();
                         netTotal += unit * effective;
+                        if (ret > 0)
+                            returnedTotal += unit * ret;
                     }
+                }
+                // exchange diffs
+                try {
+                    var adjs = saleAdjustmentRepository.findBySaleOrderId(o.getId());
+                    for (var a : adjs) {
+                        if ("exchange".equalsIgnoreCase(a.getType()) && a.getPriceDifference() != null) {
+                            exchangeDiffTotal += Math.abs(a.getPriceDifference());
+                        }
+                    }
+                } catch (Exception ignored) {
                 }
                 m.put("net_quantidade_vendida", netQty);
                 m.put("net_total", netTotal);
+                m.put("returned_total", returnedByItem.isEmpty() ? 0.0 : (o.getTotalFinal() - netTotal));
+                m.put("returned_total", returnedTotal);
+                m.put("exchange_difference_total", exchangeDiffTotal);
                 if (!returnedByItem.isEmpty()) {
                     java.util.List<String> parts = new java.util.ArrayList<>();
                     if (o.getItens() != null) {

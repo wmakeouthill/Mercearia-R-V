@@ -46,6 +46,11 @@ export interface Venda {
     row_id?: string;
     _isCheckout?: boolean;
     metodos_multi?: MetodoPagamento[];
+    // Campos líquidos / ajustes
+    preco_total_liquido?: number;
+    net_total?: number;
+    returned_total?: number;
+    exchange_difference_total?: number;
 }
 
 export interface VendaSimples {
@@ -109,6 +114,7 @@ export interface RelatorioVendas {
     total_vendas: number;
     quantidade_vendida: number;
     receita_total: number;
+    returned_total?: number;
 }
 
 export interface RelatorioResumo {

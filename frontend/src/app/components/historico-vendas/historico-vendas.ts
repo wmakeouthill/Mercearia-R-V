@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { CurrencyBrPipe } from '../../pipes/currency-br.pipe';
@@ -6,10 +6,10 @@ import { Router } from '@angular/router';
 import { ApiService } from '../../services/api';
 import { AuthService } from '../../services/auth';
 import { ImageService } from '../../services/image.service';
-import { extractLocalDate, formatDateBR, parseDate } from '../../utils/date-utils';
-import { Venda, MetodoPagamento } from '../../models';
+import { formatDateBR } from '../../utils/date-utils';
+import { Venda } from '../../models';
 import { forkJoin, of } from 'rxjs';
-import { catchError, map } from 'rxjs/operators';
+import { catchError } from 'rxjs/operators';
 import { logger } from '../../utils/logger';
 
 @Component({
@@ -19,10 +19,10 @@ import { logger } from '../../utils/logger';
   templateUrl: './historico-vendas.html',
   styleUrl: './historico-vendas.scss'
 })
-export class HistoricoVendasComponent implements OnInit {
+export class HistoricoVendasComponent implements OnInit, OnDestroy {
   vendas: Venda[] = [];
-  private vendasLegado: Venda[] = [];
-  private vendasCheckout: Venda[] = [];
+  private readonly vendasLegado: Venda[] = [];
+  private readonly vendasCheckout: Venda[] = [];
   vendasFiltradas: any[] = [];
   // when we fetch all pages for aggregates we store them here
   vendasFiltradasAll: any[] | null = null;
@@ -41,6 +41,8 @@ export class HistoricoVendasComponent implements OnInit {
   private pendingDeleteId: number | null = null;
   private pendingIsCheckout = false;
 
+  private salesChangedSub: any;
+
   constructor(
     private readonly apiService: ApiService,
     public readonly authService: AuthService,
@@ -51,7 +53,15 @@ export class HistoricoVendasComponent implements OnInit {
   ngOnInit(): void {
     logger.info('HISTORICO_VENDAS', 'INIT', 'Componente iniciado');
     this.loadPage(1);
+    // Auto refresh quando houver ajustes (devolução/troca)
+    this.salesChangedSub = this.apiService.salesChanged$.subscribe(() => {
+      logger.info('HISTORICO_VENDAS', 'SALES_CHANGED_EVENT', 'Recebido evento de alteração de vendas -> recarregando');
+      const currentPage = this.page;
+      this.loadPage(currentPage);
+    });
   }
+
+  ngOnDestroy(): void { try { if (this.salesChangedSub) this.salesChangedSub.unsubscribe(); } catch { /* ignore */ } }
 
   // Build local ISO datetime string (no Z) from YYYY-MM-DD and HH:mm
   private normalizeDateTimeLocal(dateYmd: string, timeHHmm: string): string {
@@ -150,10 +160,13 @@ export class HistoricoVendasComponent implements OnInit {
 
   getRowNumber(venda: any, indexOnPage: number): number {
     // Prefer using the full cached dataset to compute stable global index
-    const source = Array.isArray(this.vendasFiltradasAll) ? this.vendasFiltradasAll : (Array.isArray(this.vendasFiltradas) ? this.vendasFiltradas : []);
+    let source: any[] = [];
+    if (Array.isArray(this.vendasFiltradasAll)) source = this.vendasFiltradasAll; else if (Array.isArray(this.vendasFiltradas)) source = this.vendasFiltradas;
     if (Array.isArray(source) && source.length > 0) {
       const idx = source.findIndex((s: any) => (s && venda) ? (s.id === venda.id) : false);
-      if (idx >= 0) return (source.length - idx);
+      if (idx >= 0) {
+        return (source.length - idx);
+      }
     }
     // Fallback: derive stable increasing index based on overall ordering (newest-first -> number increases)
     const total = Number(this.total || (Array.isArray(this.vendasFiltradas) ? this.vendasFiltradas.length : 0));
@@ -191,7 +204,11 @@ export class HistoricoVendasComponent implements OnInit {
           const pagamentosArr = Array.isArray(row?.pagamentos) ? row.pagamentos : [];
           if (pagamentosArr.length > 0) {
             try { row.pagamentos_resumo = this.buildPagamentoResumo(pagamentosArr.map((p: any) => ({ metodo: p.metodo, valor: p.valor }))); } catch { row.pagamentos_resumo = ''; }
-            const metodosSet = new Set<string>(); for (const p of pagamentosArr) if (p?.metodo) metodosSet.add(p.metodo); row.metodos_multi = Array.from(metodosSet);
+            const metodosSet = new Set<string>();
+            for (const p of pagamentosArr) {
+              if (p?.metodo) metodosSet.add(p.metodo);
+            }
+            row.metodos_multi = Array.from(metodosSet);
           }
           return row;
         });
@@ -202,11 +219,16 @@ export class HistoricoVendasComponent implements OnInit {
         // Process detalhadas items, skipping those that are present in checkout
         const detalhadasMapped = (detalhadasItems || []).map((v: any, idx: number) => {
           const row: any = { ...(v || {}) };
-          row._isCheckout = !!checkoutIds.has(row.id) ? true : false;
-          const pagamentosArr = Array.isArray(v?.pagamentos) ? v.pagamentos : (Array.isArray(v?.pagamentos_list) ? v.pagamentos_list : []);
+          row._isCheckout = checkoutIds.has(row.id);
+          let pagamentosArr: any[] = [];
+          if (Array.isArray(v?.pagamentos)) pagamentosArr = v.pagamentos; else if (Array.isArray(v?.pagamentos_list)) pagamentosArr = v.pagamentos_list;
           if (Array.isArray(pagamentosArr) && pagamentosArr.length > 0) {
             try { row.pagamentos_resumo = this.buildPagamentoResumo(pagamentosArr.map((p: any) => ({ metodo: p.metodo, valor: p.valor }))); } catch { row.pagamentos_resumo = ''; }
-            const metodosSet = new Set<string>(); for (const p of pagamentosArr) if (p?.metodo) metodosSet.add(p.metodo); row.metodos_multi = Array.from(metodosSet);
+            const metodosSet = new Set<string>();
+            for (const p of pagamentosArr) {
+              if (p?.metodo) metodosSet.add(p.metodo);
+            }
+            row.metodos_multi = Array.from(metodosSet);
           }
           row.row_id = row.row_id || `hist-${row.id ?? idx}`;
           return row;
@@ -215,334 +237,250 @@ export class HistoricoVendasComponent implements OnInit {
         // normalize merged rows: derive product, image, quantity and total when missing
         const merged = [...completasMapped, ...detalhadasMapped].map((m: any) => {
           const itens = Array.isArray(m?.itens) ? m.itens : [];
+          const adjustments = Array.isArray(m?.adjustments) ? m.adjustments : [];
+          const returnedByItem: Record<string, number> = {};
+          for (const a of adjustments) {
+            const t = (a?.type || a?.tipo || '').toLowerCase();
+            if (t === 'return') {
+              const sid = String(a.sale_item_id || a.saleItem?.id || '');
+              if (sid) returnedByItem[sid] = (returnedByItem[sid] || 0) + (a.quantity || a.quantidade || 0);
+            }
+          }
           // produto_nome
           if (!m.produto_nome) {
             if (itens.length > 0) {
-              m.produto_nome = itens[0].produto_nome || itens[0].produtoNome || (itens[0].produto ? itens[0].produto.nome : undefined);
+              const firstNome = itens[0].produto_nome || itens[0].produtoNome || (itens[0].produto ? itens[0].produto.nome : undefined);
+              if (firstNome) m.produto_nome = firstNome;
             }
           }
+          // Anotação (Devolvido) se venda completamente devolvida (net_total = 0 e returned_total > 0)
+          try {
+            const net = Number(m.net_total ?? m.preco_total_liquido ?? 0);
+            const retTotal = Number(m.returned_total ?? 0);
+            if (retTotal > 0 && net <= 0) {
+              if (m.produto_nome && !/Devolvido/i.test(m.produto_nome)) m.produto_nome = m.produto_nome + ' (Devolvido)';
+            }
+          } catch { /* ignore */ }
           // produto_imagem
           if (!m.produto_imagem) {
             if (itens.length > 0) {
-              m.produto_imagem = itens[0].produto_imagem || itens[0].produtoImagem || (itens[0].produto ? itens[0].produto.imagem : undefined);
+              const firstImagem = itens[0].produto_imagem || itens[0].produtoImagem || (itens[0].produto ? itens[0].produto.imagem : undefined);
+              if (firstImagem) m.produto_imagem = firstImagem;
             }
           }
-          // quantidade_vendida (sum of itens quantities)
-          if (m.quantidade_vendida == null) {
-            m.quantidade_vendida = itens.reduce((s: number, it: any) => s + (Number(it.quantidade ?? it.quantidade_vendida ?? 0) || 0), 0);
+          // quantidade
+          if (m.quantidade == null) {
+            const qtyOrig = itens.reduce((s: number, it: any) => s + (Number(it.quantidade) || 0), 0);
+            const qtyRet = Object.values(returnedByItem).reduce((s: number, r: any) => s + (Number(r) || 0), 0);
+            const qty = Math.max(0, qtyOrig - qtyRet);
+            m.quantidade = qty;
           }
-          // preco_total fallback
-          if (m.preco_total == null) {
-            m.preco_total = m.total_final ?? m.totalFinal ?? itens.reduce((s: number, it: any) => s + (Number(it.preco_total ?? it.precoTotal ?? it.precoUnitario * (it.quantidade ?? it.quantidade_vendida ?? 0)) || 0), 0);
+          // preço total
+          let netTotal = 0; let grossTotal = 0;
+          for (const it of itens) {
+            const sid = String(it.id || it.sale_item_id || '');
+            const unit = Number(it.preco_unitario || it.precoUnitario || it.preco || it.valor_unitario || 0) || 0;
+            const qtyOrig = Number(it.quantidade || it.quantidade_vendida || 0) || 0;
+            const ret = returnedByItem[sid] || 0;
+            const eff = Math.max(0, qtyOrig - ret);
+            grossTotal += unit * qtyOrig;
+            netTotal += unit * eff;
           }
-          // prefer adjusted_total when present
-          if (m.adjusted_total != null) {
-            m.preco_total = m.adjusted_total;
+          // manter explicito usando nullish coalescing
+          (m as any).preco_total ??= grossTotal;
+          // Preferir net_total vindo do backend se existir
+          if (m.net_total != null) {
+            m.preco_total_liquido = Number(m.net_total) || 0;
+          } else {
+            m.preco_total_liquido = netTotal;
           }
           return m;
-        }).sort((a: any, b: any) => {
-          const ta = a?.data_venda ? new Date(a.data_venda).getTime() : 0;
-          const tb = b?.data_venda ? new Date(b.data_venda).getTime() : 0;
-          return tb - ta; // newest first
         });
 
-        this.vendas = merged;
-        this.vendasFiltradas = merged;
-        this.vendasFiltradasAll = null;
-
-        // If server reports more items, fetch all pages for aggregates (only using detalhadas.total)
-        if (resp && typeof resp.total === 'number' && resp.total > detalhadasItems.length) {
-          const total = resp.total;
-          const pageCount = Math.ceil(total / Number(this.pageSize || 1));
-          const requests = [] as any[];
-          for (let p = 0; p < pageCount; p++) {
-            requests.push(this.apiService.getVendasDetalhadas(p, this.pageSize).pipe(
-              map((r: any) => Array.isArray(r?.items) ? r.items : []),
-              catchError(() => of([]))
-            ));
-          }
-          forkJoin(requests).subscribe((pages: any[]) => {
-            const all = ([] as any[]).concat(...pages);
-            const mappedAll = all.map((v: any, idx: number) => {
-              const row: any = { ...v };
-              const pagamentosArr = Array.isArray(v?.pagamentos) ? v.pagamentos : (Array.isArray(v?.pagamentos_list) ? v.pagamentos_list : []);
-              if (Array.isArray(pagamentosArr) && pagamentosArr.length > 0) {
-                try { row.pagamentos_resumo = this.buildPagamentoResumo(pagamentosArr.map((p: any) => ({ metodo: p.metodo, valor: p.valor }))); } catch { row.pagamentos_resumo = ''; }
-                const metodosSet = new Set<string>(); for (const p of pagamentosArr) if (p?.metodo) metodosSet.add(p.metodo); row.metodos_multi = Array.from(metodosSet);
-              }
-              row.row_id = row.row_id || `hist-${row.id ?? idx}`;
-              return row;
-            });
-            this.vendasFiltradasAll = mappedAll.sort((a: any, b: any) => {
-              const timeDiff = (parseDate(a.data_venda).getTime() - parseDate(b.data_venda).getTime());
-              if (timeDiff !== 0) return timeDiff;
-              return (a.id || 0) - (b.id || 0);
-            });
-          });
-        }
-
+        // finalize merged rows: sort by recency, apply limits
+        const sorted = merged.slice().sort((a: any, b: any) => {
+          const ad = new Date(a.data_hora || a.dataHora || 0).getTime();
+          const bd = new Date(b.data_hora || b.dataHora || 0).getTime();
+          return bd - ad;
+        });
+        this.vendasFiltradas = sorted;
+        this.vendasFiltradasAll = sorted;
         this.loading = false;
       },
       error: (err) => {
-        this.error = 'Erro ao carregar vendas';
         this.loading = false;
+        this.error = err?.message || err?.error?.message || 'Erro desconhecido ao carregar vendas';
+        logger.error('HISTORICO_VENDAS', 'LOAD_PAGE_ERROR', this.error);
       }
     });
   }
 
-  private mergeAndFilter(): void {
-    // Mesclar as duas fontes e ordenar
-    this.vendas = [...(this.vendasCheckout || []), ...(this.vendasLegado || [])].sort((a, b) => {
-      const timeDiff = (parseDate(a.data_venda).getTime() - parseDate(b.data_venda).getTime());
-      if (timeDiff !== 0) return timeDiff;
-      return (a.id || 0) - (b.id || 0);
+  private buildPagamentoResumo(pagamentos: { metodo: string, valor: number }[]): string {
+    if (!Array.isArray(pagamentos) || pagamentos.length === 0) return '';
+    // Aggregate by method preserving first-seen order
+    const order: string[] = [];
+    const totals: Record<string, number> = {};
+    for (const p of pagamentos) {
+      if (!p || !p.metodo) continue;
+      if (!(p.metodo in totals)) order.push(p.metodo);
+      totals[p.metodo] = (totals[p.metodo] || 0) + (Number(p.valor) || 0);
+    }
+    const label = (m: string) => {
+      switch (m) {
+        case 'dinheiro': return 'Dinheiro';
+        case 'cartao_credito': return 'Crédito';
+        case 'cartao_debito': return 'Débito';
+        case 'pix': return 'PIX';
+        default: return m;
+      }
+    };
+    const parts = order.map(m => `${label(m)} ${totals[m].toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+    return parts.join(' | ');
+  }
+
+  onDeleteVenda(venda: any): void {
+    this.pendingDeleteId = venda.id;
+    this.pendingIsCheckout = venda._isCheckout === true;
+    this.confirmTitle = 'Excluir venda';
+    this.confirmMessage = `Tem certeza que deseja excluir a venda ${venda.id}? Esta ação não pode ser desfeita.`;
+    this.showConfirmModal = true;
+  }
+
+  onConfirmDelete(): void {
+    const id = this.pendingDeleteId;
+    const isCheckout = this.pendingIsCheckout;
+    if (id == null) return;
+    this.showConfirmModal = false;
+    this.loading = true;
+    this.error = '';
+    // Optimistically remove the item from the list
+    this.vendasFiltradas = this.vendasFiltradas.filter((v: any) => v.id !== id);
+    // Use métodos existentes na ApiService
+    const deleteObs = isCheckout ? this.apiService.deleteCheckoutOrder(id) : this.apiService.deleteVenda(id);
+    deleteObs.pipe(catchError((err) => {
+      this.loading = false;
+      this.error = err?.message || err?.error?.message || 'Erro desconhecido ao excluir venda';
+      logger.error('HISTORICO_VENDAS', 'DELETE_ERROR', this.error);
+      // Rollback optimistic removal
+      this.vendasFiltradas = [...this.vendasFiltradas, ...(this.vendasFiltradasAll?.filter((v: any) => v.id === id) || [])];
+      return of(null);
+    })).subscribe({
+      next: () => {
+        this.loading = false;
+        // Refresh page if using server-side pagination, otherwise just remove from local array
+        if (this.totalCount > this.vendasFiltradas.length) {
+          this.loadPage(this.page);
+        } else {
+          this.vendasFiltradas = this.vendasFiltradas.filter((v: any) => v.id !== id);
+        }
+      }
     });
-    this.filterVendas();
+  }
+
+  onRowExpandToggle(venda: any): void {
+    const id = venda?.id;
+    if (!id) return;
+    if (this.expandedRows.has(id)) this.expandedRows.delete(id); else this.expandedRows.add(id);
   }
 
   toggleExpand(rowId: string): void {
     if (!rowId) return;
-    if (this.expandedRows.has(rowId)) this.expandedRows.delete(rowId);
-    else this.expandedRows.add(rowId);
+    if (this.expandedRows.has(rowId)) this.expandedRows.delete(rowId); else this.expandedRows.add(rowId);
   }
 
-  filterVendas(): void {
-    // Garantir que vendas sempre seja um array válido
-    if (!Array.isArray(this.vendas)) {
-      this.vendas = [];
-      this.vendasFiltradas = [];
-      return;
-    }
-
-    this.vendasFiltradas = this.vendas.filter(venda => {
-      if (!venda) return false; // Filtrar vendas nulas/undefined
-
-      let matchData = true;
-      let matchProduto = true;
-      let matchMetodoPagamento = true;
-
-      // Filtro por data
-      if (this.dataFiltro) {
-        try {
-          const vendaDate = parseDate(venda.data_venda);
-          const vendaDataLocal = extractLocalDate(venda.data_venda);
-          if (vendaDataLocal !== this.dataFiltro) {
-            matchData = false;
-          } else {
-            // if time filters provided, apply them
-            if (this.horaInicioFiltro || this.horaFimFiltro) {
-              const startIso = this.horaInicioFiltro ? this.normalizeDateTimeLocal(this.dataFiltro, this.horaInicioFiltro) : null;
-              const endIso = this.horaFimFiltro ? this.normalizeDateTimeLocal(this.dataFiltro, this.horaFimFiltro) : null;
-              const vendaTs = vendaDate.getTime();
-              if (startIso) {
-                const sTs = new Date(startIso).getTime();
-                if (vendaTs < sTs) matchData = false;
-              }
-              if (endIso) {
-                const eTs = new Date(endIso).getTime();
-                if (vendaTs > eTs) matchData = false;
-              }
-            }
-          }
-        } catch {
-          matchData = false;
-        }
-      }
-
-      // Filtro por produto (suporta vendas agregadas de checkout com vários itens)
-      if (this.produtoFiltro?.trim()) {
-        const termoBusca = this.produtoFiltro.toLowerCase().trim();
-        const produtoNomePrincipal = (venda.produto_nome || '').toLowerCase();
-        const itensArr = (venda as any).itens || [];
-        const itensConcat = Array.isArray(itensArr) ? itensArr.map((it: any) => (it.produto_nome || it.produtoNome || '')).join(' ').toLowerCase() : '';
-        matchProduto = produtoNomePrincipal.includes(termoBusca) || itensConcat.includes(termoBusca);
-      }
-
-      // Filtro por método de pagamento (suporta múltiplos métodos nas vendas do checkout)
-      if (this.metodoPagamentoFiltro?.trim()) {
-        const metodosMulti: MetodoPagamento[] | undefined = (venda as any).metodos_multi;
-        if (Array.isArray(metodosMulti) && metodosMulti.length > 0) {
-          matchMetodoPagamento = metodosMulti.includes(this.metodoPagamentoFiltro as MetodoPagamento);
-        } else {
-          matchMetodoPagamento = venda.metodo_pagamento === this.metodoPagamentoFiltro;
-        }
-      }
-
-      return matchData && matchProduto && matchMetodoPagamento;
-    }).sort((a, b) => {
-      const timeDiff = (parseDate(b.data_venda).getTime() - parseDate(a.data_venda).getTime());
-      if (timeDiff !== 0) return timeDiff;
-      return (b.id || 0) - (a.id || 0);
-    });
-    this.page = 1;
+  onDeleteClick(ev: Event, id: number): void {
+    ev.stopPropagation();
+    const venda = { id } as any;
+    this.onDeleteVenda(venda);
   }
 
-  limparFiltros(): void {
+  confirmModalCancel(): void { this.showConfirmModal = false; }
+  confirmModalConfirm(): void { this.onConfirmDelete(); }
+
+  limparFiltros(): void { this.onFilterReset(); }
+
+  getImageUrl(path?: string): string {
+    return this.imageService.getImageUrl(path);
+  }
+
+  onImageError(ev: Event): void {
+    const el = ev?.target as HTMLImageElement | null;
+    if (el) el.src = this.imageService.getImageUrl(null);
+  }
+
+  // Reset filtros e recarrega primeira página (server-side)
+  onFilterReset(): void {
     this.dataFiltro = '';
+    this.horaInicioFiltro = '';
+    this.horaFimFiltro = '';
     this.produtoFiltro = '';
     this.metodoPagamentoFiltro = '';
-    this.vendasFiltradas = [...this.vendas].sort((a, b) => {
-      const timeDiff = (parseDate(b.data_venda).getTime() - parseDate(a.data_venda).getTime());
-      if (timeDiff !== 0) return timeDiff;
-      return (b.id || 0) - (a.id || 0);
-    });
+    this.vendasFiltradasAll = null;
+    this.loadPage(1);
   }
 
-  excluirVenda(id: number): void {
-    const venda = this.vendas.find(v => v.id === id);
-    if (!venda) return;
-
-    if ((venda as any)._isCheckout) {
-      this.apiService.deleteCheckoutOrder(id).subscribe({
-        next: () => {
-          this.removeVendaFromLists(id);
-          logger.info('HISTORICO_VENDAS', 'DELETE_CHECKOUT_ORDER', 'Ordem de checkout excluída', { id });
-        },
-        error: (error: any) => {
-          logger.error('HISTORICO_VENDAS', 'DELETE_CHECKOUT_ORDER', 'Erro ao excluir ordem de checkout', error);
-          alert('Erro ao excluir venda de checkout');
-        }
-      });
-      return;
-    }
-
-    this.apiService.deleteVenda(id).subscribe({
-      next: () => {
-        this.removeVendaFromLists(id);
-        logger.info('HISTORICO_VENDAS', 'DELETE_VENDA', 'Venda excluída', { id });
-      },
-      error: (error: any) => {
-        logger.error('HISTORICO_VENDAS', 'DELETE_VENDA', 'Erro ao excluir venda', error);
-        alert('Erro ao excluir venda');
-      }
-    });
-  }
-
-  private removeVendaFromLists(id: number): void {
-    this.vendas = this.vendas.filter(v => v.id !== id);
-    this.vendasFiltradas = this.vendasFiltradas
-      .filter(v => v.id !== id)
-      .sort((a, b) => {
-        const timeDiff = (parseDate(b.data_venda).getTime() - parseDate(a.data_venda).getTime());
-        if (timeDiff !== 0) return timeDiff;
-        return (b.id || 0) - (a.id || 0);
-      });
-  }
-
-  // helper called from template to ensure event propagation handled correctly
-  onDeleteClick(event: Event, id: number | undefined): void {
-    event.stopPropagation();
-    console.debug('HISTORICO_VENDAS: delete click', { id });
-    if (!id) return;
-    const venda = this.vendas.find(v => v.id === id);
-    if (!venda) return;
-    this.pendingDeleteId = id;
-    this.pendingIsCheckout = !!(venda as any)._isCheckout;
-    this.confirmTitle = 'Confirmar exclusão';
-    this.confirmMessage = this.pendingIsCheckout
-      ? 'Deseja realmente excluir esta venda de checkout? Esta ação restaurará o estoque.'
-      : 'Deseja realmente excluir esta venda?';
-    this.showConfirmModal = true;
-  }
-
-  confirmModalCancel(): void {
-    this.showConfirmModal = false;
-    this.pendingDeleteId = null;
-  }
-
-  confirmModalConfirm(): void {
-    this.showConfirmModal = false;
-    if (this.pendingDeleteId) {
-      this.excluirVenda(this.pendingDeleteId);
-    }
-    this.pendingDeleteId = null;
-  }
-
-  formatarData(data: string): string {
-    return formatDateBR(data, true); // incluir hora
-  }
-
-  getMetodoPagamentoNome(metodo: MetodoPagamento): string {
-    const nomes = {
-      'dinheiro': 'Dinheiro',
-      'cartao_credito': 'Cartão de Crédito',
-      'cartao_debito': 'Cartão de Débito',
-      'pix': 'PIX'
-    };
-    return nomes[metodo] || metodo;
-  }
-
-  getMetodoPagamentoIcone(metodo: MetodoPagamento): string {
-    const icones = {
-      'dinheiro': '💵',
-      'cartao_credito': '💳',
-      'cartao_debito': '🏧',
-      'pix': '📱'
-    };
-    return icones[metodo] || '💰';
-  }
-
-  private buildPagamentoResumo(pagamentos: Array<{ metodo: MetodoPagamento; valor: number }>): string {
-    if (!Array.isArray(pagamentos) || pagamentos.length === 0) return '';
-    const order: MetodoPagamento[] = ['dinheiro', 'cartao_credito', 'cartao_debito', 'pix'];
-    const somaPorMetodo: Record<MetodoPagamento, number> = {
-      dinheiro: 0,
-      cartao_credito: 0,
-      cartao_debito: 0,
-      pix: 0
-    };
-    for (const p of pagamentos) {
-      const m = p.metodo;
-      const v = Number(p.valor || 0);
-      if (m in somaPorMetodo) somaPorMetodo[m] += v;
-    }
-    const partes: string[] = [];
-    for (const m of order) {
-      const v = somaPorMetodo[m];
-      if (v > 0) {
-        const nome = this.getMetodoPagamentoNome(m);
-        const valorFmt = v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        partes.push(`${nome} R$ ${valorFmt}`);
-      }
-    }
-    return partes.join(' + ');
-  }
-
+  // --- Métricas líquidas ---
   getReceitaTotal(): number {
-    const source = Array.isArray(this.vendasFiltradasAll) ? this.vendasFiltradasAll : this.vendasFiltradas;
-    if (!Array.isArray(source)) return 0;
-    return source.reduce((total, venda) => {
-      return total + (venda?.preco_total || 0);
-    }, 0);
+    const src = this.vendasFiltradasAll || this.vendasFiltradas;
+    if (!Array.isArray(src)) return 0;
+    return src.reduce((acc, v: any) => acc + (v.preco_total_liquido ?? v.preco_total ?? 0), 0);
+  }
+
+  getTotalDevolvido(): number {
+    const src = this.vendasFiltradasAll || this.vendasFiltradas;
+    if (!Array.isArray(src)) return 0;
+    return src.reduce((acc, v: any) => acc + (v.returned_total || 0), 0);
+  }
+
+  getTotalTrocas(): number {
+    const src = this.vendasFiltradasAll || this.vendasFiltradas;
+    if (!Array.isArray(src)) return 0;
+    return src.reduce((acc, v: any) => acc + (v.exchange_difference_total || 0), 0);
   }
 
   getQuantidadeTotal(): number {
-    const source = Array.isArray(this.vendasFiltradasAll) ? this.vendasFiltradasAll : this.vendasFiltradas;
-    if (!Array.isArray(source)) return 0;
-    return source.reduce((total, venda) => {
-      return total + (venda?.quantidade_vendida || 0);
-    }, 0);
+    const src = this.vendasFiltradasAll || this.vendasFiltradas;
+    if (!Array.isArray(src)) return 0;
+    return src.reduce((acc, v: any) => acc + (v.quantidade ?? v.quantidade_vendida ?? 0), 0);
   }
 
   getTicketMedio(): number {
-    const source = Array.isArray(this.vendasFiltradasAll) ? this.vendasFiltradasAll : this.vendasFiltradas;
-    if (!Array.isArray(source) || source.length === 0) return 0;
-    return this.getReceitaTotal() / source.length;
+    const src = this.vendasFiltradasAll || this.vendasFiltradas;
+    if (!Array.isArray(src) || src.length === 0) return 0;
+    return this.getReceitaTotal() / src.length;
+  }
+
+  formatarData(data: string): string { return formatDateBR(data, true); }
+
+  getMetodoPagamentoNome(metodo: string): string {
+    const map: any = { dinheiro: 'Dinheiro', cartao_credito: 'Cartão Crédito', cartao_debito: 'Cartão Débito', pix: 'PIX' };
+    return map[metodo] || metodo;
+  }
+
+  getMetodoPagamentoIcone(metodo: string): string {
+    const map: any = { dinheiro: '💵', cartao_credito: '💳', cartao_debito: '🏧', pix: '📱' };
+    return map[metodo] || '💰';
+  }
+
+  filterVendas(): void {
+    const src = this.vendasFiltradasAll || this.vendasFiltradas || [];
+    let list = [...src];
+    if (this.produtoFiltro?.trim()) {
+      const q = this.produtoFiltro.toLowerCase();
+      list = list.filter(v => (v.produto_nome || '').toLowerCase().includes(q));
+    }
+    if (this.metodoPagamentoFiltro?.trim()) {
+      const q = this.metodoPagamentoFiltro.toLowerCase();
+      list = list.filter(v => {
+        if (Array.isArray(v.metodos_multi) && v.metodos_multi.length) return v.metodos_multi.some((m: string) => m.toLowerCase() === q);
+        return (v.metodo_pagamento || '').toLowerCase() === q;
+      });
+    }
+    this.vendasFiltradas = list;
+    this.page = 1;
   }
 
   voltarAoDashboard(): void {
-    this.router.navigate(['/dashboard']);
-  }
-
-  getImageUrl(imageName: any): string {
-    return this.imageService.getImageUrl(imageName);
-  }
-
-  onImageError(event: any): void {
-    // Se a imagem falhar ao carregar, tentar carregar a imagem padrão
-    const fallbackUrl = this.imageService.getImageUrl(null);
-    if (event.target.src !== fallbackUrl) {
-      event.target.src = fallbackUrl;
-    }
+    try { this.router.navigate(['/dashboard']); } catch { /* ignore */ }
   }
 }

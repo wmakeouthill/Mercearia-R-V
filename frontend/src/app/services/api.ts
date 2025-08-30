@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
-import { Observable, BehaviorSubject, throwError, of, timer } from 'rxjs';
+import { Observable, BehaviorSubject, throwError, of, timer, Subject } from 'rxjs';
 import { tap, catchError, timeout, mergeMap, map } from 'rxjs/operators';
 import { Produto, Venda, RelatorioVendas, CheckoutRequest, VendaCompletaResponse, RelatorioResumo } from '../models';
 import { logger } from '../utils/logger';
@@ -22,6 +22,9 @@ export class ApiService {
   private connectionCheckInterval: any;
   private consecutiveHealthFailures = 0;
   private readonly healthFailureThreshold = 2; // só considerar queda após 2 falhas seguidas
+  // Emite eventos quando vendas são alteradas (ex: devolução/troca) para atualizar histórico
+  private readonly salesChangedSubject = new Subject<void>();
+  salesChanged$ = this.salesChangedSubject.asObservable();
 
   constructor(
     private readonly http: HttpClient,
@@ -297,8 +300,16 @@ export class ApiService {
 
   // Post adjustment (return/exchange)
   postSaleAdjustment(saleId: number, payload: any) {
-    return this.makeRequest(() => this.http.post<any>(`${this.baseUrl}/sales/${saleId}/adjustments`, payload), 'POST_SALE_ADJUSTMENT');
+    return this.makeRequest(() => this.http.post<any>(`${this.baseUrl}/sales/${saleId}/adjustments`, payload), 'POST_SALE_ADJUSTMENT').pipe(
+      tap(() => {
+        // Notificar assinantes que houve alteração em vendas
+        try { this.salesChangedSubject.next(); } catch { /* ignore */ }
+      })
+    );
   }
+
+  // Permite disparar manualmente refresh de vendas (fallback)
+  notifySalesChanged(): void { try { this.salesChangedSubject.next(); } catch { /* ignore */ } }
 
   private postVenda(payload: any): Observable<Venda> {
     return this.makeRequest(

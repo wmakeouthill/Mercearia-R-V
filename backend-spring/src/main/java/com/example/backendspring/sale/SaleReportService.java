@@ -30,11 +30,24 @@ public class SaleReportService {
                                 Long.class,
                                 dia);
                 Long qtdItens = jdbcTemplate.queryForObject(
-                                "SELECT COALESCE(SUM(vi.quantidade),0) FROM venda_itens vi JOIN venda_cabecalho vc ON vc.id = vi.venda_id WHERE (vc.data_venda AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date = ?",
+                                "SELECT COALESCE(SUM(GREATEST(vi.quantidade - COALESCE(ret.ret_qty,0),0)),0) " +
+                                                "FROM venda_itens vi " +
+                                                "JOIN venda_cabecalho vc ON vc.id = vi.venda_id " +
+                                                "LEFT JOIN (SELECT sale_item_id, SUM(quantity) ret_qty FROM sale_adjustments WHERE type = 'return' GROUP BY sale_item_id) ret ON ret.sale_item_id = vi.id "
+                                                +
+                                                "WHERE (vc.status <> 'DEVOLVIDA' OR vc.status IS NULL) AND (vc.data_venda AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date = ?",
                                 Long.class, dia);
                 // prefer adjusted_total quando não nulo; fallback total_final. Exclui DEVOLVIDA
+                // Receita líquida calculada a partir dos itens menos devoluções (ignora
+                // adjusted_total para evitar inconsistências)
                 Double receitaTotal = jdbcTemplate.queryForObject(
-                                "SELECT COALESCE(SUM(COALESCE(vc.adjusted_total, vc.total_final)),0) FROM venda_cabecalho vc WHERE (vc.status <> 'DEVOLVIDA' OR vc.status IS NULL) AND (vc.data_venda AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date = ?",
+                                "SELECT COALESCE(SUM(GREATEST(vi.quantidade - COALESCE(ret.ret_qty,0),0) * vi.preco_unitario),0) "
+                                                +
+                                                "FROM venda_itens vi " +
+                                                "JOIN venda_cabecalho vc ON vc.id = vi.venda_id " +
+                                                "LEFT JOIN (SELECT sale_item_id, SUM(quantity) ret_qty FROM sale_adjustments WHERE type = 'return' GROUP BY sale_item_id) ret ON ret.sale_item_id = vi.id "
+                                                +
+                                                "WHERE (vc.status <> 'DEVOLVIDA' OR vc.status IS NULL) AND (vc.data_venda AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date = ?",
                                 Double.class, dia);
 
                 totalVendas = totalVendas != null ? totalVendas : 0L;
@@ -105,10 +118,21 @@ public class SaleReportService {
                                 "SELECT COUNT(*) FROM venda_cabecalho vc WHERE (vc.status <> 'DEVOLVIDA' OR vc.status IS NULL) AND (vc.data_venda AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date BETWEEN ? AND ?",
                                 Long.class, inicio, fim);
                 Double receitaNovo = jdbcTemplate.queryForObject(
-                                "SELECT COALESCE(SUM(COALESCE(vc.adjusted_total, vc.total_final)),0) FROM venda_cabecalho vc WHERE (vc.status <> 'DEVOLVIDA' OR vc.status IS NULL) AND (vc.data_venda AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date BETWEEN ? AND ?",
+                                "SELECT COALESCE(SUM(GREATEST(vi.quantidade - COALESCE(ret.ret_qty,0),0) * vi.preco_unitario),0) "
+                                                +
+                                                "FROM venda_itens vi " +
+                                                "JOIN venda_cabecalho vc ON vc.id = vi.venda_id " +
+                                                "LEFT JOIN (SELECT sale_item_id, SUM(quantity) ret_qty FROM sale_adjustments WHERE type = 'return' GROUP BY sale_item_id) ret ON ret.sale_item_id = vi.id "
+                                                +
+                                                "WHERE (vc.status <> 'DEVOLVIDA' OR vc.status IS NULL) AND (vc.data_venda AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date BETWEEN ? AND ?",
                                 Double.class, inicio, fim);
                 Long qtdNovo = jdbcTemplate.queryForObject(
-                                "SELECT COALESCE(SUM(vi.quantidade),0) FROM venda_itens vi JOIN venda_cabecalho vc ON vc.id = vi.venda_id WHERE (vc.status <> 'DEVOLVIDA' OR vc.status IS NULL) AND (vc.data_venda AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date BETWEEN ? AND ?",
+                                "SELECT COALESCE(SUM(GREATEST(vi.quantidade - COALESCE(ret.ret_qty,0),0)),0) " +
+                                                "FROM venda_itens vi " +
+                                                "JOIN venda_cabecalho vc ON vc.id = vi.venda_id " +
+                                                "LEFT JOIN (SELECT sale_item_id, SUM(quantity) ret_qty FROM sale_adjustments WHERE type = 'return' GROUP BY sale_item_id) ret ON ret.sale_item_id = vi.id "
+                                                +
+                                                "WHERE (vc.status <> 'DEVOLVIDA' OR vc.status IS NULL) AND (vc.data_venda AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date BETWEEN ? AND ?",
                                 Long.class, inicio, fim);
 
                 long totalVendas = (totalVendasLegado != null ? totalVendasLegado : 0L)
@@ -171,10 +195,21 @@ public class SaleReportService {
                                 "SELECT COUNT(*) FROM venda_cabecalho vc WHERE (vc.status <> 'DEVOLVIDA' OR vc.status IS NULL)",
                                 Long.class);
                 Long qtdItens = jdbcTemplate.queryForObject(
-                                "SELECT COALESCE(SUM(vi.quantidade),0) FROM venda_itens vi JOIN venda_cabecalho vc ON vc.id = vi.venda_id",
+                                "SELECT COALESCE(SUM(GREATEST(vi.quantidade - COALESCE(ret.ret_qty,0),0)),0) " +
+                                                "FROM venda_itens vi " +
+                                                "JOIN venda_cabecalho vc ON vc.id = vi.venda_id " +
+                                                "LEFT JOIN (SELECT sale_item_id, SUM(quantity) ret_qty FROM sale_adjustments WHERE type = 'return' GROUP BY sale_item_id) ret ON ret.sale_item_id = vi.id "
+                                                +
+                                                "WHERE (vc.status <> 'DEVOLVIDA' OR vc.status IS NULL)",
                                 Long.class);
                 Double receitaTotal = jdbcTemplate.queryForObject(
-                                "SELECT COALESCE(SUM(COALESCE(vc.adjusted_total, vc.total_final)),0) FROM venda_cabecalho vc WHERE (vc.status <> 'DEVOLVIDA' OR vc.status IS NULL)",
+                                "SELECT COALESCE(SUM(GREATEST(vi.quantidade - COALESCE(ret.ret_qty,0),0) * vi.preco_unitario),0) "
+                                                +
+                                                "FROM venda_itens vi " +
+                                                "JOIN venda_cabecalho vc ON vc.id = vi.venda_id " +
+                                                "LEFT JOIN (SELECT sale_item_id, SUM(quantity) ret_qty FROM sale_adjustments WHERE type = 'return' GROUP BY sale_item_id) ret ON ret.sale_item_id = vi.id "
+                                                +
+                                                "WHERE (vc.status <> 'DEVOLVIDA' OR vc.status IS NULL)",
                                 Double.class);
 
                 totalVendas = totalVendas != null ? totalVendas : 0L;
