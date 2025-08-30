@@ -337,6 +337,14 @@ export class HistoricoVendasComponent implements OnInit, OnDestroy {
               if ((m as any).returned_quantity_total == null && returnedQtyTotal > 0) (m as any).returned_quantity_total = returnedQtyTotal;
               // Recalcular quantidade líquida agregada
               const qtyRetNovo = itens.reduce((s: number, it: any) => s + (Number((it as any).returned_quantity || 0)), 0);
+              // Atualizar quantidade_liquida por item (efetiva)
+              for (const it of itens) {
+                try {
+                  const qtyOrig = Number(it.quantidade || it.quantidade_vendida || 0) || 0;
+                  const retIt = Number((it as any).returned_quantity || 0);
+                  (it as any).quantidade_liquida = Math.max(0, qtyOrig - retIt);
+                } catch { /* ignore */ }
+              }
               m.quantidade = Math.max(0, qtyOrigAgg - qtyRetNovo);
               logger.info('HISTORICO_VENDAS', 'FALLBACK_RETURN_ALLOCATION', 'Distribuiu devolução por valor', { id: m.id, diffValor, returnedQtyTotal: qtyRetNovo });
             }
