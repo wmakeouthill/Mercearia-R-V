@@ -5,6 +5,26 @@
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
+/* --- Devoluções (badges) --- */
+.badge-return {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: #ffe5e5;
+    color: #a40000;
+    border-radius: 12px;
+    padding: 2px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    margin-left: 6px;
+    line-height: 1.1;
+    &.full { background:#ffcccc; color:#7a0000; }
+    &.item { font-weight:500; background:#fff0f0; }
+}
+
+.valor-bruto { color:#777; font-size:11px; margin-left:4px; }
+.qtd-bruta { color:#777; font-size:11px; margin-left:4px; }
+
 .historico-header {
     display: flex;
     justify-content: space-between;

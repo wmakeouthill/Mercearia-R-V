@@ -355,6 +355,60 @@ public class CheckoutController {
 
                     resp.put("itens", itens);
                     resp.put("pagamentos", pagamentos);
+                    // --- Ajustes / devoluções: calcular net_total & returned_total para manter
+                    // consistência com /vendas/detalhadas ---
+                    try {
+                        var adjustments = saleAdjustmentRepository.findBySaleOrderId(venda.getId());
+                        // incluir lista bruta para frontend (nome padrao "adjustments")
+                        if (adjustments != null) {
+                            var adjsMapped = adjustments.stream().map(a -> {
+                                Map<String, Object> m = new LinkedHashMap<>();
+                                m.put("id", a.getId());
+                                m.put("type", a.getType());
+                                m.put("sale_item_id", a.getSaleItem() != null ? a.getSaleItem().getId() : null);
+                                m.put("quantity", a.getQuantity());
+                                m.put("replacement_product_id", a.getReplacementProductId());
+                                m.put("price_difference", a.getPriceDifference());
+                                m.put("payment_method", a.getPaymentMethod());
+                                m.put("notes", a.getNotes());
+                                m.put("operator_username", a.getOperatorUsername());
+                                m.put("created_at", a.getCreatedAt());
+                                return m;
+                            }).toList();
+                            resp.put("adjustments", adjsMapped);
+                        }
+                        // Calcular returned_total a partir de ajustes 'return'
+                        java.util.Map<Long, Integer> returnedByItem = new java.util.HashMap<>();
+                        if (adjustments != null) {
+                            for (var a : adjustments) {
+                                if ("return".equalsIgnoreCase(a.getType()) && a.getSaleItem() != null) {
+                                    returnedByItem.merge(a.getSaleItem().getId(),
+                                            a.getQuantity() == null ? 0 : a.getQuantity(), Integer::sum);
+                                }
+                            }
+                        }
+                        double returnedTotal = 0.0;
+                        double netTotal = 0.0;
+                        int netQty = 0;
+                        if (venda.getItens() != null) {
+                            for (var it : venda.getItens()) {
+                                int orig = it.getQuantidade() == null ? 0 : it.getQuantidade();
+                                int ret = returnedByItem.getOrDefault(it.getId(), 0);
+                                int eff = Math.max(0, orig - ret);
+                                double unit = it.getPrecoUnitario() == null ? 0.0 : it.getPrecoUnitario();
+                                netQty += eff;
+                                netTotal += unit * eff;
+                                if (ret > 0)
+                                    returnedTotal += unit * ret;
+                            }
+                        }
+                        if (!returnedByItem.isEmpty()) {
+                            resp.put("net_total", netTotal);
+                            resp.put("returned_total", returnedTotal);
+                            resp.put("net_quantidade_vendida", netQty);
+                        }
+                    } catch (Exception ignored) {
+                    }
                     // include operador and cliente summary for list view
                     try {
                         if (venda.getOperador() != null && venda.getOperador().getUsername() != null)

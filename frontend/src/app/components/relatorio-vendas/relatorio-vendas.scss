@@ -742,6 +742,28 @@
         color: var(--success);
         font-size: 0.9rem;
     }
+    .valor-bruto {
+        font-weight: 500;
+        color: var(--dark-gray);
+        font-size: 0.7rem;
+        opacity: 0.75;
+        margin-left: 4px;
+    }
+
+    .badge-return {
+        display: inline-block;
+        margin-left: 4px;
+        font-size: 0.65rem;
+        padding: 2px 5px;
+        border-radius: 6px;
+        background: linear-gradient(135deg, #ffe9e9, #ffdede);
+        color: #b30000;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        &.full { background: linear-gradient(135deg, #ffcdcd, #ffb8b8); }
+        &.partial { background: linear-gradient(135deg, #fff2d6, #ffe4ad); color: #8a5a00; }
+    }
 
     .acoes {
         display: flex; /* usar flex para ocupar corretamente o espaço da célula */

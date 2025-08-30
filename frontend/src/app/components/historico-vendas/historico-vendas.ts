@@ -234,10 +234,12 @@ export class HistoricoVendasComponent implements OnInit, OnDestroy {
           return row;
         }).filter((r: any) => !checkoutIds.has(r.id));
 
-        // normalize merged rows: derive product, image, quantity and total when missing
+        // normalize merged rows: derive product, image, quantity and total when missing + devoluções
         const merged = [...completasMapped, ...detalhadasMapped].map((m: any) => {
           const itens = Array.isArray(m?.itens) ? m.itens : [];
-          const adjustments = Array.isArray(m?.adjustments) ? m.adjustments : [];
+          let adjustments: any[] = [];
+          if (Array.isArray(m?.adjustments)) adjustments = m.adjustments;
+          else if (Array.isArray(m?.ajustes)) adjustments = m.ajustes;
           const returnedByItem: Record<string, number> = {};
           for (const a of adjustments) {
             const t = (a?.type || a?.tipo || '').toLowerCase();
@@ -246,53 +248,152 @@ export class HistoricoVendasComponent implements OnInit, OnDestroy {
               if (sid) returnedByItem[sid] = (returnedByItem[sid] || 0) + (a.quantity || a.quantidade || 0);
             }
           }
-          // produto_nome
-          if (!m.produto_nome) {
-            if (itens.length > 0) {
-              const firstNome = itens[0].produto_nome || itens[0].produtoNome || (itens[0].produto ? itens[0].produto.nome : undefined);
-              if (firstNome) m.produto_nome = firstNome;
-            }
+          // Montagem de nomes completa será feita após calcular returned_quantity por item
+          // produto_nome base (sem duplicar anotações), manter primeiro nome para filtros simples
+          if (!m.produto_nome && itens.length > 0) {
+            const firstNome = itens[0].produto_nome || itens[0].produtoNome || (itens[0].produto ? itens[0].produto.nome : undefined);
+            if (firstNome) m.produto_nome = firstNome;
           }
-          // Anotação (Devolvido) se venda completamente devolvida (net_total = 0 e returned_total > 0)
+          // Calcular totais bruto, líquido e devoluções por item
+          let grossTotal = 0; let netTotal = 0; let returnedQtyTotal = 0; let returnedValueTotal = 0;
+          for (const it of itens) {
+            const sid = String(it.id || it.sale_item_id || '');
+            const unit = Number(it.preco_unitario || it.precoUnitario || it.preco || it.valor_unitario || 0) || 0;
+            const qtyOrig = Number(it.quantidade || it.quantidade_vendida || 0) || 0;
+            let ret = Math.min(qtyOrig, Number(returnedByItem[sid] || 0));
+            // Fallback: inferir devolução pelo valor líquido vs bruto
+            try {
+              if (ret === 0 && unit > 0) {
+                const brutoDecl = Number(it.preco_total || it.precoTotal || (unit * qtyOrig)) || 0;
+                const liquidoDeclRaw = (it as any).preco_total_liquido ?? (it as any).precoTotalLiquido;
+                const liquidoDecl = Number(liquidoDeclRaw != null ? liquidoDeclRaw : brutoDecl);
+                if (liquidoDecl < brutoDecl - 0.0001) {
+                  const diff = brutoDecl - liquidoDecl;
+                  const inferred = Math.min(qtyOrig, Math.round(diff / unit));
+                  if (inferred > 0) ret = inferred;
+                }
+              }
+            } catch { /* ignore */ }
+            const eff = Math.max(0, qtyOrig - ret);
+            const grossItem = unit * qtyOrig;
+            const netItem = unit * eff;
+            grossTotal += grossItem;
+            netTotal += netItem;
+            if (ret > 0) {
+              returnedQtyTotal += ret;
+              returnedValueTotal += (unit * ret);
+              (it as any).returned_quantity = ret;
+            }
+            if ((it as any).quantidade_liquida == null) (it as any).quantidade_liquida = eff;
+            if ((it as any).preco_total == null) (it as any).preco_total = grossItem;
+            if ((it as any).preco_total_liquido == null) (it as any).preco_total_liquido = netItem;
+          }
+          // Após calcular returned_quantity por item, montar lista completa com anotações
           try {
-            const net = Number(m.net_total ?? m.preco_total_liquido ?? 0);
-            const retTotal = Number(m.returned_total ?? 0);
-            if (retTotal > 0 && net <= 0) {
-              if (m.produto_nome && !/Devolvido/i.test(m.produto_nome)) m.produto_nome = m.produto_nome + ' (Devolvido)';
+            const partes: string[] = [];
+            for (const it of itens) {
+              const baseNome = it.produto_nome || it.produtoNome || (it.produto?.nome) || 'Produto';
+              const ret = Number((it as any).returned_quantity || 0);
+              if (ret > 0) partes.push(`${baseNome} (devolvido, qtd: ${ret})`); else partes.push(baseNome);
+            }
+            if (partes.length > 0) (m as any)._produtos_compostos = partes.join(', ');
+          } catch { /* ignore */ }
+          // Quantidade líquida agregada
+          const qtyOrigAgg = itens.reduce((s: number, it: any) => s + (Number(it.quantidade || it.quantidade_vendida) || 0), 0);
+          const qtyRetAgg = returnedQtyTotal;
+          const qtyNetAgg = Math.max(0, qtyOrigAgg - qtyRetAgg);
+          if (m.quantidade == null) m.quantidade = qtyNetAgg;
+          // Se não encontramos returned quantities mas existe diferença monetária (fallback por valor total)
+          try {
+            const brutoVenda = grossTotal;
+            let netVenda = Number(m.preco_total_liquido ?? m.net_total ?? netTotal);
+            if (isNaN(netVenda)) netVenda = netTotal;
+            const diffValor = Math.max(0, brutoVenda - netVenda);
+            if (returnedQtyTotal === 0 && diffValor > 0.0001 && itens.length > 0) {
+              // Distribuir devolução por item proporcional ao valor bruto de cada item
+              let restanteValor = diffValor;
+              for (let idx = 0; idx < itens.length; idx++) {
+                const it = itens[idx];
+                const unit = Number(it.preco_unitario || it.precoUnitario || it.preco || it.valor_unitario || 0) || 0;
+                const qtyOrig = Number(it.quantidade || it.quantidade_vendida || 0) || 0;
+                if (unit <= 0 || qtyOrig <= 0) continue;
+                const brutoItem = unit * qtyOrig;
+                let retItem = 0;
+                if (idx < itens.length - 1) {
+                  const proporcao = brutoItem / brutoVenda;
+                  const valorAlocado = Math.min(restanteValor, diffValor * proporcao);
+                  retItem = Math.min(qtyOrig, Math.round(valorAlocado / unit));
+                } else {
+                  // último item absorve o restante
+                  retItem = Math.min(qtyOrig, Math.round(restanteValor / unit));
+                }
+                if (retItem > 0) {
+                  (it as any).returned_quantity = retItem;
+                  restanteValor -= retItem * unit;
+                  returnedQtyTotal += retItem;
+                }
+                if (restanteValor <= 0.0001) break;
+              }
+              if ((m as any).returned_quantity_total == null && returnedQtyTotal > 0) (m as any).returned_quantity_total = returnedQtyTotal;
+              // Recalcular quantidade líquida agregada
+              const qtyRetNovo = itens.reduce((s: number, it: any) => s + (Number((it as any).returned_quantity || 0)), 0);
+              m.quantidade = Math.max(0, qtyOrigAgg - qtyRetNovo);
+              logger.info('HISTORICO_VENDAS', 'FALLBACK_RETURN_ALLOCATION', 'Distribuiu devolução por valor', { id: m.id, diffValor, returnedQtyTotal: qtyRetNovo });
             }
           } catch { /* ignore */ }
+          // Preços totais agregado
+          (m as any).preco_total ??= grossTotal;
+          if (m.net_total != null) {
+            m.preco_total_liquido = Number(m.net_total) || 0;
+          } else if (m.preco_total_liquido == null) {
+            m.preco_total_liquido = netTotal;
+          }
+          // Valor devolvido agregado (se não presente)
+          if (m.returned_total == null) {
+            const calcReturned = Math.max(0, grossTotal - (m.preco_total_liquido ?? netTotal));
+            if (calcReturned > 0) m.returned_total = calcReturned;
+          }
+          // Fallback: se há ajustes de devolução e valor devolvido ainda 0, usar soma itemizada
+          try {
+            const hasReturnAdj = adjustments.some(a => (a?.type || a?.tipo || '').toLowerCase() === 'return');
+            if (hasReturnAdj && returnedValueTotal > 0 && Number(m.returned_total || 0) === 0) {
+              (m as any).returned_total = returnedValueTotal;
+              logger.warn('HISTORICO_VENDAS', 'AJUSTES_SEM_RETURNED_TOTAL', 'Ajustes de devolução presentes mas returned_total == 0 (aplicado fallback)', {
+                id: m.id,
+                bruto: grossTotal,
+                returnedQtyTotal,
+                returnedValueTotal
+              });
+            } else if (hasReturnAdj && Number(m.returned_total || 0) === 0) {
+              logger.warn('HISTORICO_VENDAS', 'AJUSTES_SEM_RETURNED_TOTAL', 'Ajustes de devolução presentes mas não foi possível calcular returned_total', {
+                id: m.id,
+                bruto: grossTotal,
+                returnedQtyTotal,
+                returnedValueTotal
+              });
+            }
+          } catch { /* ignore */ }
+          // Quantidade devolvida agregada
+          if ((m as any).returned_quantity_total == null && returnedQtyTotal > 0) (m as any).returned_quantity_total = returnedQtyTotal;
+          // Não adicionar mais anotação no produto_nome aqui; usamos _produtos_compostos + badge inline
+          // Log por venda mapeada (nivel INFO para facilitar auditoria de devoluções)
+          try {
+            logger.info('HISTORICO_VENDAS', 'MAP_VENDA', 'Venda normalizada', {
+              id: m.id,
+              bruto: grossTotal,
+              net: Number(m.preco_total_liquido ?? m.net_total ?? netTotal),
+              returned_total: Number(m.returned_total || 0),
+              returned_qty_total: returnedQtyTotal,
+              itens: itens.length,
+              ajustes_return: Object.keys(returnedByItem).length
+            });
+          } catch { /* ignore logging errors */ }
           // produto_imagem
           if (!m.produto_imagem) {
             if (itens.length > 0) {
               const firstImagem = itens[0].produto_imagem || itens[0].produtoImagem || (itens[0].produto ? itens[0].produto.imagem : undefined);
               if (firstImagem) m.produto_imagem = firstImagem;
             }
-          }
-          // quantidade
-          if (m.quantidade == null) {
-            const qtyOrig = itens.reduce((s: number, it: any) => s + (Number(it.quantidade) || 0), 0);
-            const qtyRet = Object.values(returnedByItem).reduce((s: number, r: any) => s + (Number(r) || 0), 0);
-            const qty = Math.max(0, qtyOrig - qtyRet);
-            m.quantidade = qty;
-          }
-          // preço total
-          let netTotal = 0; let grossTotal = 0;
-          for (const it of itens) {
-            const sid = String(it.id || it.sale_item_id || '');
-            const unit = Number(it.preco_unitario || it.precoUnitario || it.preco || it.valor_unitario || 0) || 0;
-            const qtyOrig = Number(it.quantidade || it.quantidade_vendida || 0) || 0;
-            const ret = returnedByItem[sid] || 0;
-            const eff = Math.max(0, qtyOrig - ret);
-            grossTotal += unit * qtyOrig;
-            netTotal += unit * eff;
-          }
-          // manter explicito usando nullish coalescing
-          (m as any).preco_total ??= grossTotal;
-          // Preferir net_total vindo do backend se existir
-          if (m.net_total != null) {
-            m.preco_total_liquido = Number(m.net_total) || 0;
-          } else {
-            m.preco_total_liquido = netTotal;
           }
           return m;
         });
@@ -305,6 +406,18 @@ export class HistoricoVendasComponent implements OnInit, OnDestroy {
         });
         this.vendasFiltradas = sorted;
         this.vendasFiltradasAll = sorted;
+        // Log resumo agregado após carga
+        try {
+          const totalBruto = sorted.reduce((a: number, v: any) => a + (Number(v.preco_total) || 0), 0);
+          const totalLiquido = sorted.reduce((a: number, v: any) => a + this._getNetValor(v), 0);
+          const totalDevolvido = sorted.reduce((a: number, v: any) => a + (Number(v.returned_total) || 0), 0);
+          logger.info('HISTORICO_VENDAS', 'LOAD_SUMMARY', 'Resumo de vendas carregadas', {
+            linhas: sorted.length,
+            totalBruto,
+            totalLiquido,
+            totalDevolvido
+          });
+        } catch { /* ignore */ }
         this.loading = false;
       },
       error: (err) => {
@@ -423,13 +536,19 @@ export class HistoricoVendasComponent implements OnInit, OnDestroy {
   getReceitaTotal(): number {
     const src = this.vendasFiltradasAll || this.vendasFiltradas;
     if (!Array.isArray(src)) return 0;
-    return src.reduce((acc, v: any) => acc + (v.preco_total_liquido ?? v.preco_total ?? 0), 0);
+    return src.reduce((acc, v: any) => acc + this._getNetValor(v), 0);
   }
 
   getTotalDevolvido(): number {
     const src = this.vendasFiltradasAll || this.vendasFiltradas;
     if (!Array.isArray(src)) return 0;
     return src.reduce((acc, v: any) => acc + (v.returned_total || 0), 0);
+  }
+
+  getQuantidadeDevolvidaTotal(): number {
+    const src = this.vendasFiltradasAll || this.vendasFiltradas;
+    if (!Array.isArray(src)) return 0;
+    return src.reduce((acc, v: any) => acc + (v.returned_quantity_total || 0), 0);
   }
 
   getTotalTrocas(): number {
@@ -448,6 +567,17 @@ export class HistoricoVendasComponent implements OnInit, OnDestroy {
     const src = this.vendasFiltradasAll || this.vendasFiltradas;
     if (!Array.isArray(src) || src.length === 0) return 0;
     return this.getReceitaTotal() / src.length;
+  }
+
+  private _getNetValor(v: any): number {
+    try {
+      if (!v) return 0;
+      const bruto = Number(v.preco_total ?? 0) || 0;
+      const liquidoDireto = Number(v.preco_total_liquido ?? v.net_total ?? NaN);
+      if (!isNaN(liquidoDireto)) return liquidoDireto;
+      const devolvido = Number(v.returned_total ?? 0) || 0;
+      return Math.max(0, bruto - devolvido);
+    } catch { return 0; }
   }
 
   formatarData(data: string): string { return formatDateBR(data, true); }

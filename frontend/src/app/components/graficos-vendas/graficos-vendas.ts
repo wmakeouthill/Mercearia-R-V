@@ -501,43 +501,137 @@ export class GraficosVendasComponent implements OnInit {
     if (!Array.isArray(raw)) return [];
     const linhas: Venda[] = [];
     for (const ordem of raw) {
-      const data = ordem?.data_venda;
       const pagamentos = Array.isArray(ordem?.pagamentos) ? ordem.pagamentos : [];
       const itens = Array.isArray(ordem?.itens) ? ordem.itens : [];
-      const metodoSum: Record<string, number> = {};
-      for (const p of pagamentos) {
-        const m = p.metodo;
-        metodoSum[m] = (metodoSum[m] || 0) + Number(p.valor || 0);
-      }
-      const pagamentosResumo = Object.keys(metodoSum).map(m => `${m}: R$ ${metodoSum[m].toFixed(2)}`).join(' + ');
-      let idx = 0;
-      for (const it of itens) {
-        const linha: Venda = {
-          id: ordem.id,
-          produto_id: it.produto_id,
-          quantidade_vendida: it.quantidade,
-          preco_total: it.preco_total,
-          data_venda: data,
-          metodo_pagamento: pagamentos[0]?.metodo || 'dinheiro',
-          produto_nome: it.produto_nome,
-          produto_imagem: it.produto_imagem,
-          pagamentos_resumo: pagamentosResumo
-        } as any;
-        if (idx === 0) {
-          (linha as any).metodos_sum = metodoSum; // anexa apenas na primeira linha do pedido
-          (linha as any).pedido_linha_principal = true;
-        }
-        linhas.push(linha);
-        idx++;
+      const ajustes = Array.isArray(ordem?.ajustes) ? ordem.ajustes : [];
+      const { metodoSum, pagamentosResumo } = this._extrairResumoPagamentos(pagamentos);
+      const returnedMap = this._mapAjustesRetornos(ajustes);
+      const { linhasItens, brutoPedido, returnedTotalPedido } = this._construirLinhasItens(ordem, itens, pagamentos, pagamentosResumo, metodoSum, returnedMap);
+      linhas.push(...linhasItens);
+      this._finalizarPedido(ordem, linhasItens, brutoPedido, returnedTotalPedido);
+    }
+    const ordenadas = linhas.sort((a, b) => parseDate(a.data_venda).getTime() - parseDate(b.data_venda).getTime());
+    // Log resumo pós-mapeamento
+    try {
+      const bruto = ordenadas.reduce((s, v: any) => s + (Number(v.preco_total) || 0), 0);
+      const liquido = ordenadas.reduce((s, v: any) => s + this.getNetValor(v), 0);
+      const devolvido = ordenadas.reduce((s, v: any) => s + (Number(v.returned_total) || 0), 0);
+      logger.info('GRAFICOS_VENDAS', 'MAP_CHECKOUT_SUMMARY', 'Resumo linhas checkout', {
+        linhas: ordenadas.length,
+        bruto,
+        liquido,
+        devolvido
+      });
+    } catch { /* ignore */ }
+    return ordenadas;
+  }
+
+  private _extrairResumoPagamentos(pagamentos: any[]): { metodoSum: Record<string, number>; pagamentosResumo: string } {
+    const metodoSum: Record<string, number> = {};
+    for (const p of pagamentos) {
+      const m = p.metodo;
+      metodoSum[m] = (metodoSum[m] || 0) + Number(p.valor || 0);
+    }
+    const pagamentosResumo = Object.keys(metodoSum).map(m => `${m}: R$ ${metodoSum[m].toFixed(2)}`).join(' + ');
+    return { metodoSum, pagamentosResumo };
+  }
+
+  private _mapAjustesRetornos(ajustes: any[]): Record<number, number> {
+    const returnedQtyPorItem: Record<number, number> = {};
+    for (const aj of ajustes) {
+      if (aj?.type === 'return') {
+        const sid = Number(aj.sale_item_id);
+        const q = Number(aj.quantity || 0);
+        if (sid) returnedQtyPorItem[sid] = (returnedQtyPorItem[sid] || 0) + q;
       }
     }
-    return linhas.sort((a, b) => parseDate(a.data_venda).getTime() - parseDate(b.data_venda).getTime());
+    return returnedQtyPorItem;
+  }
+
+  private _construirLinhasItens(ordem: any, itens: any[], pagamentos: any[], pagamentosResumo: string, metodoSum: Record<string, number>, returnedMap: Record<number, number>) {
+    const linhasItens: Venda[] = [];
+    let returnedTotalPedido = 0;
+    for (let idx = 0; idx < itens.length; idx++) {
+      const it = itens[idx];
+      const saleItemId = Number(it?.id || it?.sale_item_id || it?.saleItemId);
+      const qtdVendida = Number(it.quantidade);
+      const precoTotalItem = Number(it.preco_total);
+      const qtdDevolvida = saleItemId ? (returnedMap[saleItemId] || 0) : 0;
+      const valorDevolvidoItem = qtdVendida > 0 ? (precoTotalItem * (qtdDevolvida / qtdVendida)) : 0;
+      returnedTotalPedido += valorDevolvidoItem;
+      const linha: Venda = {
+        id: ordem.id,
+        produto_id: it.produto_id,
+        quantidade_vendida: qtdVendida,
+        preco_total: precoTotalItem,
+        data_venda: ordem?.data_venda,
+        metodo_pagamento: pagamentos[0]?.metodo || 'dinheiro',
+        produto_nome: this._annotateProdutoNome(it.produto_nome, qtdDevolvida, qtdVendida),
+        produto_imagem: it.produto_imagem,
+        pagamentos_resumo: pagamentosResumo
+      } as any;
+      if (qtdDevolvida > 0) {
+        (linha as any).returned_quantity = qtdDevolvida;
+        (linha as any).returned_total = valorDevolvidoItem;
+      }
+      if (idx === 0) {
+        (linha as any).metodos_sum = metodoSum;
+        (linha as any).pedido_linha_principal = true;
+      }
+      linhasItens.push(linha);
+    }
+    const brutoPedido = itens.reduce((s: number, it: any) => s + Number(it.preco_total || 0), 0);
+    return { linhasItens, brutoPedido, returnedTotalPedido };
+  }
+
+  private _finalizarPedido(ordem: any, linhasItens: Venda[], brutoPedido: number, returnedTotalPedido: number) {
+    if (!linhasItens.length) return;
+    const principal = linhasItens[0];
+    const returnedTotalBackend = Number(ordem?.returned_total ?? ordem?.returnedTotal ?? 0) || 0;
+    const netTotalBackend = Number(ordem?.net_total ?? ordem?.preco_total_liquido ?? ordem?.total_liquido ?? NaN);
+    const returnedTotal = returnedTotalBackend > 0 ? returnedTotalBackend : returnedTotalPedido;
+    if (returnedTotal > 0) (principal as any).returned_total = returnedTotal;
+    const netCalc = !isNaN(netTotalBackend) ? netTotalBackend : Math.max(0, brutoPedido - returnedTotal);
+    (principal as any).preco_total_liquido = netCalc;
+    (principal as any).net_total = netCalc;
+    if (returnedTotal > 0) {
+      const zero = netCalc <= 0.00001;
+      (principal as any).produto_nome = this._annotateStatusPedido(principal.produto_nome || 'Pedido', zero ? 'full' : 'partial');
+    }
+  }
+
+  private _annotateProdutoNome(nome: string, qtdDevolvida: number, qtdVendida: number): string {
+    if (!qtdDevolvida) return nome;
+    if (qtdDevolvida >= qtdVendida) return `${nome} (Devolvido qtd: ${qtdDevolvida})`;
+    return `${nome} (Devolvido qtd: ${qtdDevolvida}/${qtdVendida})`;
+  }
+
+  private _annotateStatusPedido(nome: string, tipo: 'full' | 'partial'): string {
+    if (tipo === 'full') return `${nome} (Devolvido)`;
+    return `${nome} (Devolvido parcial)`;
+  }
+
+  private getNetValor(v: any): number {
+    try {
+      if (!v) return 0;
+      const bruto = Number(v.preco_total || 0) || 0;
+      const direto = Number(v.preco_total_liquido ?? v.net_total ?? NaN);
+      if (!isNaN(direto)) return direto;
+      const ret = Number(v.returned_total || 0) || 0;
+      return Math.max(0, bruto - ret);
+    } catch { return 0; }
   }
 
   private unificarVendas() {
     this.vendas = [...this.vendasLegado, ...this.vendasCheckout];
     // ordenar por data crescente para série temporal
     this.vendas.sort((a, b) => parseDate(a.data_venda).getTime() - parseDate(b.data_venda).getTime());
+    try {
+      const bruto = this.vendas.reduce((s, v: any) => s + (Number(v.preco_total) || 0), 0);
+      const liquido = this.vendas.reduce((s, v: any) => s + this.getNetValor(v), 0);
+      const devolvido = this.vendas.reduce((s, v: any) => s + (Number(v.returned_total) || 0), 0);
+      logger.info('GRAFICOS_VENDAS', 'UNIFICAR_VENDAS', 'Resumo unificado', { linhas: this.vendas.length, bruto, liquido, devolvido });
+    } catch { /* ignore */ }
   }
 
   private definirAnos() {
@@ -572,6 +666,11 @@ export class GraficosVendasComponent implements OnInit {
   recalcularTudo() {
     try {
       const baseGlobal = this.vendasFiltradas(); // base geral (datas / ano / granularidade)
+      try {
+        const brutoG = baseGlobal.reduce((s, v: any) => s + (Number(v.preco_total) || 0), 0);
+        const liquidoG = baseGlobal.reduce((s, v: any) => s + this.getNetValor(v), 0);
+        logger.info('GRAFICOS_VENDAS', 'RECALC_BASE_GLOBAL', 'Base filtrada', { linhas: baseGlobal.length, bruto: brutoG, liquido: liquidoG, granularidade: this.granularidade });
+      } catch { /* ignore */ }
       // Série temporal mostra sempre a base global
       this.gerarSerieTemporal(baseGlobal);
 
@@ -592,6 +691,16 @@ export class GraficosVendasComponent implements OnInit {
       }
       this.gerarReceitaPorMetodo(baseDetalhe);
       this.gerarItensMaisVendidos(baseDetalhe);
+      try {
+        const brutoDet = baseDetalhe.reduce((s, v: any) => s + (Number(v.preco_total) || 0), 0);
+        const liquidoDet = baseDetalhe.reduce((s, v: any) => s + this.getNetValor(v), 0);
+        logger.info('GRAFICOS_VENDAS', 'RECALC_DETALHE', 'Bases detalhe pós-filtros', {
+          linhas: baseDetalhe.length,
+          bruto: brutoDet,
+          liquido: liquidoDet,
+          filtros: this.resumoFiltros
+        });
+      } catch { /* ignore */ }
     } catch (e) {
       logger.error('GRAFICOS_VENDAS', 'RECALC', 'Erro ao recalcular', { e });
     }
@@ -617,8 +726,12 @@ export class GraficosVendasComponent implements OnInit {
     const arr = new Array(24).fill(0);
     for (const v of base) {
       const d = parseDate(v.data_venda);
-      arr[d.getHours()] += v.preco_total;
+      arr[d.getHours()] += this.getNetValor(v);
     }
+    try {
+      const total = arr.reduce((a, b) => a + b, 0);
+      logger.info('GRAFICOS_VENDAS', 'CHART_HORA', 'Resumo', { horasComValor: arr.filter(v => v > 0).length, totalLiquido: total });
+    } catch { /* ignore */ }
     const labels = arr.map((_, h) => h.toString().padStart(2, '0') + 'h');
     const highlightColor = '#FF9800';
     const baseColor = 'rgba(0,46,89,0.65)';
@@ -641,8 +754,11 @@ export class GraficosVendasComponent implements OnInit {
     const soma = new Array(7).fill(0);
     for (const v of base) {
       const d = parseDate(v.data_venda);
-      soma[d.getDay()] += v.preco_total;
+      soma[d.getDay()] += this.getNetValor(v);
     }
+    try {
+      logger.info('GRAFICOS_VENDAS', 'CHART_DIA_SEMANA', 'Resumo', { diasComValor: soma.filter(v => v > 0).length, totalLiquido: soma.reduce((a, b) => a + b, 0) });
+    } catch { /* ignore */ }
     const highlightColor = '#FF9800';
     const baseColor = 'rgba(219,194,125,0.75)';
     const backgroundColor = this.selectedDiaSemana == null ? baseColor : soma.map((_, i) => i === this.selectedDiaSemana ? highlightColor : baseColor);
@@ -678,20 +794,25 @@ export class GraficosVendasComponent implements OnInit {
         Object.entries(raw.metodos_sum as Record<string, number>).forEach(([met, valor]) => {
           const key = normalizar(met);
           if (!(key in soma)) soma[key] = 0;
-          soma[key] += valor;
+          // Ajustar proporcionalmente se venda teve devolução
+          const proporcaoLiquida = this.getNetValor(v) / (Number(v.preco_total) || 1);
+          soma[key] += valor * Math.min(1, proporcaoLiquida || 0);
         });
         pedidosProcessados.add(v.id);
       } else if (!raw.metodos_sum) {
         // legado ou venda simples
         const key = normalizar(raw.metodo_pagamento);
         if (!(key in soma)) soma[key] = 0;
-        soma[key] += v.preco_total;
+        soma[key] += this.getNetValor(v);
       }
     }
     // Garantir números válidos
     Object.keys(soma).forEach(k => { if (!isFinite(soma[k])) soma[k] = 0; });
     // Debug (pode remover depois) – só loga uma vez por recalculo
-    try { (window as any)._ultimaSomaMetodos = soma; console.debug('[GRAFICOS] soma metodos', soma); } catch { }
+    try {
+      (window as any)._ultimaSomaMetodos = soma;
+      logger.info('GRAFICOS_VENDAS', 'CHART_METODO', 'Resumo metodos', { ...soma, total: Object.values(soma).reduce((a, b) => a + b, 0) });
+    } catch { /* ignore */ }
 
     const labels: string[] = []; const dataVals: number[] = []; const bg: string[] = []; const bgHover: string[] = [];
     const push = (label: string, val: number, color: string, hover: string) => { labels.push(label); dataVals.push(val); bg.push(color); bgHover.push(hover); };
@@ -726,7 +847,7 @@ export class GraficosVendasComponent implements OnInit {
     for (const v of base) {
       const nome = v.produto_nome || `#${v.produto_id}`;
       if (!map.has(nome)) map.set(nome, { receita: 0 });
-      map.get(nome)!.receita += v.preco_total;
+      map.get(nome)!.receita += this.getNetValor(v);
     }
     const top = [...map.entries()].map(([nome, v]) => ({ nome, receita: v.receita }))
       .sort((a, b) => b.receita - a.receita).slice(0, 10);
@@ -734,6 +855,9 @@ export class GraficosVendasComponent implements OnInit {
       labels: top.map(t => t.nome),
       datasets: [{ label: 'Receita', data: top.map(t => t.receita), backgroundColor: 'rgba(0,46,89,0.55)', hoverBackgroundColor: 'rgba(0,46,89,0.8)', borderRadius: 6, maxBarThickness: 52 }]
     };
+    try {
+      logger.info('GRAFICOS_VENDAS', 'CHART_TOP_ITENS', 'Resumo', { itensConsiderados: map.size, topCount: top.length, topTotal: top.reduce((s, i) => s + i.receita, 0) });
+    } catch { /* ignore */ }
   }
 
   formatDia(labelISO: string): string {
@@ -765,8 +889,12 @@ export class GraficosVendasComponent implements OnInit {
         default:
           chave = extractLocalDate(v.data_venda);
       }
-      grupos.set(chave, (grupos.get(chave) || 0) + v.preco_total);
+      grupos.set(chave, (grupos.get(chave) || 0) + this.getNetValor(v));
     }
+    try {
+      const total = Array.from(grupos.values()).reduce((a, b) => a + b, 0);
+      logger.info('GRAFICOS_VENDAS', 'CHART_SERIE_TEMPORAL', 'Resumo', { pontos: grupos.size, totalLiquido: total, granularidade: this.granularidade });
+    } catch { /* ignore */ }
     const keysOrdenadas = [...grupos.keys()].sort((a, b) => a.localeCompare(b));
     const isDia = this.granularidade === 'dia';
     const labels = isDia ? keysOrdenadas.map(k => this.formatDia(k)) : keysOrdenadas;

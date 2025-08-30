@@ -1,4 +1,4 @@
-import { Component, OnInit, ElementRef, Renderer2, ViewChild } from '@angular/core';
+import { Component, OnInit, OnDestroy, ElementRef, Renderer2, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { CurrencyBrPipe } from '../../pipes/currency-br.pipe';
@@ -23,7 +23,7 @@ import { EnviarNotaModalComponent } from '../enviar-nota-modal/enviar-nota-modal
   templateUrl: './relatorio-vendas.html',
   styleUrl: './relatorio-vendas.scss'
 })
-export class RelatorioVendasComponent implements OnInit {
+export class RelatorioVendasComponent implements OnInit, OnDestroy {
   vendas: Venda[] = [];
   private vendasLegado: Venda[] = [];
   private vendasCheckout: Venda[] = [];
@@ -199,6 +199,8 @@ export class RelatorioVendasComponent implements OnInit {
   mediaVendas = 0;
   melhorDia = '';
   melhorDiaReceita = 0;
+  // subscription para eventos de alteração de vendas (ajustes/devoluções)
+  private salesChangedSub: any;
 
   constructor(
     private readonly apiService: ApiService,
@@ -237,7 +239,17 @@ export class RelatorioVendasComponent implements OnInit {
     this.filtroData = '';
     this.loadVendas();
     this.loadResumos();
+    // Auto refresh quando houver ajustes (devolução/troca)
+    try {
+      this.salesChangedSub = this.apiService.salesChanged$.subscribe(() => {
+        logger.info('RELATORIO_VENDAS', 'SALES_CHANGED_EVENT', 'Recebido evento de alteração de vendas -> recarregando');
+        this.loadVendas();
+        this.loadResumos();
+      });
+    } catch { /* ignore */ }
   }
+
+  ngOnDestroy(): void { try { if (this.salesChangedSub) this.salesChangedSub.unsubscribe(); } catch { /* ignore */ } }
 
   // client autocomplete for modal
   clientSearchTerm = '';
@@ -719,27 +731,138 @@ export class RelatorioVendasComponent implements OnInit {
         const data = v.data_venda;
         const pagamentos: Array<{ metodo: MetodoPagamento; valor: number }> = (v.pagamentos || []);
         const itens = v.itens || [];
+        const adjustments: any[] = Array.isArray(v.adjustments) ? v.adjustments : (Array.isArray(v.ajustes) ? v.ajustes : []);
+        // Mapear quantidades devolvidas por item
+        const returnedByItem: Record<string, number> = {};
+        for (const a of adjustments) {
+          try {
+            const t = (a?.type || a?.tipo || '').toLowerCase();
+            if (t === 'return') {
+              const sid = String(a.sale_item_id || a.saleItem?.id || a.saleItemId || a.item_id || '');
+              const q = Number(a.quantity || a.quantidade || 0) || 0;
+              if (sid && q > 0) returnedByItem[sid] = (returnedByItem[sid] || 0) + q;
+            }
+          } catch { /* ignore */ }
+        }
         const metodoResumo = this.buildPagamentoResumo(pagamentos);
         const metodosSet = new Set<MetodoPagamento>();
         for (const p of pagamentos) if (p?.metodo) metodosSet.add(p.metodo);
 
         const totalQuantidade = Array.isArray(itens) ? itens.reduce((s: number, it: any) => s + (Number(it.quantidade) || 0), 0) : 0;
-        let totalValor = (v.total_final ?? v.totalFinal ?? 0) as number;
-        if (!totalValor || totalValor === 0) {
-          totalValor = Array.isArray(itens) ? itens.reduce((s: number, it: any) => s + (Number(it.preco_total || it.precoTotal) || 0), 0) : 0;
+        let totalValorBruto = (v.total_final ?? v.totalFinal ?? 0) as number;
+        if (!totalValorBruto || totalValorBruto === 0) {
+          totalValorBruto = Array.isArray(itens) ? itens.reduce((s: number, it: any) => s + (Number(it.preco_total || it.precoTotal) || 0), 0) : 0;
         }
+        const returnedTotalBackend = Number(v.returned_total ?? v.returnedTotal ?? 0) || 0;
+        let netTotal = Number(v.net_total ?? v.preco_total_liquido ?? v.netTotal ?? v.precoTotalLiquido ?? NaN);
+        if (isNaN(netTotal)) {
+          netTotal = Math.max(0, totalValorBruto - returnedTotalBackend);
+        }
+        let returnedTotal = returnedTotalBackend;
+        if (returnedTotal === 0 && totalValorBruto > netTotal) {
+          // Inferir devolução se backend não mandou explicitamente
+          returnedTotal = Math.max(0, totalValorBruto - netTotal);
+        }
+        // Log de inconsistência: há ajustes tipo return mas valor devolvido permanece 0
+        try {
+          const hasReturnAdj = adjustments.some(a => ((a?.type || a?.tipo || '').toLowerCase() === 'return'));
+          if (hasReturnAdj && returnedTotal === 0) {
+            logger.warn('RELATORIO_VENDAS', 'AJUSTES_SEM_RETURNED_TOTAL', 'Ajustes de devolução presentes mas returned_total == 0', {
+              id: v.id,
+              bruto: totalValorBruto,
+              netRaw: v.net_total ?? v.preco_total_liquido,
+              netUsado: netTotal,
+              ajustes: adjustments.length
+            });
+          }
+        } catch { /* ignore */ }
 
-        const produtoNome = Array.isArray(itens) && itens.length > 0
-          ? itens.map((it: any) => it.produto_nome || it.produtoNome || '').join(', ')
-          : (`Pedido #${v.id} (${itens.length} itens)`);
-
-        const produtoImagem = Array.isArray(itens) && itens.length > 0 ? itens[0].produto_imagem : null;
+        // Decorar itens com quantidade devolvida antes de montar nome
+        if (Array.isArray(itens)) {
+          for (const it of itens) {
+            try {
+              const sid = String(it.id || it.item_id || it.sale_item_id || '');
+              const unit = Number(it.preco_unitario || it.precoUnitario || it.preco || 0) || 0;
+              const qtyOrig = Number(it.quantidade || it.quantidade_vendida || 0) || 0;
+              let ret = sid && returnedByItem[sid] ? returnedByItem[sid] : 0;
+              if (ret === 0 && unit > 0) {
+                const brutoDecl = Number(it.preco_total || it.precoTotal || (unit * qtyOrig)) || 0;
+                const liquidoDeclRaw = (it as any).preco_total_liquido ?? (it as any).precoTotalLiquido;
+                const liquidoDecl = Number(liquidoDeclRaw != null ? liquidoDeclRaw : brutoDecl);
+                if (liquidoDecl < brutoDecl - 0.0001) {
+                  const diff = brutoDecl - liquidoDecl;
+                  const inferred = Math.min(qtyOrig, Math.round(diff / unit));
+                  if (inferred > 0) ret = inferred;
+                }
+              }
+              if (ret > 0) (it as any).returned_quantity = ret;
+            } catch { /* ignore */ }
+          }
+        }
+        // Montar nome agregando cada produto com anotações por item
+        let produtoNome = '';
+        if (Array.isArray(itens) && itens.length > 0) {
+          const partes: string[] = [];
+          for (const it of itens) {
+            const baseNome = it.produto_nome || it.produtoNome || 'Produto';
+            const rq = Number((it as any).returned_quantity || 0);
+            if (rq > 0) partes.push(`${baseNome} (devolvido, qtd: ${rq})`); else partes.push(baseNome);
+          }
+          produtoNome = partes.join(', ');
+        } else {
+          produtoNome = `Pedido #${v.id} (${itens.length} itens)`;
+        }
+        // Fallback: se nenhuma anotação adicionada e existe diferença bruto-liquido indicando devolução, tentar distribuir
+        if (!/devolvido, qtd:/i.test(produtoNome)) {
+          try {
+            const brutoVenda = totalValorBruto;
+            const liquidoVenda = netTotal;
+            const diffValor = Math.max(0, brutoVenda - liquidoVenda);
+            if (diffValor > 0.0001 && Array.isArray(itens) && itens.length > 0) {
+              let restante = diffValor;
+              let anyRet = false;
+              for (let idx = 0; idx < itens.length; idx++) {
+                const it = itens[idx];
+                const unit = Number(it.preco_unitario || it.precoUnitario || it.preco || 0) || 0;
+                const qtyOrig = Number(it.quantidade || it.quantidade_vendida || 0) || 0;
+                if (unit <= 0 || qtyOrig <= 0) continue;
+                if ((it as any).returned_quantity > 0) { anyRet = true; continue; }
+                let retQtd = 0;
+                if (idx < itens.length - 1) {
+                  const brutoItem = unit * qtyOrig;
+                  const proporcao = brutoItem / brutoVenda;
+                  const valorAlocado = Math.min(restante, diffValor * proporcao);
+                  retQtd = Math.min(qtyOrig, Math.round(valorAlocado / unit));
+                } else {
+                  retQtd = Math.min(qtyOrig, Math.round(restante / unit));
+                }
+                if (retQtd > 0) {
+                  (it as any).returned_quantity = retQtd;
+                  restante -= retQtd * unit;
+                  anyRet = true;
+                }
+                if (restante <= 0.0001) break;
+              }
+              if (anyRet) {
+                const partes2: string[] = [];
+                for (const it of itens) {
+                  const baseNome = it.produto_nome || it.produtoNome || 'Produto';
+                  const rq = Number((it as any).returned_quantity || 0);
+                  if (rq > 0) partes2.push(`${baseNome} (devolvido, qtd: ${rq})`); else partes2.push(baseNome);
+                }
+                produtoNome = partes2.join(', ');
+                logger.info('RELATORIO_VENDAS', 'FALLBACK_RETURN_ALLOCATION', 'Distribuiu devolução por valor', { id: v.id, diffValor });
+              }
+            }
+          } catch { /* ignore */ }
+        }
+        const produtoImagem = Array.isArray(itens) && itens.length > 0 ? (itens[0].produto_imagem || itens[0].produtoImagem) : null;
 
         const linha: Venda = {
           id: v.id,
           produto_id: v.id,
           quantidade_vendida: totalQuantidade,
-          preco_total: totalValor,
+          preco_total: totalValorBruto,
           data_venda: data,
           metodo_pagamento: 'dinheiro',
           produto_nome: produtoNome,
@@ -750,7 +873,38 @@ export class RelatorioVendasComponent implements OnInit {
         (linha as any).metodos_multi = Array.from(metodosSet);
         (linha as any).row_id = `checkout-${v.id}-${rowCounter++}`;
         (linha as any)._isCheckout = true;
+        (linha as any).returned_total = returnedTotal;
+        if (netTotal !== undefined) (linha as any).preco_total_liquido = netTotal;
+        // Não anexar mais sufixo agregado no produto_nome; mostramos badge separado e anotações por item dentro da lista
+        // Persistir quantidades agregadas para uso consistente em tabelas / relatórios
+        try {
+          let totalReturnedQtyPersist = 0;
+          for (const it of itens) totalReturnedQtyPersist += Number((it as any).returned_quantity || 0);
+          (linha as any).returned_quantity_total = totalReturnedQtyPersist; // quantidade devolvida agregada
+          (linha as any).quantidade_bruta = totalQuantidade;               // quantidade original vendida
+          (linha as any).quantidade_liquida = Math.max(0, totalQuantidade - totalReturnedQtyPersist); // após devoluções
+          // Garantir que quantidade_vendida continue representando a quantidade bruta (pedido original)
+          linha.quantidade_vendida = totalQuantidade;
+        } catch { /* ignore */ }
         linhas.push(linha);
+
+        // Log detalhado desta ordem mapeada
+        try {
+          let totalReturnedQty = 0;
+          try {
+            for (const it of itens) totalReturnedQty += Number((it as any).returned_quantity || 0);
+          } catch { /* ignore */ }
+          logger.info('RELATORIO_VENDAS', 'MAP_PEDIDO', 'Pedido mapeado', {
+            id: v.id,
+            bruto: totalValorBruto,
+            net: netTotal,
+            returned_total: returnedTotal,
+            returned_qty_total: totalReturnedQty,
+            itens: itens.length,
+            ajustes_return: adjustments.filter(a => (a?.type || a?.tipo || '').toLowerCase() === 'return').length,
+            inferiu_returned_total: returnedTotalBackend === 0 && returnedTotal > 0
+          });
+        } catch { /* ignore */ }
 
         logger.info('RELATORIO_VENDAS', 'MAP_CHECKOUT_ORDEM', 'Ordem mapeada', {
           ordemId: v.id,
@@ -766,6 +920,18 @@ export class RelatorioVendasComponent implements OnInit {
       });
 
       this.mergeAndRecompute();
+      // Log resumo após unificação
+      try {
+        const brutoAll = this.vendas.reduce((s, r: any) => s + (Number(r.preco_total) || 0), 0);
+        const liquidoAll = this.vendas.reduce((s, r: any) => s + this.getNetValor(r), 0);
+        const devolvidoAll = this.vendas.reduce((s, r: any) => s + (Number((r as any).returned_total) || 0), 0);
+        logger.info('RELATORIO_VENDAS', 'UNIFICADO_SUMMARY', 'Resumo unificado', {
+          linhas: this.vendas.length,
+          brutoAll,
+          liquidoAll,
+          devolvidoAll
+        });
+      } catch { /* ignore */ }
       this.loading = false;
       // set pagination metadata: currently using vendasFiltradas total
       this.total = this.vendasFiltradas.length;
@@ -814,7 +980,7 @@ export class RelatorioVendasComponent implements OnInit {
     const list = vendasFiltradas ?? this.computeVendasFiltradas();
     this.totalVendas = list.length;
     // Usar valor líquido quando disponível
-    this.receitaTotal = list.reduce((total, venda: any) => total + (venda.preco_total_liquido ?? venda.net_total ?? venda.preco_total ?? 0), 0);
+    this.receitaTotal = list.reduce((total, venda: any) => total + this.getNetValor(venda), 0);
     this.mediaVendas = this.totalVendas > 0 ? this.receitaTotal / this.totalVendas : 0;
 
     // Encontrar melhor dia
@@ -823,7 +989,7 @@ export class RelatorioVendasComponent implements OnInit {
       if (!acc[data]) {
         acc[data] = 0;
       }
-      acc[data] += venda.preco_total;
+      acc[data] += this.getNetValor(venda);
       return acc;
     }, {} as Record<string, number>);
 
@@ -853,14 +1019,16 @@ export class RelatorioVendasComponent implements OnInit {
         acc[data] = {
           data: data,
           total_vendas: 0,
-          quantidade_vendida: 0,
-          receita_total: 0
-        };
+          quantidade_vendida: 0, // bruta
+          receita_total: 0,
+          returned_total: 0
+        } as any; // cast any para permitir campo adicional dinamicamente
       }
       acc[data].total_vendas++;
       acc[data].quantidade_vendida += venda.quantidade_vendida;
-      (acc[data] as any).receita_total += (venda.preco_total_liquido ?? venda.net_total ?? venda.preco_total ?? 0);
+      (acc[data] as any).receita_total += this.getNetValor(venda);
       (acc[data] as any).returned_total = ((acc[data] as any).returned_total || 0) + (venda.returned_total || 0);
+      (acc[data] as any).returned_total_qty = ((acc[data] as any).returned_total_qty || 0) + (Number((venda as any).returned_quantity_total) || 0);
       return acc;
     }, {} as Record<string, RelatorioVendas>);
 
@@ -903,14 +1071,16 @@ export class RelatorioVendasComponent implements OnInit {
         acc[mes] = {
           data: mes,
           total_vendas: 0,
-          quantidade_vendida: 0,
-          receita_total: 0
-        };
+          quantidade_vendida: 0, // bruta
+          receita_total: 0,
+          returned_total: 0
+        } as any;
       }
       acc[mes].total_vendas++;
       acc[mes].quantidade_vendida += venda.quantidade_vendida;
-      (acc[mes] as any).receita_total += (venda.preco_total_liquido ?? venda.net_total ?? venda.preco_total ?? 0);
+      (acc[mes] as any).receita_total += this.getNetValor(venda);
       (acc[mes] as any).returned_total = ((acc[mes] as any).returned_total || 0) + (venda.returned_total || 0);
+      (acc[mes] as any).returned_total_qty = ((acc[mes] as any).returned_total_qty || 0) + (Number((venda as any).returned_quantity_total) || 0);
       return acc;
     }, {} as Record<string, RelatorioVendas>);
 
@@ -992,6 +1162,17 @@ export class RelatorioVendasComponent implements OnInit {
       .filter(v => this.passaFiltroNome(v))
       .filter(v => this.passaFiltroMetodo(v))
       .sort((a, b) => this.ordenarPorDataEId(a, b));
+  }
+
+  private getNetValor(venda: any): number {
+    try {
+      if (venda == null) return 0;
+      const bruto = Number(venda.preco_total ?? 0) || 0;
+      const liquido = Number(venda.preco_total_liquido ?? venda.net_total ?? NaN);
+      if (!isNaN(liquido)) return liquido;
+      const devolvido = Number(venda.returned_total ?? 0) || 0;
+      return Math.max(0, bruto - devolvido);
+    } catch { return 0; }
   }
 
   private ordenarPorDataEId(a: Venda, b: Venda): number {

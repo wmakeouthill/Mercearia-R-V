@@ -31,7 +31,7 @@
         <div class="estatistica-card">
             <div class="card-icon">📦</div>
             <div class="card-content">
-                <h3>Quantidade Total</h3>
+                <h3>Qtd Líq. Total</h3>
                 <p class="estatistica-valor">{{ getQuantidadeTotal() }}</p>
             </div>
         </div>
@@ -122,7 +122,6 @@
                     <tr>
                         <th class="col-numero">Nº</th>
                         <th class="col-produto">Produto</th>
-                        <th class="col-qtd">Qtd Líq.</th>
                         <th class="col-metodo">Pagamentos</th>
                         <th class="col-total">Total Líq.</th>
                         <th class="col-data">Data/Hora</th>
@@ -135,13 +134,14 @@
                         <td class="produto-info">
                             <div class="produto-nome com-imagem">
                                 <img class="produto-thumb-inline" [src]="getImageUrl(venda.produto_imagem)" [alt]="venda.produto_nome" (error)="onImageError($event)">
-                                <span>{{ venda.produto_nome || 'Produto #' + venda.produto_id }}</span>
+                                <span>
+                                    {{ venda._produtos_compostos || (venda.produto_nome || 'Produto #' + venda.produto_id) }}
+                                    <ng-container *ngIf="venda.returned_quantity_total > 0">
+                                      <span class="badge-return" [class.full]="(venda.preco_total_liquido ?? venda.net_total ?? 0) <= 0">(devolvido<span *ngIf="(venda.preco_total_liquido ?? venda.net_total ?? 0) > 0"> parcial</span>, qtd: {{ venda.returned_quantity_total }})</span>
+                                    </ng-container>
+                                </span>
                             </div>
                         </td>
-                                                <td class="quantidade">
-                                                    {{ venda.quantidade ?? venda.quantidade_vendida }}
-                                                    <span *ngIf="venda.quantidade_vendida != null && venda.quantidade != null && venda.quantidade !== venda.quantidade_vendida" class="qtd-bruta" title="Quantidade bruta antes de devoluções">({{ venda.quantidade_vendida }} bruta)</span>
-                                                </td>
                         <td class="metodo-pagamento">
                             @if (venda['pagamentos_resumo']) {<div class="pagamentos-resumo">
                                 {{ venda['pagamentos_resumo'] }}
@@ -161,25 +161,28 @@
                             <button *ngIf="venda.itens && venda.itens.length > 1" type="button" (click)="toggleExpand(venda.row_id)" class="btn-expand" [class.rotated]="expandedRows.has(venda.row_id)" [attr.aria-expanded]="expandedRows.has(venda.row_id)" title="Expandir venda">🔽</button>
                         </td>
                     </tr>
-                    <tr *ngIf="venda.itens && expandedRows.has(venda.row_id)" class="venda-itens-row"><td colspan="7">
+                    <tr *ngIf="venda.itens && expandedRows.has(venda.row_id)" class="venda-itens-row"><td colspan="6">
                         <div class="itens-lista">
                             <table class="itens-tabela">
-                                                                <thead><tr><th>Produto</th><th>Qtd Líq.</th><th>Preço unit.</th><th>Total Líq.</th></tr></thead>
+                                <thead><tr><th>Produto</th><th>Qtd</th><th>Preço unit.</th><th>Total</th></tr></thead>
                                 <tbody>
                                     @for (it of venda.itens; track it.produto_id) {<tr>
                                         <td class="produto-info">
                                             <img class="produto-thumb-inline" [src]="getImageUrl(it.produto_imagem || it.produtoImagem)" [alt]="it.produto_nome || it.produtoNome || 'Produto'" (error)="onImageError($event)">
-                                                                                        <span>{{ it.produto_nome || it.produtoNome }}</span>
+                                                                                        <span>
+                                                                                            {{ it.produto_nome || it.produtoNome }}
+                                                                                            <span *ngIf="it.returned_quantity > 0" class="badge-return item" [class.full]="(it.preco_total_liquido ?? it.preco_total) === 0" [title]="it.returned_quantity + ' unidades devolvidas'">(devolvido, qtd: {{ it.returned_quantity }})</span>
+                                                                                        </span>
                                         </td>
-                                                                                <td>
-                                                                                    {{ (it.quantidade_liquida ?? (it.quantidade || it.quantidade_vendida)) }}
-                                                                                    <span *ngIf="it.quantidade_liquida != null && it.quantidade != null && it.quantidade_liquida !== it.quantidade" class="subinfo">({{ it.quantidade }} bruta)</span>
-                                                                                </td>
-                                                                                <td>{{ (it.preco_unitario || it.precoUnitario || it.preco || 0) | currencyBR }}</td>
-                                                                                <td>
-                                                                                    {{ (it.preco_total_liquido ?? it.preco_total ?? it.precoTotal ?? 0) | currencyBR }}
-                                                                                    <span *ngIf="it.preco_total_liquido != null && it.preco_total != null && it.preco_total_liquido !== it.preco_total" class="subinfo">({{ (it.preco_total || it.precoTotal || 0) | currencyBR }} bruto)</span>
-                                                                                </td>
+                                        <td>
+                                            {{ it.quantidade_liquida != null ? it.quantidade_liquida : ((it.quantidade || it.quantidade_vendida || 0) - (it.returned_quantity || 0)) }}
+                                            <span *ngIf="it.quantidade != null && (it.returned_quantity || 0) > 0" class="subinfo">({{ it.quantidade }} bruta)</span>
+                                        </td>
+                                        <td>{{ (it.preco_unitario || it.precoUnitario || it.preco || 0) | currencyBR }}</td>
+                                        <td>
+                                            {{ (it.preco_total_liquido ?? it.preco_total ?? it.precoTotal ?? 0) | currencyBR }}
+                                            <span *ngIf="it.preco_total_liquido != null && it.preco_total != null && it.preco_total_liquido !== it.preco_total" class="subinfo">({{ (it.preco_total || it.precoTotal || 0) | currencyBR }} bruto)</span>
+                                        </td>
                                     </tr>}
                                 </tbody>
                             </table>
