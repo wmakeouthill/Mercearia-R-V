@@ -137,6 +137,7 @@
                                 <img class="produto-thumb-inline" [src]="getImageUrl(venda.produto_imagem)" [alt]="venda.produto_nome" (error)="onImageError($event)">
                                 <span>
                                     {{ venda._produtos_compostos || (venda.produto_nome || 'Produto #' + venda.produto_id) }}
+                                    <span *ngIf="venda.exchange_difference_total && venda.exchange_difference_total !== 0" class="badge-exchange">(troca {{ venda.exchange_difference_total > 0 ? '+' : '-' }}{{ (venda.exchange_difference_total | number:'1.2-2':'pt-BR') }})</span>
                                     <ng-container *ngIf="venda.returned_quantity_total > 0">
                                       <span class="badge-return" [class.full]="(venda.preco_total_liquido ?? venda.net_total ?? 0) <= 0">(devolvido<span *ngIf="(venda.preco_total_liquido ?? venda.net_total ?? 0) > 0"> parcial</span>, qtd: {{ venda.returned_quantity_total }})</span>
                                     </ng-container>
@@ -176,6 +177,7 @@
                                             <img class="produto-thumb-inline" [src]="getImageUrl(it.produto_imagem || it.produtoImagem)" [alt]="it.produto_nome || it.produtoNome || 'Produto'" (error)="onImageError($event)">
                                                                                         <span>
                                                                                             {{ it.produto_nome || it.produtoNome }}
+                                                                                            <span *ngIf="it.exchange_difference_total && it.exchange_difference_total !== 0" class="badge-exchange item">(troca {{ it.exchange_difference_total > 0 ? '+' : '-' }}{{ (it.exchange_difference_total | number:'1.2-2':'pt-BR') }})</span>
                                                                                             <span *ngIf="it.returned_quantity > 0" class="badge-return item" [class.full]="(it.preco_total_liquido ?? it.preco_total) === 0" [title]="it.returned_quantity + ' unidades devolvidas'">(devolvido, qtd: {{ it.returned_quantity }})</span>
                                                                                         </span>
                                         </td>

@@ -241,11 +241,22 @@ export class HistoricoVendasComponent implements OnInit, OnDestroy {
           if (Array.isArray(m?.adjustments)) adjustments = m.adjustments;
           else if (Array.isArray(m?.ajustes)) adjustments = m.ajustes;
           const returnedByItem: Record<string, number> = {};
+          let exchangeDiffTotal = 0;
           for (const a of adjustments) {
             const t = (a?.type || a?.tipo || '').toLowerCase();
             if (t === 'return') {
               const sid = String(a.sale_item_id || a.saleItem?.id || '');
               if (sid) returnedByItem[sid] = (returnedByItem[sid] || 0) + (a.quantity || a.quantidade || 0);
+            } else if (t === 'exchange' || t === 'troca') {
+              let diffRaw: any = a.difference ?? a.diferenca ?? (a as any).valor_diferenca ?? a.amount ?? a.valor ?? 0;
+              // Aceitar string com vírgula decimal ("1,50")
+              if (typeof diffRaw === 'string') {
+                const cleaned = diffRaw.replace(/\s/g, '').replace(/\.(?=\d{3}(?:\D|$))/g, '').replace(',', '.');
+                const parsed = Number(cleaned);
+                if (!isNaN(parsed)) diffRaw = parsed;
+              }
+              const diffNum = Number(diffRaw) || 0;
+              if (diffNum !== 0) exchangeDiffTotal += diffNum;
             }
           }
           // Montagem de nomes completa será feita após calcular returned_quantity por item
@@ -296,7 +307,13 @@ export class HistoricoVendasComponent implements OnInit, OnDestroy {
               const ret = Number((it as any).returned_quantity || 0);
               if (ret > 0) partes.push(`${baseNome} (devolvido, qtd: ${ret})`); else partes.push(baseNome);
             }
-            if (partes.length > 0) (m as any)._produtos_compostos = partes.join(', ');
+            let composed = partes.join(', ');
+            if (exchangeDiffTotal !== 0) {
+              const sign = exchangeDiffTotal > 0 ? '+' : '-';
+              composed = `${composed} (troca ${sign}${Math.abs(exchangeDiffTotal).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`;
+              (m as any).exchange_difference_total = exchangeDiffTotal;
+            }
+            if (partes.length > 0) (m as any)._produtos_compostos = composed;
           } catch { /* ignore */ }
           // Quantidade líquida agregada
           const qtyOrigAgg = itens.reduce((s: number, it: any) => s + (Number(it.quantidade || it.quantidade_vendida) || 0), 0);

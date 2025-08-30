@@ -734,6 +734,7 @@ export class RelatorioVendasComponent implements OnInit, OnDestroy {
         const adjustments: any[] = Array.isArray(v.adjustments) ? v.adjustments : (Array.isArray(v.ajustes) ? v.ajustes : []);
         // Mapear quantidades devolvidas por item
         const returnedByItem: Record<string, number> = {};
+        let exchangeDiffTotal = 0;
         for (const a of adjustments) {
           try {
             const t = (a?.type || a?.tipo || '').toLowerCase();
@@ -741,6 +742,15 @@ export class RelatorioVendasComponent implements OnInit, OnDestroy {
               const sid = String(a.sale_item_id || a.saleItem?.id || a.saleItemId || a.item_id || '');
               const q = Number(a.quantity || a.quantidade || 0) || 0;
               if (sid && q > 0) returnedByItem[sid] = (returnedByItem[sid] || 0) + q;
+            } else if (t === 'exchange' || t === 'troca') {
+              let diffRaw: any = a.difference ?? a.diferenca ?? (a as any).valor_diferenca ?? a.amount ?? a.valor ?? 0;
+              if (typeof diffRaw === 'string') {
+                const cleaned = diffRaw.replace(/\s/g, '').replace(/\.(?=\d{3}(?:\D|$))/g, '').replace(',', '.');
+                const parsed = Number(cleaned);
+                if (!isNaN(parsed)) diffRaw = parsed;
+              }
+              const diffNum = Number(diffRaw) || 0;
+              if (diffNum !== 0) exchangeDiffTotal += diffNum;
             }
           } catch { /* ignore */ }
         }
@@ -801,6 +811,7 @@ export class RelatorioVendasComponent implements OnInit, OnDestroy {
         }
         // Montar nome agregando cada produto com anotações por item
         let produtoNome = '';
+        let exchangeAnnotation = '';
         if (Array.isArray(itens) && itens.length > 0) {
           const partes: string[] = [];
           for (const it of itens) {
@@ -809,6 +820,10 @@ export class RelatorioVendasComponent implements OnInit, OnDestroy {
             if (rq > 0) partes.push(`${baseNome} (devolvido, qtd: ${rq})`); else partes.push(baseNome);
           }
           produtoNome = partes.join(', ');
+          if (exchangeDiffTotal !== 0) {
+            const sign = exchangeDiffTotal > 0 ? '+' : '-';
+            exchangeAnnotation = `(troca ${sign}${Math.abs(exchangeDiffTotal).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`;
+          }
         } else {
           produtoNome = `Pedido #${v.id} (${itens.length} itens)`;
         }
@@ -858,6 +873,9 @@ export class RelatorioVendasComponent implements OnInit, OnDestroy {
         }
         const produtoImagem = Array.isArray(itens) && itens.length > 0 ? (itens[0].produto_imagem || itens[0].produtoImagem) : null;
 
+        if (exchangeAnnotation) {
+          produtoNome = `${produtoNome} ${exchangeAnnotation}`;
+        }
         const linha: Venda = {
           id: v.id,
           produto_id: v.id,
