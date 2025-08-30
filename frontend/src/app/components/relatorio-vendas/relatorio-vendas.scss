@@ -765,6 +765,20 @@
         &.partial { background: linear-gradient(135deg, #fff2d6, #ffe4ad); color: #8a5a00; }
     }
 
+    .badge-exchange {
+        display: inline-block;
+        margin-left: 4px;
+        font-size: 0.65rem;
+        padding: 2px 6px;
+        border-radius: 6px;
+        background: linear-gradient(135deg, #e5f2ff, #d7ecff);
+        color: #004d80;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        &.item { background: linear-gradient(135deg, #f0f8ff, #e8f3ff); font-weight: 600; }
+    }
+
     .acoes {
         display: flex; /* usar flex para ocupar corretamente o espaço da célula */
         gap: 8px;

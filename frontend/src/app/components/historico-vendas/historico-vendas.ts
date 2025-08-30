@@ -241,6 +241,10 @@ export class HistoricoVendasComponent implements OnInit, OnDestroy {
           if (Array.isArray(m?.adjustments)) adjustments = m.adjustments;
           else if (Array.isArray(m?.ajustes)) adjustments = m.ajustes;
           const returnedByItem: Record<string, number> = {};
+          const exchangeDiffByItem: Record<string, number> = {};
+          const exchangeMethodByItem: Record<string, string> = {};
+          const exchangePaymentMethods = new Set<string>();
+          const exchangesRaw: Array<{ sid?: string; rpid?: number; diff: number; pm?: string; qty?: number }> = [];
           let exchangeDiffTotal = 0;
           for (const a of adjustments) {
             const t = (a?.type || a?.tipo || '').toLowerCase();
@@ -248,7 +252,7 @@ export class HistoricoVendasComponent implements OnInit, OnDestroy {
               const sid = String(a.sale_item_id || a.saleItem?.id || '');
               if (sid) returnedByItem[sid] = (returnedByItem[sid] || 0) + (a.quantity || a.quantidade || 0);
             } else if (t === 'exchange' || t === 'troca') {
-              let diffRaw: any = a.difference ?? a.diferenca ?? (a as any).valor_diferenca ?? a.amount ?? a.valor ?? 0;
+              let diffRaw: any = a.difference ?? a.diferenca ?? a.price_difference ?? (a as any).priceDifference ?? (a as any).valor_diferenca ?? a.amount ?? a.valor ?? 0;
               // Aceitar string com vírgula decimal ("1,50")
               if (typeof diffRaw === 'string') {
                 const cleaned = diffRaw.replace(/\s/g, '').replace(/\.(?=\d{3}(?:\D|$))/g, '').replace(',', '.');
@@ -257,6 +261,19 @@ export class HistoricoVendasComponent implements OnInit, OnDestroy {
               }
               const diffNum = Number(diffRaw) || 0;
               if (diffNum !== 0) exchangeDiffTotal += diffNum;
+              try {
+                const sid = String(a.sale_item_id || a.saleItem?.id || a.saleItemId || a.item_id || '');
+                if (sid) exchangeDiffByItem[sid] = (exchangeDiffByItem[sid] || 0) + diffNum;
+                const pm = (a as any).payment_method || (a as any).metodo_pagamento;
+                if (pm) {
+                  exchangeMethodByItem[sid] = String(pm);
+                  exchangePaymentMethods.add(String(pm));
+                }
+                const rpidRaw = (a as any).replacement_product_id || (a as any).replacementProductId;
+                const rpid = rpidRaw != null ? Number(rpidRaw) : undefined;
+                const q = Number((a as any).quantity || (a as any).quantidade || 0) || 0;
+                exchangesRaw.push({ sid, rpid, diff: diffNum, pm, qty: q });
+              } catch { /* ignore */ }
             }
           }
           // Montagem de nomes completa será feita após calcular returned_quantity por item
@@ -298,7 +315,79 @@ export class HistoricoVendasComponent implements OnInit, OnDestroy {
             if ((it as any).quantidade_liquida == null) (it as any).quantidade_liquida = eff;
             if ((it as any).preco_total == null) (it as any).preco_total = grossItem;
             if ((it as any).preco_total_liquido == null) (it as any).preco_total_liquido = netItem;
+            // Anexar diferença de troca por item, se houver
+            try {
+              const exch = Number(exchangeDiffByItem[sid] || 0) || 0;
+              if (exch !== 0) {
+                (it as any).exchange_difference_total = exch;
+                const pm = exchangeMethodByItem[sid];
+                if (pm) (it as any).exchange_payment_method = pm;
+              }
+            } catch { /* ignore */ }
           }
+          // Fallback: se não casou por sale_item_id, tentar por replacement_product_id ou primeiro item
+          try {
+            const itemsArr = Array.isArray(itens) ? itens : [];
+            // Mapas para localizar itens por id e produto_id
+            const idToIndex: Record<string, number> = {};
+            const pidToIndex: Record<string, number> = {};
+            for (let i = 0; i < itemsArr.length; i++) {
+              const it = itemsArr[i] as any;
+              const iid = String(it.id || it.item_id || it.sale_item_id || '');
+              if (iid) idToIndex[iid] = i;
+              const pid = String(it.produto_id || it.produtoId || (it.produto?.id) || '');
+              if (pid) pidToIndex[pid] = i;
+            }
+            for (const ex of exchangesRaw) {
+              // já aplicado via sid
+              if (ex.sid && Number(exchangeDiffByItem[ex.sid] || 0) !== 0) continue;
+              let targetIdx = -1;
+              if (ex.rpid != null) {
+                targetIdx = itemsArr.findIndex((it: any) => Number(it.produto_id || it.produtoId || it.produto?.id) === Number(ex.rpid));
+              }
+              if (targetIdx < 0) {
+                // escolher item com maior preco_total
+                let max = -Infinity; let idx = -1;
+                for (let i = 0; i < itemsArr.length; i++) {
+                  const it = itemsArr[i];
+                  const val = Number(it.preco_total || it.precoTotal || 0) || 0;
+                  if (val > max) { max = val; idx = i; }
+                }
+                targetIdx = idx >= 0 ? idx : 0;
+              }
+              const tgt = itemsArr[targetIdx];
+              if (tgt) {
+                (tgt as any).exchange_difference_total = ((tgt as any).exchange_difference_total || 0) + Number(ex.diff || 0);
+                if (ex.pm) (tgt as any).exchange_payment_method = String(ex.pm);
+              }
+              // Vincular informações detalhadas (de/para)
+              try {
+                let fromIdx = ex.sid && idToIndex[ex.sid] != null ? idToIndex[ex.sid] : -1;
+                const toIdx = ex.rpid != null && pidToIndex[String(ex.rpid)] != null ? pidToIndex[String(ex.rpid)] : targetIdx;
+                // Se não conseguimos fromIdx, e há exatamente 2 itens, usar o outro índice
+                if (fromIdx < 0 && itemsArr.length === 2) fromIdx = (toIdx === 0 ? 1 : 0);
+                const fromIt = itemsArr[fromIdx] as any;
+                const toIt = itemsArr[toIdx] as any;
+                const q = Number(ex.qty || 0) || 0;
+                const diff = Number(ex.diff || 0) || 0;
+                const pm = ex.pm ? String(ex.pm) : undefined;
+                if (fromIt && toIt) {
+                  fromIt._exchange_partner_name = (toIt.produto_nome || toIt.produtoNome || 'Produto');
+                  fromIt._exchange_partner_role = 'from';
+                  fromIt._exchange_quantity = q || 1;
+                  fromIt._exchange_diff = diff;
+                  if (pm) fromIt._exchange_payment_method = pm;
+                  toIt._exchange_partner_name = (fromIt.produto_nome || fromIt.produtoNome || 'Produto');
+                  toIt._exchange_partner_role = 'to';
+                  toIt._exchange_quantity = q || 1;
+                  toIt._exchange_diff = diff;
+                  if (pm) toIt._exchange_payment_method = pm;
+                  // Garantir valor monetário também no fromIt para exibição
+                  fromIt.exchange_difference_total = Number(fromIt.exchange_difference_total || 0) + diff;
+                }
+              } catch { /* ignore */ }
+            }
+          } catch { /* ignore */ }
           // Após calcular returned_quantity por item, montar lista completa com anotações
           try {
             const partes: string[] = [];
@@ -370,9 +459,24 @@ export class HistoricoVendasComponent implements OnInit, OnDestroy {
           (m as any).preco_total ??= grossTotal;
           if (m.net_total != null) {
             m.preco_total_liquido = Number(m.net_total) || 0;
-          } else if (m.preco_total_liquido == null) {
-            m.preco_total_liquido = netTotal;
+          } else {
+            // Ajuste líquido considerando devoluções (já refletidas em netTotal) + diferença de troca
+            const exchangeAdj = Number((m as any).exchange_difference_total || exchangeDiffTotal || 0) || 0;
+            m.preco_total_liquido = Number(netTotal) + exchangeAdj;
           }
+          // Log de trocas por item para debug
+          try {
+            const itemsLog = (Array.isArray(itens) ? itens : []).map((it: any) => ({
+              produto: it.produto_nome || it.produtoNome,
+              diff: Number((it as any).exchange_difference_total || 0) || 0,
+              pm: (it as any).exchange_payment_method || null
+            }));
+            logger.info('HISTORICO_VENDAS', 'EXCHANGE_MAP', 'Trocas mapeadas na venda', {
+              id: m.id,
+              exchange_total: Number((m as any).exchange_difference_total || exchangeDiffTotal || 0) || 0,
+              itens: itemsLog
+            });
+          } catch { /* ignore */ }
           // Valor devolvido agregado (se não presente)
           if (m.returned_total == null) {
             const calcReturned = Math.max(0, grossTotal - (m.preco_total_liquido ?? netTotal));
@@ -420,6 +524,9 @@ export class HistoricoVendasComponent implements OnInit, OnDestroy {
               if (firstImagem) m.produto_imagem = firstImagem;
             }
           }
+          try {
+            if (exchangePaymentMethods.size > 0) (m as any).exchange_payment_methods = Array.from(exchangePaymentMethods);
+          } catch { /* ignore */ }
           return m;
         });
 
@@ -616,6 +723,30 @@ export class HistoricoVendasComponent implements OnInit, OnDestroy {
     const map: any = { dinheiro: '💵', cartao_credito: '💳', cartao_debito: '🏧', pix: '📱' };
     return map[metodo] || '💰';
   }
+
+  // --- Helpers para exibição de troca por item (com fallback quando só há 1 item) ---
+  getItemExchangeDiff(item: any, venda: any): number {
+    try {
+      const d = Number(item?.exchange_difference_total ?? 0) || 0;
+      if (d !== 0) return d;
+      const itensLen = Array.isArray(venda?.itens) ? venda.itens.length : 0;
+      if (itensLen === 1) return Number(venda?.exchange_difference_total ?? 0) || 0;
+      return 0;
+    } catch { return 0; }
+  }
+
+  getItemExchangeMethod(item: any, venda: any): string | null {
+    try {
+      const m = item?.exchange_payment_method;
+      if (m) return String(m);
+      const itensLen = Array.isArray(venda?.itens) ? venda.itens.length : 0;
+      const list = venda?.exchange_payment_methods;
+      if (itensLen === 1 && Array.isArray(list) && list.length) return list.join(' / ');
+      return null;
+    } catch { return null; }
+  }
+
+  absValue(n: number): number { return Math.abs(Number(n) || 0); }
 
   filterVendas(): void {
     const src = this.vendasFiltradasAll || this.vendasFiltradas || [];

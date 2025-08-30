@@ -732,8 +732,11 @@ export class RelatorioVendasComponent implements OnInit, OnDestroy {
         const pagamentos: Array<{ metodo: MetodoPagamento; valor: number }> = (v.pagamentos || []);
         const itens = v.itens || [];
         const adjustments: any[] = Array.isArray(v.adjustments) ? v.adjustments : (Array.isArray(v.ajustes) ? v.ajustes : []);
-        // Mapear quantidades devolvidas por item
+        // Mapear quantidades devolvidas por item e trocas (diferença e método) por item
         const returnedByItem: Record<string, number> = {};
+        const exchangeDiffByItem: Record<string, number> = {};
+        const exchangePmByItem: Record<string, string> = {};
+        const exchangesRaw: Array<{ sid?: string; rpid?: number; diff: number; pm?: string; qty?: number }> = [];
         let exchangeDiffTotal = 0;
         for (const a of adjustments) {
           try {
@@ -743,7 +746,7 @@ export class RelatorioVendasComponent implements OnInit, OnDestroy {
               const q = Number(a.quantity || a.quantidade || 0) || 0;
               if (sid && q > 0) returnedByItem[sid] = (returnedByItem[sid] || 0) + q;
             } else if (t === 'exchange' || t === 'troca') {
-              let diffRaw: any = a.difference ?? a.diferenca ?? (a as any).valor_diferenca ?? a.amount ?? a.valor ?? 0;
+              let diffRaw: any = a.difference ?? a.diferenca ?? a.price_difference ?? (a as any).priceDifference ?? (a as any).valor_diferenca ?? a.amount ?? a.valor ?? 0;
               if (typeof diffRaw === 'string') {
                 const cleaned = diffRaw.replace(/\s/g, '').replace(/\.(?=\d{3}(?:\D|$))/g, '').replace(',', '.');
                 const parsed = Number(cleaned);
@@ -751,8 +754,21 @@ export class RelatorioVendasComponent implements OnInit, OnDestroy {
               }
               const diffNum = Number(diffRaw) || 0;
               if (diffNum !== 0) exchangeDiffTotal += diffNum;
+              const sid2 = String(a.sale_item_id || a.saleItem?.id || a.saleItemId || a.item_id || '');
+              if (sid2) {
+                exchangeDiffByItem[sid2] = (exchangeDiffByItem[sid2] || 0) + diffNum;
+              }
+              const pm = (a as any).payment_method || (a as any).metodo_pagamento;
+              if (pm) {
+                exchangePmByItem[sid2] = String(pm);
+                (v as any).exchange_payment_methods = Array.from(new Set([...(v as any).exchange_payment_methods || [], String(pm)]));
+              }
+              const rpidRaw = (a as any).replacement_product_id || (a as any).replacementProductId;
+              const rpid = rpidRaw != null ? Number(rpidRaw) : undefined;
+              const q = Number((a as any).quantity || (a as any).quantidade || 0) || 0;
+              exchangesRaw.push({ sid: sid2 || undefined, rpid, diff: diffNum, pm, qty: q });
             }
-          } catch { /* ignore */ }
+          } catch (e) { /* ignore unsafe payload shape */ }
         }
         const metodoResumo = this.buildPagamentoResumo(pagamentos);
         const metodosSet = new Set<MetodoPagamento>();
@@ -787,7 +803,7 @@ export class RelatorioVendasComponent implements OnInit, OnDestroy {
           }
         } catch { /* ignore */ }
 
-        // Decorar itens com quantidade devolvida antes de montar nome
+        // Decorar itens com quantidade devolvida e diferença de troca antes de montar nome
         if (Array.isArray(itens)) {
           for (const it of itens) {
             try {
@@ -806,12 +822,68 @@ export class RelatorioVendasComponent implements OnInit, OnDestroy {
                 }
               }
               if (ret > 0) (it as any).returned_quantity = ret;
-            } catch { /* ignore */ }
+              // exchange diff per item + método
+              const exch = Number(exchangeDiffByItem[sid] || 0) || 0;
+              if (exch !== 0) (it as any).exchange_difference_total = exch;
+              const pm = exchangePmByItem[sid];
+              if (pm) (it as any).exchange_payment_method = pm;
+            } catch (e) { /* ignore mapping error for item */ }
           }
         }
+        // Fallback: se não casou por sale_item_id, tentar por replacement_product_id ou 1º item
+        try {
+          const itemsArr = Array.isArray(itens) ? itens : [];
+          const idToIndex: Record<string, number> = {};
+          const pidToIndex: Record<string, number> = {};
+          for (let i = 0; i < itemsArr.length; i++) {
+            const it = itemsArr[i] as any;
+            const iid = String(it.id || it.item_id || it.sale_item_id || '');
+            if (iid) idToIndex[iid] = i;
+            const pid = String(it.produto_id || it.produtoId || (it.produto?.id) || '');
+            if (pid) pidToIndex[pid] = i;
+          }
+          for (const ex of exchangesRaw) {
+            if (ex.sid && Number(exchangeDiffByItem[ex.sid] || 0) !== 0) continue;
+            let targetIdx = -1;
+            if (ex.rpid != null) {
+              targetIdx = itemsArr.findIndex((it: any) => Number(it.produto_id || it.produtoId || it.produto?.id) === Number(ex.rpid));
+            }
+            if (targetIdx < 0) targetIdx = 0;
+            const tgt = itemsArr[targetIdx];
+            if (tgt) {
+              (tgt as any).exchange_difference_total = ((tgt as any).exchange_difference_total || 0) + Number(ex.diff || 0);
+              if (ex.pm) (tgt as any).exchange_payment_method = String(ex.pm);
+            }
+            // Detalhar mapeamento (de/para) nos itens
+            try {
+              let fromIdx = ex.sid && idToIndex[ex.sid] != null ? idToIndex[ex.sid] : -1;
+              const toIdx = ex.rpid != null && pidToIndex[String(ex.rpid)] != null ? pidToIndex[String(ex.rpid)] : targetIdx;
+              if (fromIdx < 0 && itemsArr.length === 2) fromIdx = (toIdx === 0 ? 1 : 0);
+              const fromIt = itemsArr[fromIdx] as any;
+              const toIt = itemsArr[toIdx] as any;
+              const q = Number(ex.qty || 0) || 0;
+              const diff = Number(ex.diff || 0) || 0;
+              const pm = ex.pm ? String(ex.pm) : undefined;
+              if (fromIt && toIt) {
+                fromIt._exchange_partner_name = (toIt.produto_nome || toIt.produtoNome || 'Produto');
+                fromIt._exchange_partner_role = 'from';
+                fromIt._exchange_quantity = q || 1;
+                fromIt._exchange_diff = diff;
+                if (pm) fromIt._exchange_payment_method = pm;
+                toIt._exchange_partner_name = (fromIt.produto_nome || fromIt.produtoNome || 'Produto');
+                toIt._exchange_partner_role = 'to';
+                toIt._exchange_quantity = q || 1;
+                toIt._exchange_diff = diff;
+                if (pm) toIt._exchange_payment_method = pm;
+                fromIt.exchange_difference_total = Number(fromIt.exchange_difference_total || 0) + diff;
+              }
+            } catch { /* ignore */ }
+          }
+        } catch { /* ignore */ }
         // Montar nome agregando cada produto com anotações por item
         let produtoNome = '';
         let exchangeAnnotation = '';
+        let composedProdutoNome = '';
         if (Array.isArray(itens) && itens.length > 0) {
           const partes: string[] = [];
           for (const it of itens) {
@@ -824,8 +896,11 @@ export class RelatorioVendasComponent implements OnInit, OnDestroy {
             const sign = exchangeDiffTotal > 0 ? '+' : '-';
             exchangeAnnotation = `(troca ${sign}${Math.abs(exchangeDiffTotal).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`;
           }
+          // Nome composto (para exibição) inclui anotações de devolução e, quando houver, de troca
+          composedProdutoNome = exchangeAnnotation ? `${produtoNome} ${exchangeAnnotation}` : produtoNome;
         } else {
           produtoNome = `Pedido #${v.id} (${itens.length} itens)`;
+          composedProdutoNome = produtoNome;
         }
         // Fallback: se nenhuma anotação adicionada e existe diferença bruto-liquido indicando devolução, tentar distribuir
         if (!/devolvido, qtd:/i.test(produtoNome)) {
@@ -872,10 +947,6 @@ export class RelatorioVendasComponent implements OnInit, OnDestroy {
           } catch { /* ignore */ }
         }
         const produtoImagem = Array.isArray(itens) && itens.length > 0 ? (itens[0].produto_imagem || itens[0].produtoImagem) : null;
-
-        if (exchangeAnnotation) {
-          produtoNome = `${produtoNome} ${exchangeAnnotation}`;
-        }
         const linha: Venda = {
           id: v.id,
           produto_id: v.id,
@@ -887,11 +958,27 @@ export class RelatorioVendasComponent implements OnInit, OnDestroy {
           produto_imagem: produtoImagem,
           pagamentos_resumo: metodoResumo,
         } as any;
+        // Adicionar nome composto e total de diferença de troca para exibição consistente nas tabelas
+        (linha as any)._produtos_compostos = composedProdutoNome;
+        (linha as any).exchange_difference_total = exchangeDiffTotal;
         (linha as any).itens = itens;
         (linha as any).metodos_multi = Array.from(metodosSet);
         (linha as any).row_id = `checkout-${v.id}-${rowCounter++}`;
         (linha as any)._isCheckout = true;
         (linha as any).returned_total = returnedTotal;
+        // Log de trocas por item para debug
+        try {
+          const itemsLog = (Array.isArray(itens) ? itens : []).map((it: any) => ({
+            produto: it.produto_nome || it.produtoNome,
+            diff: Number((it as any).exchange_difference_total || 0) || 0,
+            pm: (it as any).exchange_payment_method || null
+          }));
+          logger.info('RELATORIO_VENDAS', 'EXCHANGE_MAP', 'Trocas mapeadas na venda', {
+            id: v.id,
+            exchange_total: Number((linha as any).exchange_difference_total || 0) || 0,
+            itens: itemsLog
+          });
+        } catch { /* ignore */ }
         if (netTotal !== undefined) (linha as any).preco_total_liquido = netTotal;
         // Não anexar mais sufixo agregado no produto_nome; mostramos badge separado e anotações por item dentro da lista
         // Persistir quantidades agregadas para uso consistente em tabelas / relatórios
@@ -1330,6 +1417,30 @@ export class RelatorioVendasComponent implements OnInit, OnDestroy {
       'pix': '📱'
     };
     return icones[metodo] || '💰';
+  }
+
+  absValue(n: number): number { return Math.abs(Number(n) || 0); }
+
+  // Helpers para exibir troca por item com fallback (quando venda tem apenas 1 item)
+  getItemExchangeDiff(item: any, venda: any): number {
+    try {
+      const d = Number(item?.exchange_difference_total ?? 0) || 0;
+      if (d !== 0) return d;
+      const itensLen = Array.isArray(venda?.itens) ? venda.itens.length : 0;
+      if (itensLen === 1) return Number(venda?.exchange_difference_total ?? 0) || 0;
+      return 0;
+    } catch { return 0; }
+  }
+
+  getItemExchangeMethod(item: any, venda: any): string | null {
+    try {
+      const m = item?.exchange_payment_method;
+      if (m) return String(m);
+      const itensLen = Array.isArray(venda?.itens) ? venda.itens.length : 0;
+      const list = venda?.exchange_payment_methods;
+      if (itensLen === 1 && Array.isArray(list) && list.length) return list.join(' / ');
+      return null;
+    } catch { return null; }
   }
 
   getImageUrl(imageName: string | null | undefined): string {

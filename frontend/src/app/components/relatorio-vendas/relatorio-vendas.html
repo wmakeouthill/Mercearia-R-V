@@ -1,370 +1,853 @@
 <div class="relatorio-container">
-    <div class="relatorio-header">
-        <h1>Relatório de Vendas</h1>
-        <div class="header-actions">
-            <button (click)="irParaGraficos()" class="btn-graficos">📈 Gráficos</button>
-            <button (click)="voltarAoDashboard()" class="btn-voltar">← Voltar ao Dashboard</button>
+  <div class="relatorio-header">
+    <h1>Relatório de Vendas</h1>
+    <div class="header-actions">
+      <button (click)="irParaGraficos()" class="btn-graficos">
+        📈 Gráficos
+      </button>
+      <button (click)="voltarAoDashboard()" class="btn-voltar">
+        ← Voltar ao Dashboard
+      </button>
+    </div>
+  </div>
+
+  @if (error) {
+  <div class="error-message">
+    {{ error }}
+  </div>
+  }
+
+  <!-- Estatísticas Gerais -->
+  <div class="estatisticas-grid">
+    <div class="estatistica-card">
+      <div class="card-icon">📊</div>
+      <div class="card-content">
+        <h3>Total de Vendas</h3>
+        <p class="estatistica-valor">{{ totalVendas }}</p>
+      </div>
+    </div>
+    <div class="estatistica-card">
+      <div class="card-icon">💰</div>
+      <div class="card-content">
+        <h3>Receita Total</h3>
+        <p class="estatistica-valor">{{ receitaTotal | currencyBR }}</p>
+      </div>
+    </div>
+    <div class="estatistica-card">
+      <div class="card-icon">📈</div>
+      <div class="card-content">
+        <h3>Média por Venda</h3>
+        <p class="estatistica-valor">{{ mediaVendas | currencyBR }}</p>
+      </div>
+    </div>
+    <div class="estatistica-card">
+      <div class="card-icon">🏆</div>
+      <div class="card-content">
+        <h3>Melhor Dia</h3>
+        <p class="estatistica-valor-pequeno">
+          {{ formatarMelhorDia(melhorDia) }}
+        </p>
+        <p class="estatistica-sub">{{ melhorDiaReceita | currencyBR }}</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Filtros -->
+  <div class="filtros-section">
+    <div class="filtros-content">
+      <div class="filtros-linha-superior">
+        <div class="filtros-grupo">
+          <div class="filtro-item">
+            <label for="periodo">Período:</label>
+            <select
+              id="periodo"
+              [(ngModel)]="filtroPeriodo"
+              (change)="aplicarFiltros()"
+              class="select-filtro"
+            >
+              <option value="dia">Diário</option>
+              <option value="mes">Mensal</option>
+            </select>
+          </div>
+          <div class="filtro-item">
+            <label for="data">Data:</label>
+            @if (filtroPeriodo === 'dia') {
+            <div style="display: flex; gap: 8px; align-items: center">
+              <input
+                type="date"
+                id="data"
+                [(ngModel)]="filtroData"
+                class="input-filtro"
+              />
+              <input
+                type="time"
+                id="dataHoraInicio"
+                [(ngModel)]="filtroHoraInicio"
+                class="input-filtro"
+                placeholder="HH:mm"
+              />
+              <span>—</span>
+              <input
+                type="time"
+                id="dataHoraFim"
+                [(ngModel)]="filtroHoraFim"
+                class="input-filtro"
+                placeholder="HH:mm"
+              />
+            </div>
+            } @if (filtroPeriodo === 'mes') {<input
+              type="month"
+              id="data-mes"
+              [(ngModel)]="filtroData"
+              class="input-filtro"
+            />}
+          </div>
         </div>
+        <div class="filtro-acoes">
+          <button (click)="aplicarFiltros()" class="btn-filtrar">
+            🔍 Filtrar
+          </button>
+          <button (click)="limparFiltros()" class="btn-limpar">
+            🔄 Limpar
+          </button>
+          <button (click)="exportarRelatorio()" class="btn-exportar">
+            📊 Exportar
+          </button>
+        </div>
+      </div>
+
+      <!-- Nova linha de filtros -->
+      <div class="filtros-linha-inferior">
+        <div class="filtros-grupo-detalhado">
+          <div class="filtro-item">
+            <label for="nomeProduto">🔍 Buscar Produto:</label>
+            <input
+              type="text"
+              id="nomeProduto"
+              [(ngModel)]="filtroNomeProduto"
+              placeholder="Digite o nome do produto..."
+              class="input-filtro input-busca"
+              (input)="aplicarFiltros()"
+            />
+          </div>
+          <div class="filtro-item">
+            <label for="metodoPagamento">💳 Método de Pagamento:</label>
+            <select
+              id="metodoPagamento"
+              [(ngModel)]="filtroMetodoPagamento"
+              class="select-filtro"
+              (change)="aplicarFiltros()"
+            >
+              <option value="">Todos os métodos</option>
+              <option value="dinheiro">💵 Dinheiro</option>
+              <option value="cartao_credito">💳 Cartão de Crédito</option>
+              <option value="cartao_debito">🏧 Cartão de Débito</option>
+              <option value="pix">📱 PIX</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Relatório Detalhado -->
+  <div class="relatorio-content">
+    <div class="header-top">
+      <div class="header-left">
+        <h2>Relatório {{ filtroPeriodo === "dia" ? "Diário" : "Mensal" }}</h2>
+      </div>
+      <div class="header-actions">
+        <label class="page-size-label"
+          >Linhas:
+          <select
+            [(ngModel)]="relatorioPageSize"
+            (change)="relatorioSetPageSize(relatorioPageSize)"
+            class="select-filtro page-size-select"
+          >
+            <option [ngValue]="5">5</option>
+            <option [ngValue]="10">10</option>
+            <option [ngValue]="20">20</option>
+            <option [ngValue]="30">30</option>
+            <option [ngValue]="50">50</option>
+          </select>
+        </label>
+      </div>
     </div>
 
-    @if (error) {<div class="error-message">
-        {{ error }}
-    </div>}
+    @if (loading) {
+    <div class="loading">Carregando relatório...</div>
+    } @if (!loading) {
+    <div class="relatorio-tabela">
+      <table class="tabela-relatorio">
+        <thead>
+          <tr>
+            <th>Data</th>
+            <th>Total de Vendas</th>
+            <th>Receita Líquida</th>
+            <th>Média por Venda</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (item of relatorioVendasPagina; track item.data) {
+          <tr>
+            <td>{{ formatarData(item.data) }}</td>
+            <td>{{ item.total_vendas }}</td>
+            <td>{{ item.receita_total | currencyBR }}</td>
+            <td>{{ item.receita_total / item.total_vendas | currencyBR }}</td>
+          </tr>
+          }
+        </tbody>
+      </table>
 
-    <!-- Estatísticas Gerais -->
-    <div class="estatisticas-grid">
-        <div class="estatistica-card">
-            <div class="card-icon">📊</div>
-            <div class="card-content">
-                <h3>Total de Vendas</h3>
-                <p class="estatistica-valor">{{ totalVendas }}</p>
-            </div>
+      <!-- Paginação do relatório (diário ou mensal) - forçada a aparecer mesmo com 1 página -->
+      @if (relatorioTotalPages >= 1) {
+      <div class="paginacao">
+        <div class="pagination-left">
+          <button
+            class="btn-page btn-ghost"
+            (click)="relatorioGoToFirstPage()"
+            [disabled]="relatorioPage <= 1"
+            title="Primeira"
+          >
+            «
+          </button>
+          <button
+            class="btn-page btn-ghost"
+            (click)="relatorioGoBy(-10)"
+            [disabled]="relatorioPage <= 1"
+            title="-10"
+          >
+            «10
+          </button>
+          <button
+            class="btn-page btn-ghost"
+            (click)="relatorioGoBy(-5)"
+            [disabled]="relatorioPage <= 1"
+            title="-5"
+          >
+            «5
+          </button>
+          <button
+            class="btn-page btn-ghost"
+            (click)="relatorioPrevPage()"
+            [disabled]="relatorioPage <= 1"
+            title="Anterior"
+          >
+            ‹
+          </button>
         </div>
-        <div class="estatistica-card">
-            <div class="card-icon">💰</div>
-            <div class="card-content">
-                <h3>Receita Total</h3>
-                <p class="estatistica-valor">{{ receitaTotal | currencyBR }}</p>
-            </div>
+        <div class="pagination-center">
+          @for (p of relatorioPaginationItems; track $index) { @if (p === '…')
+          {<span class="ellipsis">…</span>} @else {<button
+            class="btn-page"
+            [class.active]="p === relatorioPage"
+            (click)="relatorioOnClickPage(p)"
+          >
+            {{ p }}</button
+          >} }
         </div>
-        <div class="estatistica-card">
-            <div class="card-icon">📈</div>
-            <div class="card-content">
-                <h3>Média por Venda</h3>
-                <p class="estatistica-valor">{{ mediaVendas | currencyBR }}</p>
-            </div>
+        <div class="pagination-right">
+          <button
+            class="btn-page btn-ghost"
+            (click)="relatorioNextPage()"
+            [disabled]="relatorioPage >= relatorioTotalPages"
+            title="Próxima"
+          >
+            ›
+          </button>
+          <button
+            class="btn-page btn-ghost"
+            (click)="relatorioGoBy(5)"
+            [disabled]="relatorioPage >= relatorioTotalPages"
+            title="+5"
+          >
+            5»
+          </button>
+          <button
+            class="btn-page btn-ghost"
+            (click)="relatorioGoBy(10)"
+            [disabled]="relatorioPage >= relatorioTotalPages"
+            title="+10"
+          >
+            10»
+          </button>
+          <button
+            class="btn-page btn-ghost"
+            (click)="relatorioGoToLastPage()"
+            [disabled]="relatorioPage >= relatorioTotalPages"
+            title="Última"
+          >
+            »
+          </button>
         </div>
-        <div class="estatistica-card">
-            <div class="card-icon">🏆</div>
-            <div class="card-content">
-                <h3>Melhor Dia</h3>
-                <p class="estatistica-valor-pequeno">{{ formatarMelhorDia(melhorDia) }}</p>
-                <p class="estatistica-sub">{{ melhorDiaReceita | currencyBR }}</p>
-            </div>
+        <div class="pagination-jump">
+          <label>
+            Ir para
+            <input
+              type="number"
+              min="1"
+              [max]="relatorioTotalPages"
+              [(ngModel)]="relatorioJumpPage"
+              (keyup.enter)="relatorioOnJumpToPage()"
+            />
+          </label>
+          <button class="btn-go" (click)="relatorioOnJumpToPage()">Ir</button>
         </div>
+      </div>
+      }
+    </div>
+    }
+  </div>
+
+  <!-- Receita por forma de pagamento -->
+  <div class="relatorio-content">
+    <h2>Receita por forma de pagamento</h2>
+    @if (loading) {
+    <div class="loading">Carregando resumo...</div>
+    } @if (!loading) {
+    <div class="relatorio-tabela">
+      <table class="tabela-relatorio">
+        <thead>
+          <tr>
+            <th>Período</th>
+            <th>Dinheiro</th>
+            <th>Crédito</th>
+            <th>Débito</th>
+            <th>PIX</th>
+            <th>Total</th>
+            <th>Vendas c/ múltiplos pagamentos</th>
+          </tr>
+        </thead>
+        <tbody>
+          @if (resumoDia?.por_pagamento) {
+          <tr>
+            <td>Hoje</td>
+            <td>
+              {{ (resumoDia?.por_pagamento?.['dinheiro'] || 0) | currencyBR }}
+            </td>
+            <td>
+              {{ (resumoDia?.por_pagamento?.['cartao_credito'] || 0) | currencyBR }}
+            </td>
+            <td>
+              {{ (resumoDia?.por_pagamento?.['cartao_debito'] || 0) | currencyBR }}
+            </td>
+            <td>{{ (resumoDia?.por_pagamento?.['pix'] || 0) | currencyBR }}</td>
+            <td>{{ resumoDia?.receita_total || 0 | currencyBR }}</td>
+            <td>{{ resumoDia?.vendas_com_multiplo_pagamento || 0 }}</td>
+          </tr>
+          } @if (resumoMes?.por_pagamento) {
+          <tr>
+            <td>Mês atual</td>
+            <td>
+              {{ (resumoMes?.por_pagamento?.['dinheiro'] || 0) | currencyBR }}
+            </td>
+            <td>
+              {{ (resumoMes?.por_pagamento?.['cartao_credito'] || 0) | currencyBR }}
+            </td>
+            <td>
+              {{ (resumoMes?.por_pagamento?.['cartao_debito'] || 0) | currencyBR }}
+            </td>
+            <td>{{ (resumoMes?.por_pagamento?.['pix'] || 0) | currencyBR }}</td>
+            <td>{{ resumoMes?.receita_total || 0 | currencyBR }}</td>
+            <td>{{ resumoMes?.vendas_com_multiplo_pagamento || 0 }}</td>
+          </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    }
+
+    <!-- Gráfico simples em barras usando CSS puro -->
+    @if (resumoDia?.por_pagamento || resumoMes?.por_pagamento) {
+    <div class="chart-bars">
+      @if (resumoDia?.por_pagamento) {
+      <div class="chart-row" [style.--max]="resumoDia?.receita_total || 1">
+        <div class="chart-label">Hoje</div>
+        <div class="chart-bar-group">
+          <div
+            class="bar dinheiro"
+            [style.--v]="(resumoDia?.por_pagamento?.['dinheiro']||0)"
+            [attr.data-tooltip]="'Dinheiro: R$ ' + ((resumoDia?.por_pagamento?.['dinheiro'] || 0) | number:'1.2-2')"
+          ></div>
+          <div
+            class="bar credito"
+            [style.--v]="(resumoDia?.por_pagamento?.['cartao_credito']||0)"
+            [attr.data-tooltip]="'Crédito: R$ ' + ((resumoDia?.por_pagamento?.['cartao_credito'] || 0) | number:'1.2-2')"
+          ></div>
+          <div
+            class="bar debito"
+            [style.--v]="(resumoDia?.por_pagamento?.['cartao_debito']||0)"
+            [attr.data-tooltip]="'Débito: R$ ' + ((resumoDia?.por_pagamento?.['cartao_debito'] || 0) | number:'1.2-2')"
+          ></div>
+          <div
+            class="bar pix"
+            [style.--v]="(resumoDia?.por_pagamento?.['pix']||0)"
+            [attr.data-tooltip]="'PIX: R$ ' + ((resumoDia?.por_pagamento?.['pix'] || 0) | number:'1.2-2')"
+          ></div>
+        </div>
+      </div>
+      } @if (resumoMes?.por_pagamento) {
+      <div class="chart-row" [style.--max]="resumoMes?.receita_total || 1">
+        <div class="chart-label">Neste mês</div>
+        <div class="chart-bar-group">
+          <div
+            class="bar dinheiro"
+            [style.--v]="(resumoMes?.por_pagamento?.['dinheiro']||0)"
+            [attr.data-tooltip]="'Dinheiro: R$ ' + ((resumoMes?.por_pagamento?.['dinheiro'] || 0) | number:'1.2-2')"
+          ></div>
+          <div
+            class="bar credito"
+            [style.--v]="(resumoMes?.por_pagamento?.['cartao_credito']||0)"
+            [attr.data-tooltip]="'Crédito: R$ ' + ((resumoMes?.por_pagamento?.['cartao_credito'] || 0) | number:'1.2-2')"
+          ></div>
+          <div
+            class="bar debito"
+            [style.--v]="(resumoMes?.por_pagamento?.['cartao_debito']||0)"
+            [attr.data-tooltip]="'Débito: R$ ' + ((resumoMes?.por_pagamento?.['cartao_debito'] || 0) | number:'1.2-2')"
+          ></div>
+          <div
+            class="bar pix"
+            [style.--v]="(resumoMes?.por_pagamento?.['pix']||0)"
+            [attr.data-tooltip]="'PIX: R$ ' + ((resumoMes?.por_pagamento?.['pix'] || 0) | number:'1.2-2')"
+          ></div>
+        </div>
+      </div>
+      }
+    </div>
+    }
+  </div>
+
+  <!-- Lista de Vendas Detalhada -->
+  <div class="vendas-detalhadas">
+    <div class="header-top">
+      <div class="header-left">
+        <h2>📋 Vendas Detalhadas</h2>
+      </div>
+      <div class="header-actions">
+        <label class="page-size-label"
+          >Linhas:
+          <select
+            [(ngModel)]="pageSize"
+            (change)="setPageSize(pageSize)"
+            class="select-filtro page-size-select"
+          >
+            <option [ngValue]="10">10</option>
+            <option [ngValue]="20">20</option>
+            <option [ngValue]="30">30</option>
+            <option [ngValue]="40">40</option>
+            <option [ngValue]="50">50</option>
+          </select>
+        </label>
+      </div>
     </div>
 
-    <!-- Filtros -->
-    <div class="filtros-section">
-        <div class="filtros-content">
-            <div class="filtros-linha-superior">
-                <div class="filtros-grupo">
-                    <div class="filtro-item">
-                        <label for="periodo">Período:</label>
-                        <select id="periodo" [(ngModel)]="filtroPeriodo" (change)="aplicarFiltros()" class="select-filtro">
-                            <option value="dia">Diário</option>
-                            <option value="mes">Mensal</option>
-                        </select>
-                    </div>
-                    <div class="filtro-item">
-                        <label for="data">Data:</label>
-                        @if (filtroPeriodo === 'dia') {<div style="display:flex;gap:8px;align-items:center"><input type="date" id="data" [(ngModel)]="filtroData" class="input-filtro"> <input type="time" id="dataHoraInicio" [(ngModel)]="filtroHoraInicio" class="input-filtro" placeholder="HH:mm"> <span>—</span> <input type="time" id="dataHoraFim" [(ngModel)]="filtroHoraFim" class="input-filtro" placeholder="HH:mm"></div>}
-                        @if (filtroPeriodo === 'mes') {<input type="month" id="data-mes" [(ngModel)]="filtroData" class="input-filtro">}
-                    </div>
-                </div>
-                <div class="filtro-acoes">
-                    <button (click)="aplicarFiltros()" class="btn-filtrar">🔍 Filtrar</button>
-                    <button (click)="limparFiltros()" class="btn-limpar">🔄 Limpar</button>
-                    <button (click)="exportarRelatorio()" class="btn-exportar">📊 Exportar</button>
-                </div>
-            </div>
+    @if (vendasFiltradas.length > 0) {
+    <div class="vendas-tabela">
+      <table class="tabela-vendas">
+        <thead>
+          <tr>
+            <th class="col-numero">Nº</th>
+            <th class="col-data-hora">Data/Hora</th>
+            <th class="col-produto">Produto</th>
+            <th class="col-qtd">Qtd</th>
+            <th class="col-metodo">Pagamentos</th>
+            <th class="col-total">Total</th>
+            <th class="col-acoes" colspan="2">Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (venda of vendasPagina; track venda.row_id; let i = $index) {
+          <tr class="venda-row">
+            <td class="venda-numero">
+              {{ vendasFiltradas.length - ((page - 1) * pageSize + i) }}
+            </td>
+            <td class="venda-data">
+              <span class="data-hora-inline">
+                {{ formatarData(venda.data_venda) }}
+                {{ formatarHora(venda.data_venda) }}
+              </span>
+            </td>
+            <td class="produto-info">
+              <div class="produto-nome com-imagem">
+                <img
+                  class="produto-thumb-inline"
+                  [src]="getImageUrl(venda.produto_imagem)"
+                  [alt]="venda.produto_nome"
+                  (error)="onImageError($event)"
+                />
+                <span>
+                  {{
+                    venda._produtos_compostos ||
+                      venda.produto_nome ||
+                      "Produto #" + venda.produto_id
+                  }}
+                  <span
+                    *ngIf="
+                      venda.exchange_difference_total &&
+                      venda.exchange_difference_total !== 0
+                    "
+                    class="badge-exchange"
+                  >
+                    (troca {{ venda.exchange_difference_total > 0 ? "+" : "-"
+                    }}{{
+                      venda.exchange_difference_total
+                        | number : "1.2-2" : "pt-BR"
+                    }}
+                    <ng-container *ngIf="venda.exchange_difference_total > 0"
+                      >, adicional</ng-container
+                    >
+                    <ng-container *ngIf="venda.exchange_difference_total < 0"
+                      >, troco</ng-container
+                    >
+                    <ng-container
+                      *ngIf="
+                        venda.exchange_payment_methods &&
+                        venda.exchange_payment_methods.length
+                      "
+                      >, via
+                      {{
+                        venda.exchange_payment_methods.join(" / ")
+                      }}</ng-container
+                    >)
+                  </span>
+                  <ng-container
+                    *ngIf="(venda.returned_quantity_total || 0) > 0"
+                  >
+                    <span
+                      class="badge-return"
+                      [class.full]="
+                        (venda.preco_total_liquido ??
+                          venda.net_total ??
+                          venda.preco_total - (venda.returned_total || 0)) <=
+                        0
+                      "
+                      [class.partial]="
+                        (venda.preco_total_liquido ??
+                          venda.net_total ??
+                          venda.preco_total - (venda.returned_total || 0)) >
+                        0
+                      "
+                      >(devolvido<span
+                        *ngIf="
+                          (venda.preco_total_liquido ??
+                            venda.net_total ??
+                            venda.preco_total - (venda.returned_total || 0)) >
+                          0
+                        "
+                      >
+                        parcial</span
+                      >, qtd: {{ venda.returned_quantity_total }})</span
+                    >
+                  </ng-container>
+                </span>
+              </div>
+            </td>
+            <td class="quantidade">
+              {{
+                venda.quantidade_liquida != null
+                  ? venda.quantidade_liquida
+                  : venda.quantidade_bruta ?? venda.quantidade_vendida
+              }}
+            </td>
+            <td class="metodo-pagamento">
+              @if (venda['pagamentos_resumo']) {
+              <div class="pagamentos-resumo">
+                {{ venda["pagamentos_resumo"] }}
+              </div>
+              } @else {<ng-template>{{
+                getMetodoPagamentoNome(venda.metodo_pagamento)
+              }}</ng-template
+              >}
+            </td>
+            <td class="valor-total">
+              <span>{{
+                venda.preco_total_liquido ??
+                  venda.net_total ??
+                  venda.preco_total - (venda.returned_total || 0) | currencyBR
+              }}</span>
+              <span
+                *ngIf="(venda.returned_total || 0) > 0"
+                class="valor-bruto"
+                title="Valor bruto antes de devoluções"
+              >
+                ({{ venda.preco_total | currencyBR }})</span
+              >
+            </td>
+            <td class="acoes-col acoes-left">
+              <button
+                *ngIf="venda._isCheckout"
+                type="button"
+                class="btn-enviar"
+                (click)="openEnviarModal(venda.id)"
+                title="Enviar nota"
+              >
+                📩
+              </button>
+            </td>
+            <td class="acoes-col acoes-right">
+              <button
+                *ngIf="venda.itens && venda.itens.length > 0"
+                type="button"
+                (click)="toggleExpand(venda.row_id)"
+                class="btn-expand"
+                [class.rotated]="expandedRows.has(venda.row_id)"
+                [attr.aria-expanded]="expandedRows.has(venda.row_id)"
+                title="Expandir venda"
+              >
+                🔽
+              </button>
+            </td>
+          </tr>
 
-            <!-- Nova linha de filtros -->
-            <div class="filtros-linha-inferior">
-                <div class="filtros-grupo-detalhado">
-                    <div class="filtro-item">
-                        <label for="nomeProduto">🔍 Buscar Produto:</label>
-                        <input type="text" id="nomeProduto" [(ngModel)]="filtroNomeProduto"
-                            placeholder="Digite o nome do produto..." class="input-filtro input-busca"
-                            (input)="aplicarFiltros()">
-                    </div>
-                    <div class="filtro-item">
-                        <label for="metodoPagamento">💳 Método de Pagamento:</label>
-                        <select id="metodoPagamento" [(ngModel)]="filtroMetodoPagamento" class="select-filtro"
-                            (change)="aplicarFiltros()">
-                            <option value="">Todos os métodos</option>
-                            <option value="dinheiro">💵 Dinheiro</option>
-                            <option value="cartao_credito">💳 Cartão de Crédito</option>
-                            <option value="cartao_debito">🏧 Cartão de Débito</option>
-                            <option value="pix">📱 PIX</option>
-                        </select>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Relatório Detalhado -->
-    <div class="relatorio-content">
-        <div class="header-top">
-            <div class="header-left">
-                <h2>Relatório {{ filtroPeriodo === 'dia' ? 'Diário' : 'Mensal' }}</h2>
-            </div>
-            <div class="header-actions">
-                <label class="page-size-label">Linhas:
-                    <select [(ngModel)]="relatorioPageSize" (change)="relatorioSetPageSize(relatorioPageSize)" class="select-filtro page-size-select">
-                        <option [ngValue]="5">5</option>
-                        <option [ngValue]="10">10</option>
-                        <option [ngValue]="20">20</option>
-                        <option [ngValue]="30">30</option>
-                        <option [ngValue]="50">50</option>
-                    </select>
-                </label>
-            </div>
-        </div>
-
-        @if (loading) {<div class="loading">
-            Carregando relatório...
-        </div>}
-
-
-
-        @if (!loading) {<div class="relatorio-tabela">
-            <table class="tabela-relatorio">
-                <thead>
+          <tr
+            *ngIf="venda.itens && expandedRows.has(venda.row_id)"
+            class="venda-itens-row"
+          >
+            <td colspan="7">
+              <div class="itens-lista">
+                <table class="itens-tabela">
+                  <thead>
                     <tr>
-                        <th>Data</th>
-                        <th>Total de Vendas</th>
-                        <th>Receita Líquida</th>
-                        <th>Média por Venda</th>
+                      <th>Produto</th>
+                      <th>Qtd</th>
+                      <th>Preço unit.</th>
+                      <th>Total</th>
                     </tr>
-                </thead>
-                <tbody>
-                    @for (item of relatorioVendasPagina; track item.data) {<tr>
-                        <td>{{ formatarData(item.data) }}</td>
-                        <td>{{ item.total_vendas }}</td>
-                        <td>{{ item.receita_total | currencyBR }}</td>
-                        <td>{{ (item.receita_total / item.total_vendas) | currencyBR }}</td>
-                    </tr>}
-                </tbody>
-            </table>
-
-            <!-- Paginação do relatório (diário ou mensal) - forçada a aparecer mesmo com 1 página -->
-            @if (relatorioTotalPages >= 1) {<div class="paginacao">
-               <div class="pagination-left">
-                 <button class="btn-page btn-ghost" (click)="relatorioGoToFirstPage()" [disabled]="relatorioPage<=1" title="Primeira">«</button>
-                 <button class="btn-page btn-ghost" (click)="relatorioGoBy(-10)" [disabled]="relatorioPage<=1" title="-10">«10</button>
-                 <button class="btn-page btn-ghost" (click)="relatorioGoBy(-5)" [disabled]="relatorioPage<=1" title="-5">«5</button>
-                 <button class="btn-page btn-ghost" (click)="relatorioPrevPage()" [disabled]="relatorioPage<=1" title="Anterior">‹</button>
-               </div>
-               <div class="pagination-center">
-                 @for (p of relatorioPaginationItems; track $index) {
-                   @if (p === '…') {<span class="ellipsis">…</span>} @else {<button class="btn-page" [class.active]="p === relatorioPage" (click)="relatorioOnClickPage(p)">{{ p }}</button>}
-                 }
-               </div>
-               <div class="pagination-right">
-                 <button class="btn-page btn-ghost" (click)="relatorioNextPage()" [disabled]="relatorioPage>=relatorioTotalPages" title="Próxima">›</button>
-                 <button class="btn-page btn-ghost" (click)="relatorioGoBy(5)" [disabled]="relatorioPage>=relatorioTotalPages" title="+5">5»</button>
-                 <button class="btn-page btn-ghost" (click)="relatorioGoBy(10)" [disabled]="relatorioPage>=relatorioTotalPages" title="+10">10»</button>
-                 <button class="btn-page btn-ghost" (click)="relatorioGoToLastPage()" [disabled]="relatorioPage>=relatorioTotalPages" title="Última">»</button>
-               </div>
-               <div class="pagination-jump">
-                 <label>
-                   Ir para
-                   <input type="number" min="1" [max]="relatorioTotalPages" [(ngModel)]="relatorioJumpPage" (keyup.enter)="relatorioOnJumpToPage()" />
-                 </label>
-                 <button class="btn-go" (click)="relatorioOnJumpToPage()">Ir</button>
-               </div>
-            </div>}
-        </div>}
-    </div>
-
-    <!-- Receita por forma de pagamento -->
-    <div class="relatorio-content">
-        <h2>Receita por forma de pagamento</h2>
-        @if (loading) {<div class="loading">
-            Carregando resumo...
-        </div>}
-        @if (!loading) {<div class="relatorio-tabela">
-            <table class="tabela-relatorio">
-                <thead>
+                  </thead>
+                  <tbody>
+                    @for (it of venda.itens; track it.produto_id) {
                     <tr>
-                        <th>Período</th>
-                        <th>Dinheiro</th>
-                        <th>Crédito</th>
-                        <th>Débito</th>
-                        <th>PIX</th>
-                        <th>Total</th>
-                        <th>Vendas c/ múltiplos pagamentos</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @if (resumoDia?.por_pagamento) {<tr>
-                        <td>Hoje</td>
-                        <td>{{ (resumoDia?.por_pagamento?.['dinheiro'] || 0) | currencyBR }}</td>
-                        <td>{{ (resumoDia?.por_pagamento?.['cartao_credito'] || 0) | currencyBR }}</td>
-                        <td>{{ (resumoDia?.por_pagamento?.['cartao_debito'] || 0) | currencyBR }}</td>
-                        <td>{{ (resumoDia?.por_pagamento?.['pix'] || 0) | currencyBR }}</td>
-                        <td>{{ (resumoDia?.receita_total || 0) | currencyBR }}</td>
-                        <td>{{ resumoDia?.vendas_com_multiplo_pagamento || 0 }}</td>
-                    </tr>}
-                    @if (resumoMes?.por_pagamento) {<tr>
-                        <td>Mês atual</td>
-                        <td>{{ (resumoMes?.por_pagamento?.['dinheiro'] || 0) | currencyBR }}</td>
-                        <td>{{ (resumoMes?.por_pagamento?.['cartao_credito'] || 0) | currencyBR }}</td>
-                        <td>{{ (resumoMes?.por_pagamento?.['cartao_debito'] || 0) | currencyBR }}</td>
-                        <td>{{ (resumoMes?.por_pagamento?.['pix'] || 0) | currencyBR }}</td>
-                        <td>{{ (resumoMes?.receita_total || 0) | currencyBR }}</td>
-                        <td>{{ resumoMes?.vendas_com_multiplo_pagamento || 0 }}</td>
-                    </tr>}
-                </tbody>
-            </table>
-        </div>}
-
-        <!-- Gráfico simples em barras usando CSS puro -->
-        @if (resumoDia?.por_pagamento || resumoMes?.por_pagamento) {<div class="chart-bars">
-            @if (resumoDia?.por_pagamento) {<div class="chart-row" [style.--max]="(resumoDia?.receita_total || 1)">
-                <div class="chart-label">Hoje</div>
-                <div class="chart-bar-group">
-                    <div class="bar dinheiro" [style.--v]="(resumoDia?.por_pagamento?.['dinheiro']||0)" [attr.data-tooltip]="'Dinheiro: R$ ' + ((resumoDia?.por_pagamento?.['dinheiro'] || 0) | number:'1.2-2')"></div>
-                    <div class="bar credito" [style.--v]="(resumoDia?.por_pagamento?.['cartao_credito']||0)" [attr.data-tooltip]="'Crédito: R$ ' + ((resumoDia?.por_pagamento?.['cartao_credito'] || 0) | number:'1.2-2')"></div>
-                    <div class="bar debito" [style.--v]="(resumoDia?.por_pagamento?.['cartao_debito']||0)" [attr.data-tooltip]="'Débito: R$ ' + ((resumoDia?.por_pagamento?.['cartao_debito'] || 0) | number:'1.2-2')"></div>
-                    <div class="bar pix" [style.--v]="(resumoDia?.por_pagamento?.['pix']||0)" [attr.data-tooltip]="'PIX: R$ ' + ((resumoDia?.por_pagamento?.['pix'] || 0) | number:'1.2-2')"></div>
-                </div>
-            </div>}
-            @if (resumoMes?.por_pagamento) {<div class="chart-row" [style.--max]="(resumoMes?.receita_total || 1)">
-                <div class="chart-label">Neste mês</div>
-                <div class="chart-bar-group">
-                    <div class="bar dinheiro" [style.--v]="(resumoMes?.por_pagamento?.['dinheiro']||0)" [attr.data-tooltip]="'Dinheiro: R$ ' + ((resumoMes?.por_pagamento?.['dinheiro'] || 0) | number:'1.2-2')"></div>
-                    <div class="bar credito" [style.--v]="(resumoMes?.por_pagamento?.['cartao_credito']||0)" [attr.data-tooltip]="'Crédito: R$ ' + ((resumoMes?.por_pagamento?.['cartao_credito'] || 0) | number:'1.2-2')"></div>
-                    <div class="bar debito" [style.--v]="(resumoMes?.por_pagamento?.['cartao_debito']||0)" [attr.data-tooltip]="'Débito: R$ ' + ((resumoMes?.por_pagamento?.['cartao_debito'] || 0) | number:'1.2-2')"></div>
-                    <div class="bar pix" [style.--v]="(resumoMes?.por_pagamento?.['pix']||0)" [attr.data-tooltip]="'PIX: R$ ' + ((resumoMes?.por_pagamento?.['pix'] || 0) | number:'1.2-2')"></div>
-                </div>
-            </div>}
-        </div>}
-    </div>
-
-    <!-- Lista de Vendas Detalhada -->
-    <div class="vendas-detalhadas">
-        <div class="header-top">
-            <div class="header-left">
-                <h2>📋 Vendas Detalhadas</h2>
-            </div>
-            <div class="header-actions">
-                <label class="page-size-label">Linhas:
-                    <select [(ngModel)]="pageSize" (change)="setPageSize(pageSize)" class="select-filtro page-size-select">
-                        <option [ngValue]="10">10</option>
-                        <option [ngValue]="20">20</option>
-                        <option [ngValue]="30">30</option>
-                        <option [ngValue]="40">40</option>
-                        <option [ngValue]="50">50</option>
-                    </select>
-                </label>
-            </div>
-        </div>
-
-        @if (vendasFiltradas.length > 0) {<div class="vendas-tabela">
-            <table class="tabela-vendas">
-                <thead>
-                    <tr>
-                        <th class="col-numero">Nº</th>
-                        <th class="col-data-hora">Data/Hora</th>
-                        <th class="col-produto">Produto</th>
-                        <th class="col-qtd">Qtd</th>
-                        <th class="col-metodo">Pagamentos</th>
-                        <th class="col-total">Total</th>
-                        <th class="col-acoes" colspan="2">Ações</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @for (venda of vendasPagina; track venda.row_id; let i = $index) {<tr class="venda-row">
-                        <td class="venda-numero">{{ vendasFiltradas.length - ((page-1)*pageSize + i) }}</td>
-                        <td class="venda-data">
-                            <span class="data-hora-inline">
-                                {{ formatarData(venda.data_venda) }} {{ formatarHora(venda.data_venda) }}
+                      <td class="produto-info">
+                        <img
+                          class="produto-thumb-inline"
+                          [src]="
+                            getImageUrl(it.produto_imagem || it.produtoImagem)
+                          "
+                          [alt]="it.produto_nome || it.produtoNome || 'Produto'"
+                          (error)="onImageError($event)"
+                        />
+                        <span>
+                          {{ it.produto_nome || it.produtoNome }}
+                          <ng-container
+                            *ngIf="getItemExchangeDiff(it, venda) !== 0"
+                          >
+                            <span class="badge-exchange item">
+                              (troca
+                              <ng-container
+                                *ngIf="
+                                  it._exchange_partner_role === 'from' &&
+                                  it._exchange_partner_name
+                                "
+                                >de {{ it._exchange_quantity || 1 }}x
+                                {{ it._exchange_partner_name }}</ng-container
+                              >
+                              <ng-container
+                                *ngIf="
+                                  it._exchange_partner_role === 'to' &&
+                                  it._exchange_partner_name
+                                "
+                                >por {{ it._exchange_quantity || 1 }}x
+                                {{ it._exchange_partner_name }}</ng-container
+                              >
+                              <ng-container *ngIf="!it._exchange_partner_name"
+                                >±</ng-container
+                              >
+                              {{
+                                getItemExchangeDiff(it, venda) > 0 ? "+" : "-"
+                              }}
+                              {{
+                                absValue(getItemExchangeDiff(it, venda))
+                                  | number : "1.2-2" : "pt-BR"
+                              }}
+                              <ng-container
+                                *ngIf="getItemExchangeDiff(it, venda) > 0"
+                                >, adicional</ng-container
+                              >
+                              <ng-container
+                                *ngIf="getItemExchangeDiff(it, venda) < 0"
+                                >, troco</ng-container
+                              >
+                              <ng-container
+                                *ngIf="getItemExchangeMethod(it, venda)"
+                                >, via
+                                {{
+                                  getItemExchangeMethod(it, venda)
+                                }}</ng-container
+                              >)
                             </span>
-                        </td>
-                                                <td class="produto-info">
-                                                        <div class="produto-nome com-imagem">
-                                                                <img class="produto-thumb-inline" [src]="getImageUrl(venda.produto_imagem)" [alt]="venda.produto_nome" (error)="onImageError($event)">
-                                                                <span>
-                                                                                                                                        {{ venda.produto_nome || 'Produto #' + venda.produto_id }}
-                                                                                                                                        <ng-container *ngIf="(venda.returned_quantity_total||0) > 0">
-                                                                                                                                            <span class="badge-return" [class.full]="(venda.preco_total_liquido ?? venda.net_total ?? (venda.preco_total - (venda.returned_total||0))) <= 0" [class.partial]="(venda.preco_total_liquido ?? venda.net_total ?? (venda.preco_total - (venda.returned_total||0))) > 0">(devolvido<span *ngIf="(venda.preco_total_liquido ?? venda.net_total ?? (venda.preco_total - (venda.returned_total||0))) > 0"> parcial</span>, qtd: {{ venda.returned_quantity_total }})</span>
-                                                                                                                                        </ng-container>
-                                                                </span>
-                                                        </div>
-                                                </td>
-                        <td class="quantidade">{{ venda.quantidade_liquida != null ? venda.quantidade_liquida : (venda.quantidade_bruta ?? venda.quantidade_vendida) }}</td>
-                        <td class="metodo-pagamento">
-                            @if (venda['pagamentos_resumo']) {<div class="pagamentos-resumo">
-                                {{ venda['pagamentos_resumo'] }}
-                            </div>} @else {<ng-template>{{ getMetodoPagamentoNome(venda.metodo_pagamento) }}</ng-template>}
-                        </td>
-                                                <td class="valor-total">
-                                                    <span>{{ (venda.preco_total_liquido ?? venda.net_total ?? (venda.preco_total - (venda.returned_total||0))) | currencyBR }}</span>
-                                                    <span *ngIf="(venda.returned_total||0) > 0" class="valor-bruto" title="Valor bruto antes de devoluções"> ({{ venda.preco_total | currencyBR }})</span>
-                                                </td>
-                        <td class="acoes-col acoes-left">
-                            <button *ngIf="venda._isCheckout" type="button" class="btn-enviar" (click)="openEnviarModal(venda.id)" title="Enviar nota">📩</button>
-                        </td>
-                        <td class="acoes-col acoes-right">
-                            <button *ngIf="venda.itens && venda.itens.length > 1" type="button" (click)="toggleExpand(venda.row_id)" class="btn-expand" [class.rotated]="expandedRows.has(venda.row_id)" [attr.aria-expanded]="expandedRows.has(venda.row_id)" title="Expandir venda">🔽</button>
-                        </td>
+                          </ng-container>
+                          <ng-container *ngIf="it.returned_quantity > 0">
+                            <span
+                              class="badge-return"
+                              [class.full]="
+                                it.returned_quantity >=
+                                (it.quantidade || it.quantidade_vendida)
+                              "
+                              [class.partial]="
+                                it.returned_quantity <
+                                (it.quantidade || it.quantidade_vendida)
+                              "
+                              >(devolvido, qtd:
+                              {{ it.returned_quantity }})</span
+                            >
+                          </ng-container>
+                        </span>
+                      </td>
+                      <td>
+                        {{
+                          it.quantidade_liquida != null
+                            ? it.quantidade_liquida
+                            : (it.quantidade || it.quantidade_vendida) -
+                              (it.returned_quantity || 0)
+                        }}
+                      </td>
+                      <td>
+                        {{
+                          it.preco_unitario || it.precoUnitario || 0
+                            | currencyBR
+                        }}
+                      </td>
+                      <td>
+                        <span>{{
+                          (it.preco_unitario || it.precoUnitario || 0) *
+                            (it.quantidade_liquida != null
+                              ? it.quantidade_liquida
+                              : (it.quantidade || it.quantidade_vendida) -
+                                (it.returned_quantity || 0)) | currencyBR
+                        }}</span>
+                        <span
+                          *ngIf="it.returned_quantity > 0"
+                          class="valor-bruto"
+                          title="Valor bruto antes da devolução"
+                        >
+                          ({{
+                            it.preco_total ||
+                              it.precoTotal ||
+                              (it.preco_unitario || it.precoUnitario || 0) *
+                                (it.quantidade || it.quantidade_vendida)
+                              | currencyBR
+                          }})</span
+                        >
+                      </td>
                     </tr>
-
-                    <tr *ngIf="venda.itens && expandedRows.has(venda.row_id)" class="venda-itens-row"><td colspan="7">
-                        <div class="itens-lista">
-                            <table class="itens-tabela">
-                                <thead><tr><th>Produto</th><th>Qtd</th><th>Preço unit.</th><th>Total</th></tr></thead>
-                                <tbody>
-                                                                        @for (it of venda.itens; track it.produto_id) {<tr>
-                                                                                <td class="produto-info">
-                                                                                        <img class="produto-thumb-inline" [src]="getImageUrl(it.produto_imagem || it.produtoImagem)" [alt]="it.produto_nome || it.produtoNome || 'Produto'" (error)="onImageError($event)">
-                                                                                        <span>
-                                                                                            {{ it.produto_nome || it.produtoNome }}
-                                                                                            <ng-container *ngIf="it.returned_quantity > 0">
-                                                                                                <span class="badge-return" [class.full]="(it.returned_quantity >= (it.quantidade || it.quantidade_vendida))" [class.partial]="(it.returned_quantity < (it.quantidade || it.quantidade_vendida))">(devolvido, qtd: {{ it.returned_quantity }})</span>
-                                                                                            </ng-container>
-                                                                                        </span>
-                                                                                </td>
-                                                                                <td>{{ (it.quantidade_liquida != null ? it.quantidade_liquida : ((it.quantidade || it.quantidade_vendida) - (it.returned_quantity || 0))) }}</td>
-                                                                                <td>{{ (it.preco_unitario || it.precoUnitario || 0) | currencyBR }}</td>
-                                                                                <td>
-                                                                                    <span>{{ ((it.preco_unitario || it.precoUnitario || 0) * (it.quantidade_liquida != null ? it.quantidade_liquida : ((it.quantidade || it.quantidade_vendida) - (it.returned_quantity || 0)))) | currencyBR }}</span>
-                                                                                    <span *ngIf="it.returned_quantity > 0" class="valor-bruto" title="Valor bruto antes da devolução"> ({{ (it.preco_total || it.precoTotal || ((it.preco_unitario || it.precoUnitario || 0) * (it.quantidade || it.quantidade_vendida))) | currencyBR }})</span>
-                                                                                </td>
-                                                                        </tr>}
-                                </tbody>
-                            </table>
-                        </div>
-                    </td></tr>}
-                </tbody>
-            </table>
-        </div>}
-        <div class="paginacao">
-            <div class="pagination-left">
-                <button class="btn-page btn-ghost" (click)="goToFirstPage()" [disabled]="page<=1" title="Primeira">«</button>
-                <button class="btn-page btn-ghost" (click)="goBy(-10)" [disabled]="page<=1" title="-10">«10</button>
-                <button class="btn-page btn-ghost" (click)="goBy(-5)" [disabled]="page<=1" title="-5">«5</button>
-                <button class="btn-page btn-ghost" (click)="prevPage()" [disabled]="page<=1" title="Anterior">‹</button>
-            </div>
-            <div class="pagination-center">
-                @for (p of paginationItems; track $index) {
-                  @if (p === '…') {<span class="ellipsis">…</span>} @else {<button class="btn-page" [class.active]="p === page" (click)="onClickPage(p)">{{ p }}</button>}
-                }
-            </div>
-            <div class="pagination-right">
-                <button class="btn-page btn-ghost" (click)="nextPage()" [disabled]="page>=totalPages" title="Próxima">›</button>
-                <button class="btn-page btn-ghost" (click)="goBy(5)" [disabled]="page>=totalPages" title="+5">5»</button>
-                <button class="btn-page btn-ghost" (click)="goBy(10)" [disabled]="page>=totalPages" title="+10">10»</button>
-                <button class="btn-page btn-ghost" (click)="goToLastPage()" [disabled]="page>=totalPages" title="Última">»</button>
-            </div>
-            <div class="pagination-jump">
-                <label>
-                  Ir para
-                  <input type="number" min="1" [max]="totalPages" [(ngModel)]="jumpPage" (keyup.enter)="onJumpToPage()" />
-                </label>
-                <button class="btn-go" (click)="onJumpToPage()">Ir</button>
-            </div>
-        </div>
-
-        @if (vendasFiltradas.length === 0) {<div class="vendas-vazias">
-            <div class="vazio-icon">📊</div>
-            <p>Nenhuma venda encontrada para o período selecionado.</p>
-        </div>}
+                    }
+                  </tbody>
+                </table>
+              </div>
+            </td>
+          </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    }
+    <div class="paginacao">
+      <div class="pagination-left">
+        <button
+          class="btn-page btn-ghost"
+          (click)="goToFirstPage()"
+          [disabled]="page <= 1"
+          title="Primeira"
+        >
+          «
+        </button>
+        <button
+          class="btn-page btn-ghost"
+          (click)="goBy(-10)"
+          [disabled]="page <= 1"
+          title="-10"
+        >
+          «10
+        </button>
+        <button
+          class="btn-page btn-ghost"
+          (click)="goBy(-5)"
+          [disabled]="page <= 1"
+          title="-5"
+        >
+          «5
+        </button>
+        <button
+          class="btn-page btn-ghost"
+          (click)="prevPage()"
+          [disabled]="page <= 1"
+          title="Anterior"
+        >
+          ‹
+        </button>
+      </div>
+      <div class="pagination-center">
+        @for (p of paginationItems; track $index) { @if (p === '…') {<span
+          class="ellipsis"
+          >…</span
+        >} @else {<button
+          class="btn-page"
+          [class.active]="p === page"
+          (click)="onClickPage(p)"
+        >
+          {{ p }}</button
+        >} }
+      </div>
+      <div class="pagination-right">
+        <button
+          class="btn-page btn-ghost"
+          (click)="nextPage()"
+          [disabled]="page >= totalPages"
+          title="Próxima"
+        >
+          ›
+        </button>
+        <button
+          class="btn-page btn-ghost"
+          (click)="goBy(5)"
+          [disabled]="page >= totalPages"
+          title="+5"
+        >
+          5»
+        </button>
+        <button
+          class="btn-page btn-ghost"
+          (click)="goBy(10)"
+          [disabled]="page >= totalPages"
+          title="+10"
+        >
+          10»
+        </button>
+        <button
+          class="btn-page btn-ghost"
+          (click)="goToLastPage()"
+          [disabled]="page >= totalPages"
+          title="Última"
+        >
+          »
+        </button>
+      </div>
+      <div class="pagination-jump">
+        <label>
+          Ir para
+          <input
+            type="number"
+            min="1"
+            [max]="totalPages"
+            [(ngModel)]="jumpPage"
+            (keyup.enter)="onJumpToPage()"
+          />
+        </label>
+        <button class="btn-go" (click)="onJumpToPage()">Ir</button>
+      </div>
     </div>
 
-    @if (showEnviarModal) {<app-enviar-nota-modal [orderId]="modalOrderId" (close)="closeEnviarModal()"></app-enviar-nota-modal>}
+    @if (vendasFiltradas.length === 0) {
+    <div class="vendas-vazias">
+      <div class="vazio-icon">📊</div>
+      <p>Nenhuma venda encontrada para o período selecionado.</p>
+    </div>
+    }
+  </div>
 
+  @if (showEnviarModal) {<app-enviar-nota-modal
+    [orderId]="modalOrderId"
+    (close)="closeEnviarModal()"
+  ></app-enviar-nota-modal
+  >}
 </div>
