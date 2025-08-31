@@ -612,7 +612,16 @@ export class HistoricoVendasComponent implements OnInit, OnDestroy {
 
   onDeleteVenda(venda: any): void {
     this.pendingDeleteId = venda.id;
-    this.pendingIsCheckout = venda._isCheckout === true;
+    // Preserve provided flag, fallback to lookup in current dataset if missing
+    let isCheckout = venda && venda._isCheckout === true;
+    if (!isCheckout) {
+      try {
+        const src = (this.vendasFiltradasAll && Array.isArray(this.vendasFiltradasAll) ? this.vendasFiltradasAll : this.vendasFiltradas) || [];
+        const found = src.find((v: any) => v && v.id === venda.id);
+        if (found && found._isCheckout === true) isCheckout = true;
+      } catch { /* ignore */ }
+    }
+    this.pendingIsCheckout = isCheckout;
     this.confirmTitle = 'Excluir venda';
     this.confirmMessage = `Tem certeza que deseja excluir a venda ${venda.id}? Esta ação não pode ser desfeita.`;
     this.showConfirmModal = true;
@@ -660,9 +669,8 @@ export class HistoricoVendasComponent implements OnInit, OnDestroy {
     if (this.expandedRows.has(rowId)) this.expandedRows.delete(rowId); else this.expandedRows.add(rowId);
   }
 
-  onDeleteClick(ev: Event, id: number): void {
+  onDeleteClick(ev: Event, venda: any): void {
     ev.stopPropagation();
-    const venda = { id } as any;
     this.onDeleteVenda(venda);
   }
 

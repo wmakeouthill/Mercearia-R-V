@@ -471,13 +471,46 @@ public class CheckoutController {
             throw new RuntimeException("Failed to record checkout deletion audit", e);
         }
 
-        // restaurar estoque para cada item da ordem
+        // Calcular devoluções existentes para evitar dupla reposição de estoque
+        java.util.Map<Long, Integer> returnedByItem = new java.util.HashMap<>();
+        try {
+            var adjs = saleAdjustmentRepository.findBySaleOrderId(venda.getId());
+            if (adjs != null) {
+                for (var a : adjs) {
+                    if ("return".equalsIgnoreCase(a.getType()) && a.getSaleItem() != null) {
+                        Long sid = a.getSaleItem().getId();
+                        returnedByItem.merge(sid, a.getQuantity() == null ? 0 : a.getQuantity(), Integer::sum);
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        }
+
+        // Restaurar estoque apenas da quantidade líquida (quantidade original -
+        // devolvida)
         venda.getItens().forEach(it -> {
             Product produto = it.getProduto();
-            produto.setQuantidadeEstoque(produto.getQuantidadeEstoque() + it.getQuantidade());
-            productRepository.save(produto);
+            int orig = it.getQuantidade() == null ? 0 : it.getQuantidade();
+            int ret = returnedByItem.getOrDefault(it.getId(), 0);
+            int eff = Math.max(0, orig - ret);
+            if (eff > 0) {
+                produto.setQuantidadeEstoque(produto.getQuantidadeEstoque() + eff);
+                productRepository.save(produto);
+            }
         });
 
+        // Remover ajustes vinculados antes de remover itens/ordem para evitar erros de
+        // referência transiente em JPA
+        try {
+            var adjs = saleAdjustmentRepository.findBySaleOrderId(venda.getId());
+            if (adjs != null && !adjs.isEmpty()) {
+                saleAdjustmentRepository.deleteAll(adjs);
+            }
+        } catch (Exception e) {
+            log.warn("FAILED_DELETE_ADJUSTMENTS_BEFORE_ORDER_DELETE saleId={}", venda.getId(), e);
+        }
+
+        // Remover ordem (cascade remove em itens e pagamentos)
         saleOrderRepository.deleteById(id);
 
         return ResponseEntity.ok(Map.of("message", "Venda deletada com sucesso"));
