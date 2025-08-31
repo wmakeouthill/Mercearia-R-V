@@ -843,38 +843,88 @@ export class RelatorioVendasComponent implements OnInit, OnDestroy {
             if (pid) pidToIndex[pid] = i;
           }
           for (const ex of exchangesRaw) {
-            if (ex.sid && Number(exchangeDiffByItem[ex.sid] || 0) !== 0) continue;
-            let targetIdx = -1;
-            if (ex.rpid != null) {
-              targetIdx = itemsArr.findIndex((it: any) => Number(it.produto_id || it.produtoId || it.produto?.id) === Number(ex.rpid));
-            }
-            if (targetIdx < 0) targetIdx = 0;
-            const tgt = itemsArr[targetIdx];
-            if (tgt) {
-              (tgt as any).exchange_difference_total = ((tgt as any).exchange_difference_total || 0) + Number(ex.diff || 0);
-              if (ex.pm) (tgt as any).exchange_payment_method = String(ex.pm);
-            }
-            // Detalhar mapeamento (de/para) nos itens
             try {
-              let fromIdx = ex.sid && idToIndex[ex.sid] != null ? idToIndex[ex.sid] : -1;
-              const toIdx = ex.rpid != null && pidToIndex[String(ex.rpid)] != null ? pidToIndex[String(ex.rpid)] : targetIdx;
-              if (fromIdx < 0 && itemsArr.length === 2) fromIdx = (toIdx === 0 ? 1 : 0);
-              const fromIt = itemsArr[fromIdx] as any;
-              const toIt = itemsArr[toIdx] as any;
-              const q = Number(ex.qty || 0) || 0;
+              const qty = Math.max(1, Number(ex.qty || 0) || 1);
               const diff = Number(ex.diff || 0) || 0;
               const pm = ex.pm ? String(ex.pm) : undefined;
-              if (fromIt && toIt) {
-                fromIt._exchange_partner_name = (toIt.produto_nome || toIt.produtoNome || 'Produto');
-                fromIt._exchange_partner_role = 'from';
-                fromIt._exchange_quantity = q || 1;
-                fromIt._exchange_diff = diff;
-                if (pm) fromIt._exchange_payment_method = pm;
+              const getUnit = (it: any): number => Number(it?.preco_unitario || it?.precoUnitario || it?.preco || 0) || 0;
+
+              let fromIdx = (ex.sid && idToIndex[ex.sid] != null) ? idToIndex[ex.sid] : -1;
+              let toIdx = (ex.rpid != null && pidToIndex[String(ex.rpid)] != null) ? pidToIndex[String(ex.rpid)] : -1;
+
+              // Quick 2-item fallbacks when only one side is known
+              if (itemsArr.length === 2) {
+                if (fromIdx >= 0 && toIdx < 0) toIdx = (fromIdx === 0 ? 1 : 0);
+                if (toIdx >= 0 && fromIdx < 0) fromIdx = (toIdx === 0 ? 1 : 0);
+              }
+
+              // Heuristics when indices are missing or ambiguous
+              if (fromIdx < 0 && toIdx >= 0) {
+                // Estimate original unit from the known 'to' item
+                const toUnit = getUnit(itemsArr[toIdx]);
+                const origEst = toUnit - (diff / qty);
+                let bestIdx = -1; let bestDelta = Number.POSITIVE_INFINITY;
+                for (let i = 0; i < itemsArr.length; i++) {
+                  if (i === toIdx) continue;
+                  const d = Math.abs(getUnit(itemsArr[i]) - origEst);
+                  if (d < bestDelta) { bestDelta = d; bestIdx = i; }
+                }
+                if (bestIdx >= 0) fromIdx = bestIdx;
+              } else if (toIdx < 0 && fromIdx >= 0) {
+                // Estimate replacement unit from the known 'from' item
+                const fromUnit = getUnit(itemsArr[fromIdx]);
+                const replEst = fromUnit + (diff / qty);
+                let bestIdx = -1; let bestDelta = Number.POSITIVE_INFINITY;
+                for (let i = 0; i < itemsArr.length; i++) {
+                  if (i === fromIdx) continue;
+                  const d = Math.abs(getUnit(itemsArr[i]) - replEst);
+                  if (d < bestDelta) { bestDelta = d; bestIdx = i; }
+                }
+                if (bestIdx >= 0) toIdx = bestIdx;
+              }
+
+              // If neither side known, pick the pair (i->j) whose unit diff best matches diff/qty
+              if (fromIdx < 0 && toIdx < 0 && itemsArr.length >= 2) {
+                let bestFrom = -1, bestTo = -1; let bestDelta = Number.POSITIVE_INFINITY;
+                for (let i = 0; i < itemsArr.length; i++) {
+                  const ui = getUnit(itemsArr[i]);
+                  for (let j = 0; j < itemsArr.length; j++) {
+                    if (j === i) continue;
+                    const uj = getUnit(itemsArr[j]);
+                    const d = Math.abs((uj - ui) - (diff / qty));
+                    if (d < bestDelta) { bestDelta = d; bestFrom = i; bestTo = j; }
+                  }
+                }
+                if (bestFrom >= 0 && bestTo >= 0) { fromIdx = bestFrom; toIdx = bestTo; }
+              }
+
+              // Final safety: if still missing, default to first-other pairing
+              if (fromIdx < 0 && itemsArr.length > 0) fromIdx = 0;
+              if (toIdx < 0 && itemsArr.length > 1) toIdx = (fromIdx === 0 ? 1 : 0);
+
+              const fromIt = itemsArr[fromIdx] as any;
+              const toIt = toIdx >= 0 ? (itemsArr[toIdx] as any) : null;
+              if (!fromIt) continue;
+
+              // Roles and annotations — always annotate 'from'
+              const partnerName = toIt ? (toIt.produto_nome || toIt.produtoNome || 'Produto') : (ex.rpid != null ? `Produto #${ex.rpid}` : 'Produto');
+              fromIt._exchange_partner_name = partnerName;
+              fromIt._exchange_partner_role = 'from';
+              fromIt._exchange_quantity = qty;
+              fromIt._exchange_diff = diff;
+              if (pm) fromIt._exchange_payment_method = pm;
+
+              if (toIt) {
                 toIt._exchange_partner_name = (fromIt.produto_nome || fromIt.produtoNome || 'Produto');
                 toIt._exchange_partner_role = 'to';
-                toIt._exchange_quantity = q || 1;
+                toIt._exchange_quantity = qty;
                 toIt._exchange_diff = diff;
                 if (pm) toIt._exchange_payment_method = pm;
+              }
+
+              // Apply monetary diff only on the 'from' item when not already assigned via sale_item_id mapping
+              const alreadyAssigned = Boolean(ex.sid && idToIndex[ex.sid] != null && Number(exchangeDiffByItem[ex.sid] || 0) !== 0);
+              if (!alreadyAssigned) {
                 fromIt.exchange_difference_total = Number(fromIt.exchange_difference_total || 0) + diff;
               }
             } catch { /* ignore */ }
@@ -961,6 +1011,8 @@ export class RelatorioVendasComponent implements OnInit, OnDestroy {
         // Adicionar nome composto e total de diferença de troca para exibição consistente nas tabelas
         (linha as any)._produtos_compostos = composedProdutoNome;
         (linha as any).exchange_difference_total = exchangeDiffTotal;
+        // Valor líquido deve refletir devoluções + diferença de troca (adicional/troco)
+        (linha as any).preco_total_liquido = Number(netTotal || 0) + Number(exchangeDiffTotal || 0);
         (linha as any).itens = itens;
         (linha as any).metodos_multi = Array.from(metodosSet);
         (linha as any).row_id = `checkout-${v.id}-${rowCounter++}`;
@@ -979,7 +1031,10 @@ export class RelatorioVendasComponent implements OnInit, OnDestroy {
             itens: itemsLog
           });
         } catch { /* ignore */ }
-        if (netTotal !== undefined) (linha as any).preco_total_liquido = netTotal;
+        if (netTotal !== undefined) {
+          const exchAdj = Number((linha as any).exchange_difference_total || 0) || 0;
+          (linha as any).preco_total_liquido = Number(netTotal) + exchAdj;
+        }
         // Não anexar mais sufixo agregado no produto_nome; mostramos badge separado e anotações por item dentro da lista
         // Persistir quantidades agregadas para uso consistente em tabelas / relatórios
         try {

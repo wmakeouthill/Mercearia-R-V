@@ -566,12 +566,16 @@
                   venda.preco_total - (venda.returned_total || 0) | currencyBR
               }}</span>
               <span
-                *ngIf="(venda.returned_total || 0) > 0"
+                *ngIf="
+                  venda.preco_total_liquido != null &&
+                  venda.preco_total != null &&
+                  venda.preco_total_liquido !== venda.preco_total
+                "
                 class="valor-bruto"
-                title="Valor bruto antes de devoluções"
+                title="Valor bruto antes de ajustes"
               >
-                ({{ venda.preco_total | currencyBR }})</span
-              >
+                ({{ venda.preco_total | currencyBR }})
+              </span>
             </td>
             <td class="acoes-col acoes-left">
               <button
@@ -629,7 +633,12 @@
                         <span>
                           {{ it.produto_nome || it.produtoNome }}
                           <ng-container
-                            *ngIf="getItemExchangeDiff(it, venda) !== 0"
+                            *ngIf="
+                              it._exchange_partner_role === 'from' ||
+                              (venda.itens?.length === 1 &&
+                                (getItemExchangeDiff(it, venda) !== 0 ||
+                                  it._exchange_partner_name))
+                            "
                           >
                             <span class="badge-exchange item">
                               (troca
@@ -642,23 +651,15 @@
                                 {{ it._exchange_partner_name }}</ng-container
                               >
                               <ng-container
-                                *ngIf="
-                                  it._exchange_partner_role === 'to' &&
-                                  it._exchange_partner_name
-                                "
-                                >por {{ it._exchange_quantity || 1 }}x
-                                {{ it._exchange_partner_name }}</ng-container
+                                *ngIf="getItemExchangeDiff(it, venda) !== 0"
+                                >{{
+                                  getItemExchangeDiff(it, venda) > 0 ? "+" : "-"
+                                }}
+                                {{
+                                  absValue(getItemExchangeDiff(it, venda))
+                                    | number : "1.2-2" : "pt-BR"
+                                }}</ng-container
                               >
-                              <ng-container *ngIf="!it._exchange_partner_name"
-                                >±</ng-container
-                              >
-                              {{
-                                getItemExchangeDiff(it, venda) > 0 ? "+" : "-"
-                              }}
-                              {{
-                                absValue(getItemExchangeDiff(it, venda))
-                                  | number : "1.2-2" : "pt-BR"
-                              }}
                               <ng-container
                                 *ngIf="getItemExchangeDiff(it, venda) > 0"
                                 >, adicional</ng-container

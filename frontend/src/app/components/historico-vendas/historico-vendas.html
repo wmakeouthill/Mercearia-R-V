@@ -199,35 +199,7 @@
                       venda.produto_nome ||
                       "Produto #" + venda.produto_id
                   }}
-                  <span
-                    *ngIf="
-                      venda.exchange_difference_total &&
-                      venda.exchange_difference_total !== 0
-                    "
-                    class="badge-exchange"
-                  >
-                    (troca {{ venda.exchange_difference_total > 0 ? "+" : "-"
-                    }}{{
-                      venda.exchange_difference_total
-                        | number : "1.2-2" : "pt-BR"
-                    }}
-                    <ng-container *ngIf="venda.exchange_difference_total > 0"
-                      >, adicional</ng-container
-                    >
-                    <ng-container *ngIf="venda.exchange_difference_total < 0"
-                      >, troco</ng-container
-                    >
-                    <ng-container
-                      *ngIf="
-                        venda.exchange_payment_methods &&
-                        venda.exchange_payment_methods.length
-                      "
-                      >, via
-                      {{
-                        venda.exchange_payment_methods.join(" / ")
-                      }}</ng-container
-                    >)
-                  </span>
+
                   <ng-container *ngIf="venda.returned_quantity_total > 0">
                     <span
                       class="badge-return"
@@ -354,9 +326,10 @@
                           {{ it.produto_nome || it.produtoNome }}
                           <ng-container
                             *ngIf="
-                              getItemExchangeDiff(it, venda) !== 0 ||
-                              it._exchange_partner_role ||
-                              it._exchange_partner_name
+                              it._exchange_partner_role === 'from' ||
+                              (venda.itens?.length === 1 &&
+                                (getItemExchangeDiff(it, venda) !== 0 ||
+                                  it._exchange_partner_name))
                             "
                           >
                             <span class="badge-exchange item">
@@ -370,21 +343,16 @@
                                 {{ it._exchange_partner_name }}</ng-container
                               >
                               <ng-container
-                                *ngIf="
-                                  it._exchange_partner_role === 'to' &&
-                                  it._exchange_partner_name
-                                "
-                                >por {{ it._exchange_quantity || 1 }}x
-                                {{ it._exchange_partner_name }}</ng-container
+                                *ngIf="getItemExchangeDiff(it, venda) !== 0"
                               >
-                              <ng-container *ngIf="!it._exchange_partner_name"
-                                >±</ng-container
-                              >
-                              {{ getItemExchangeDiff(it, venda) > 0 ? "+" : "-"
-                              }}{{
-                                absValue(getItemExchangeDiff(it, venda))
-                                  | number : "1.2-2" : "pt-BR"
-                              }}
+                                {{
+                                  getItemExchangeDiff(it, venda) > 0 ? "+" : "-"
+                                }}
+                                {{
+                                  absValue(getItemExchangeDiff(it, venda))
+                                    | number : "1.2-2" : "pt-BR"
+                                }}
+                              </ng-container>
                               <ng-container
                                 *ngIf="getItemExchangeDiff(it, venda) > 0"
                                 >, adicional</ng-container
