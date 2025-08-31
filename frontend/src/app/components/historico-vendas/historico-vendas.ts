@@ -731,13 +731,11 @@ export class HistoricoVendasComponent implements OnInit, OnDestroy {
   private _getNetValor(v: any): number {
     try {
       if (!v) return 0;
-      const bruto = Number(v.preco_total ?? 0) || 0;
       const liquidoRaw = v.preco_total_liquido ?? v.net_total;
-      if (liquidoRaw != null) {
-        const base = Number(liquidoRaw) || 0;
-        const exch = Number((v as any).exchange_difference_total || 0) || 0;
-        return base + exch;
+      if (liquidoRaw != null && !isNaN(Number(liquidoRaw))) {
+        return Number(liquidoRaw) || 0; // já inclui trocas quando mapeado
       }
+      const bruto = Number(v.preco_total ?? 0) || 0;
       const devolvido = Number(v.returned_total ?? 0) || 0;
       const exch = Number((v as any).exchange_difference_total || 0) || 0;
       return Math.max(0, bruto - devolvido) + exch;
