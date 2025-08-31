@@ -503,10 +503,11 @@ export class GraficosVendasComponent implements OnInit {
     for (const ordem of raw) {
       const pagamentos = Array.isArray(ordem?.pagamentos) ? ordem.pagamentos : [];
       const itens = Array.isArray(ordem?.itens) ? ordem.itens : [];
-      const ajustes = Array.isArray(ordem?.ajustes) ? ordem.ajustes : [];
+      const ajustes = Array.isArray(ordem?.ajustes) ? ordem.ajustes : (Array.isArray(ordem?.adjustments) ? ordem.adjustments : []);
       const { metodoSum, pagamentosResumo } = this._extrairResumoPagamentos(pagamentos);
       const returnedMap = this._mapAjustesRetornos(ajustes);
       const { linhasItens, brutoPedido, returnedTotalPedido } = this._construirLinhasItens(ordem, itens, pagamentos, pagamentosResumo, metodoSum, returnedMap);
+      for (const li of linhasItens as any[]) { (li as any)._isCheckout = true; }
       linhas.push(...linhasItens);
       this._finalizarPedido(ordem, linhasItens, brutoPedido, returnedTotalPedido);
     }
@@ -551,6 +552,15 @@ export class GraficosVendasComponent implements OnInit {
   private _construirLinhasItens(ordem: any, itens: any[], pagamentos: any[], pagamentosResumo: string, metodoSum: Record<string, number>, returnedMap: Record<number, number>) {
     const linhasItens: Venda[] = [];
     let returnedTotalPedido = 0;
+    // mapa auxiliar: preco unitário por sale_item_id
+    const unitBySid: Record<number, number> = {};
+    try {
+      for (const it of itens) {
+        const sid = Number(it?.id || it?.sale_item_id || it?.saleItemId || 0);
+        const unit = Number(it?.preco_unitario || it?.precoUnitario || 0) || 0;
+        if (sid) unitBySid[sid] = unit;
+      }
+    } catch { /* ignore */ }
     for (let idx = 0; idx < itens.length; idx++) {
       const it = itens[idx];
       const saleItemId = Number(it?.id || it?.sale_item_id || it?.saleItemId);
@@ -580,6 +590,71 @@ export class GraficosVendasComponent implements OnInit {
       }
       linhasItens.push(linha);
     }
+    // Mapear trocas por item e somatório por método do pedido
+    try {
+      const ajustes: any[] = Array.isArray(ordem?.ajustes) ? ordem.ajustes : (Array.isArray(ordem?.adjustments) ? ordem.adjustments : []);
+      const idToIndex: Record<number, number> = {};
+      for (let i = 0; i < itens.length; i++) {
+        const sid = Number(itens[i]?.id || itens[i]?.sale_item_id || itens[i]?.saleItemId || 0);
+        if (sid) idToIndex[sid] = i;
+      }
+      const exchangeMethodSum: Record<string, number> = {};
+      const returnMethodSum: Record<string, number> = {};
+      for (const a of ajustes) {
+        const t = String(a?.type || a?.tipo || '').toLowerCase();
+        if (t === 'exchange' || t === 'troca') {
+          let diffRaw: any = a.difference ?? a.diferenca ?? a.price_difference ?? (a as any).priceDifference ?? (a as any).valor_diferenca ?? a.amount ?? a.valor ?? 0;
+          if (typeof diffRaw === 'string') {
+            const cleaned = diffRaw.replace(/\s/g, '').replace(/\.(?=\d{3}(?:\D|$))/g, '').replace(',', '.');
+            const parsed = Number(cleaned); if (!isNaN(parsed)) diffRaw = parsed;
+          }
+          const diffNum = Number(diffRaw) || 0;
+          const sid = Number(a.sale_item_id || a.saleItemId || 0);
+          let idxItem: number | null = null;
+          if (sid && idToIndex[sid] != null) idxItem = idToIndex[sid];
+          if (idxItem == null) {
+            const rpid = Number((a as any).replacement_product_id || (a as any).replacementProductId || 0);
+            if (rpid) {
+              idxItem = (linhasItens as any[]).findIndex(li => Number((li as any).produto_id || 0) === rpid);
+              if (idxItem !== null && idxItem < 0) idxItem = null;
+            }
+          }
+          if (idxItem == null) {
+            // fallback: maior preco_total
+            let maxVal = -Infinity; let idxMax = 0;
+            for (let i = 0; i < linhasItens.length; i++) {
+              const val = Number((linhasItens[i] as any).preco_total || 0) || 0;
+              if (val > maxVal) { maxVal = val; idxMax = i; }
+            }
+            idxItem = idxMax;
+          }
+          const alvo = linhasItens[idxItem as number] as any;
+          alvo.exchange_difference_total = Number(alvo.exchange_difference_total || 0) + diffNum;
+          const pm = String((a as any).payment_method || (a as any).metodo_pagamento || '').toLowerCase();
+          if (pm) exchangeMethodSum[pm] = (exchangeMethodSum[pm] || 0) + diffNum;
+        } else if (t === 'return' || t === 'devolucao') {
+          const pm = String((a as any).payment_method || (a as any).metodo_pagamento || '').toLowerCase();
+          let valRaw: any = (a as any).amount ?? (a as any).valor ?? (a as any).refund_amount ?? (a as any).valor_reembolso;
+          if (valRaw == null) {
+            const sid = Number(a.sale_item_id || a.saleItemId || 0);
+            const q = Number((a as any).quantity || (a as any).quantidade || 0) || 0;
+            const unit = unitBySid[sid] || 0;
+            valRaw = unit * q;
+          }
+          if (typeof valRaw === 'string') {
+            const cleaned = valRaw.replace(/\s/g, '').replace(/\.(?=\d{3}(?:\D|$))/g, '').replace(',', '.');
+            const parsed = Number(cleaned);
+            if (!isNaN(parsed)) valRaw = parsed;
+          }
+          const valNum = Number(valRaw) || 0;
+          if (pm && valNum) returnMethodSum[pm] = (returnMethodSum[pm] || 0) + valNum;
+        }
+      }
+      if (linhasItens.length > 0) {
+        (linhasItens[0] as any).exchange_method_sum = exchangeMethodSum; // guardar no principal
+        (linhasItens[0] as any).return_method_sum = returnMethodSum; // guardar no principal
+      }
+    } catch { /* ignore */ }
     const brutoPedido = itens.reduce((s: number, it: any) => s + Number(it.preco_total || 0), 0);
     return { linhasItens, brutoPedido, returnedTotalPedido };
   }
@@ -591,13 +666,55 @@ export class GraficosVendasComponent implements OnInit {
     const netTotalBackend = Number(ordem?.net_total ?? ordem?.preco_total_liquido ?? ordem?.total_liquido ?? NaN);
     const returnedTotal = returnedTotalBackend > 0 ? returnedTotalBackend : returnedTotalPedido;
     if (returnedTotal > 0) (principal as any).returned_total = returnedTotal;
-    const netCalc = !isNaN(netTotalBackend) ? netTotalBackend : Math.max(0, brutoPedido - returnedTotal);
+    const netCalcBase = !isNaN(netTotalBackend) ? netTotalBackend : Math.max(0, brutoPedido - returnedTotal);
+    // Somar diferença de troca (adicional/troco) do pedido ao valor líquido
+    let exchangeDiffTotal = 0;
+    try {
+      const ajustes: any[] = Array.isArray(ordem?.ajustes) ? ordem.ajustes : Array.isArray(ordem?.adjustments) ? ordem.adjustments : [];
+      for (const a of ajustes) {
+        const t = String(a?.type || a?.tipo || '').toLowerCase();
+        if (t === 'exchange' || t === 'troca') {
+          let diffRaw: any = a.difference ?? a.diferenca ?? a.price_difference ?? (a as any).priceDifference ?? (a as any).valor_diferenca ?? a.amount ?? a.valor ?? 0;
+          if (typeof diffRaw === 'string') {
+            const cleaned = diffRaw.replace(/\s/g, '').replace(/\.(?=\d{3}(?:\D|$))/g, '').replace(',', '.');
+            const parsed = Number(cleaned);
+            if (!isNaN(parsed)) diffRaw = parsed;
+          }
+          exchangeDiffTotal += Number(diffRaw) || 0;
+        }
+      }
+    } catch { /* ignore */ }
+    const netCalc = Number(netCalcBase) + Number(exchangeDiffTotal || 0);
     (principal as any).preco_total_liquido = netCalc;
     (principal as any).net_total = netCalc;
+    (principal as any)._bruto_pedido = brutoPedido;
+    (principal as any)._net_pedido = netCalc;
     if (returnedTotal > 0) {
       const zero = netCalc <= 0.00001;
       (principal as any).produto_nome = this._annotateStatusPedido(principal.produto_nome || 'Pedido', zero ? 'full' : 'partial');
     }
+    // Garantir que soma dos itens fecha com líquido do pedido
+    try {
+      const sumItems = linhasItens.reduce((s: number, it: any) => {
+        const bruto = Number(it.preco_total || 0) || 0;
+        const devolvido = Number(it.returned_total || 0) || 0;
+        const exch = Number(it.exchange_difference_total || 0) || 0;
+        return s + (bruto - devolvido + exch);
+      }, 0);
+      const delta = Number((principal as any).net_total || 0) - sumItems;
+      if (Math.abs(delta) > 0.0001) {
+        // Atribuir delta ao item com maior preco_total
+        let idxMax = -1; let maxVal = -Infinity;
+        for (let i = 0; i < linhasItens.length; i++) {
+          const val = Number(((linhasItens[i] as any).preco_total) || 0) || 0;
+          if (val > maxVal) { maxVal = val; idxMax = i; }
+        }
+        if (idxMax >= 1) {
+          const tgt = linhasItens[idxMax] as any;
+          tgt.exchange_difference_total = Number(tgt.exchange_difference_total || 0) + delta;
+        }
+      }
+    } catch { /* ignore */ }
   }
 
   private _annotateProdutoNome(nome: string, qtdDevolvida: number, qtdVendida: number): string {
@@ -725,6 +842,8 @@ export class GraficosVendasComponent implements OnInit {
   private gerarVendasPorHora(base: Venda[]) {
     const arr = new Array(24).fill(0);
     for (const v of base) {
+      const isPrincipal = (v as any).pedido_linha_principal === true;
+      if (!isPrincipal) continue;
       const d = parseDate(v.data_venda);
       arr[d.getHours()] += this.getNetValor(v);
     }
@@ -753,6 +872,8 @@ export class GraficosVendasComponent implements OnInit {
     const nomes = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
     const soma = new Array(7).fill(0);
     for (const v of base) {
+      const isPrincipal = (v as any).pedido_linha_principal === true;
+      if (!isPrincipal) continue;
       const d = parseDate(v.data_venda);
       soma[d.getDay()] += this.getNetValor(v);
     }
@@ -786,32 +907,72 @@ export class GraficosVendasComponent implements OnInit {
       if (s.includes('din') || s.includes('cash') || s.includes('money')) return 'dinheiro';
       return s as any;
     };
-    const pedidosProcessados = new Set<any>();
+    // Nova estratégia: somar diretamente pagamentos + trocas - devoluções por método (linha principal)
+    const vistos = new Set<any>();
     for (const v of base) {
       const raw: any = v as any;
-      if (raw.metodos_sum && !pedidosProcessados.has(v.id)) {
-        // pedido com múltiplos métodos - usar soma detalhada
-        Object.entries(raw.metodos_sum as Record<string, number>).forEach(([met, valor]) => {
+      if (raw._isCheckout === true && raw.pedido_linha_principal !== true) continue;
+      if (vistos.has(v.id)) continue; // uma linha por pedido
+      // montaremos um mapa local e garantiremos que feche com o líquido do pedido
+      const local: Record<string, number> = { dinheiro: 0, cartao_credito: 0, cartao_debito: 0, pix: 0 };
+      const basePag = (raw.metodos_sum || raw.pagamentos_sum) as Record<string, number> | undefined;
+      if (basePag) {
+        Object.entries(basePag).forEach(([met, valor]) => {
           const key = normalizar(met);
-          if (!(key in soma)) soma[key] = 0;
-          // Ajustar proporcionalmente se venda teve devolução
-          const proporcaoLiquida = this.getNetValor(v) / (Number(v.preco_total) || 1);
-          soma[key] += valor * Math.min(1, proporcaoLiquida || 0);
+          local[key] = (local[key] || 0) + (Number(valor || 0) || 0);
         });
-        pedidosProcessados.add(v.id);
-      } else if (!raw.metodos_sum) {
-        // legado ou venda simples
+      } else {
         const key = normalizar(raw.metodo_pagamento);
-        if (!(key in soma)) soma[key] = 0;
-        soma[key] += this.getNetValor(v);
+        local[key] = (local[key] || 0) + this.getNetValor(v);
       }
+      const exSum = raw.exchange_method_sum as Record<string, number> | undefined;
+      if (exSum) {
+        Object.entries(exSum).forEach(([met, valor]) => {
+          const key = normalizar(met);
+          local[key] = (local[key] || 0) + (Number(valor || 0) || 0);
+        });
+      }
+      const retSum = raw.return_method_sum as Record<string, number> | undefined;
+      if (retSum) {
+        Object.entries(retSum).forEach(([met, valor]) => {
+          const key = normalizar(met);
+          local[key] = (local[key] || 0) - (Number(valor || 0) || 0);
+        });
+      }
+      // fechar delta com o líquido do pedido
+      const expected = this.getNetValor(v);
+      const localSum = Object.values(local).reduce((a, b) => a + (Number(b) || 0), 0);
+      let delta = Math.round((expected - localSum) * 100) / 100;
+      if (Math.abs(delta) >= 0.01) {
+        let fallback = 'dinheiro';
+        const keys = ['dinheiro', 'cartao_credito', 'cartao_debito', 'pix'];
+        if (!keys.some(k => (local[k] || 0) > 0)) {
+          fallback = normalizar(raw.metodo_pagamento);
+        } else if ((local['dinheiro'] || 0) > 0) {
+          fallback = 'dinheiro';
+        } else {
+          let maxK: any = 'dinheiro'; let maxV = -Infinity;
+          for (const k of keys) { const val = Number(local[k] || 0); if (val > maxV) { maxV = val; maxK = k; } }
+          fallback = maxK;
+        }
+        local[fallback] = Number(local[fallback] || 0) + delta;
+        // re-checar arredondamento de centavos residuais
+        const check = Object.values(local).reduce((a, b) => a + (Number(b) || 0), 0);
+        delta = Math.round((expected - check) * 100) / 100;
+        if (Math.abs(delta) >= 0.01) {
+          local[fallback] = Number(local[fallback] || 0) + delta;
+        }
+      }
+      // acumular no total
+      Object.entries(local).forEach(([k, vnum]) => { soma[k] = (soma[k] || 0) + (Number(vnum) || 0); });
+      vistos.add(v.id);
     }
     // Garantir números válidos
     Object.keys(soma).forEach(k => { if (!isFinite(soma[k])) soma[k] = 0; });
-    // Debug (pode remover depois) – só loga uma vez por recalculo
     try {
-      (window as any)._ultimaSomaMetodos = soma;
-      logger.info('GRAFICOS_VENDAS', 'CHART_METODO', 'Resumo metodos', { ...soma, total: Object.values(soma).reduce((a, b) => a + b, 0) });
+      const totalCalc = Object.values(soma).reduce((a, b) => a + b, 0);
+      (window as any)._ultimaSomaMetodos = { ...soma, total: totalCalc };
+      logger.info('GRAFICOS_VENDAS', 'CHART_METODO', 'Resumo metodos (direto)', { ...soma, total: totalCalc });
     } catch { /* ignore */ }
 
     const labels: string[] = []; const dataVals: number[] = []; const bg: string[] = []; const bgHover: string[] = [];
@@ -845,12 +1006,29 @@ export class GraficosVendasComponent implements OnInit {
   private gerarItensMaisVendidos(base: Venda[]) {
     const map = new Map<string, { receita: number }>();
     for (const v of base) {
-      const nome = v.produto_nome || `#${v.produto_id}`;
+      const raw: any = v as any;
+      // Contar todas as linhas de item (principal ou não)
+      const baseNome = v.produto_nome || `#${v.produto_id}`;
+      const nome = String(baseNome).replace(/\s*\(Devolvido.*\)$/i, '');
       if (!map.has(nome)) map.set(nome, { receita: 0 });
-      map.get(nome)!.receita += this.getNetValor(v);
+      const bruto = Number(raw.preco_total || 0) || 0;
+      const devolvido = Number(raw.returned_total || 0) || 0;
+      const exch = Number(raw.exchange_difference_total || 0) || 0;
+      const add = (bruto - devolvido) + exch;
+      map.get(nome)!.receita += add;
     }
-    const top = [...map.entries()].map(([nome, v]) => ({ nome, receita: v.receita }))
-      .sort((a, b) => b.receita - a.receita).slice(0, 10);
+    const allItems = [...map.entries()].map(([nome, v]) => ({ nome, receita: v.receita }));
+    try {
+      const totalItens = allItems.reduce((s, it) => s + it.receita, 0);
+      logger.info('GRAFICOS_VENDAS', 'ITEMS_LIQUID_SUMMARY', 'Resumo itens líquidos (antes do corte)', {
+        itens: allItems.length,
+        total: totalItens,
+        amostras: allItems.slice(0, 20)
+      });
+    } catch { /* ignore */ }
+    const top = allItems
+      .sort((a, b) => b.receita - a.receita)
+      .slice(0, 10);
     this.itensMaisVendidosData = {
       labels: top.map(t => t.nome),
       datasets: [{ label: 'Receita', data: top.map(t => t.receita), backgroundColor: 'rgba(0,46,89,0.55)', hoverBackgroundColor: 'rgba(0,46,89,0.8)', borderRadius: 6, maxBarThickness: 52 }]
@@ -869,6 +1047,8 @@ export class GraficosVendasComponent implements OnInit {
   private gerarSerieTemporal(base: Venda[]) {
     const grupos = new Map<string, number>();
     for (const v of base) {
+      const isPrincipal = (v as any).pedido_linha_principal === true;
+      if (!isPrincipal) continue;
       const d = parseDate(v.data_venda);
       const ano = d.getFullYear();
       const mes = d.getMonth(); // 0-11

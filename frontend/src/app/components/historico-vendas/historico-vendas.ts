@@ -487,13 +487,10 @@ export class HistoricoVendasComponent implements OnInit, OnDestroy {
           } catch { /* ignore */ }
           // Preços totais agregado
           (m as any).preco_total ??= grossTotal;
-          if (m.net_total != null) {
-            m.preco_total_liquido = Number(m.net_total) || 0;
-          } else {
-            // Ajuste líquido considerando devoluções (já refletidas em netTotal) + diferença de troca
-            const exchangeAdj = Number((m as any).exchange_difference_total || exchangeDiffTotal || 0) || 0;
-            m.preco_total_liquido = Number(netTotal) + exchangeAdj;
-          }
+          // Ajuste líquido considerando devoluções (já refletidas em netTotal) + diferença de troca
+          const exchangeAdj = Number((m as any).exchange_difference_total || exchangeDiffTotal || 0) || 0;
+          const baseNet = m.net_total != null ? Number(m.net_total) || 0 : Number(netTotal) || 0;
+          m.preco_total_liquido = baseNet + exchangeAdj;
           // Log de trocas por item para debug
           try {
             const itemsLog = (Array.isArray(itens) ? itens : []).map((it: any) => ({
@@ -735,10 +732,15 @@ export class HistoricoVendasComponent implements OnInit, OnDestroy {
     try {
       if (!v) return 0;
       const bruto = Number(v.preco_total ?? 0) || 0;
-      const liquidoDireto = Number(v.preco_total_liquido ?? v.net_total ?? NaN);
-      if (!isNaN(liquidoDireto)) return liquidoDireto;
+      const liquidoRaw = v.preco_total_liquido ?? v.net_total;
+      if (liquidoRaw != null) {
+        const base = Number(liquidoRaw) || 0;
+        const exch = Number((v as any).exchange_difference_total || 0) || 0;
+        return base + exch;
+      }
       const devolvido = Number(v.returned_total ?? 0) || 0;
-      return Math.max(0, bruto - devolvido);
+      const exch = Number((v as any).exchange_difference_total || 0) || 0;
+      return Math.max(0, bruto - devolvido) + exch;
     } catch { return 0; }
   }
 

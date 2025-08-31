@@ -683,12 +683,16 @@ export class RelatorioVendasComponent implements OnInit, OnDestroy {
     this.apiService.getResumoDia().subscribe({
       next: (res) => {
         this.resumoDia = res;
+        // Ajustar para refletir valores líquidos após devoluções/trocas
+        this.recomputeResumosFromNet();
       },
       error: () => { }
     });
     this.apiService.getResumoMesAtual().subscribe({
       next: (res) => {
         this.resumoMes = res;
+        // Ajustar para refletir valores líquidos após devoluções/trocas
+        this.recomputeResumosFromNet();
       },
       error: () => { }
     });
@@ -731,12 +735,23 @@ export class RelatorioVendasComponent implements OnInit, OnDestroy {
         const data = v.data_venda;
         const pagamentos: Array<{ metodo: MetodoPagamento; valor: number }> = (v.pagamentos || []);
         const itens = v.itens || [];
+        // Mapa auxiliar: preco unitário por sale_item_id para estimar devoluções quando necessário
+        const unitBySid: Record<string, number> = {};
+        try {
+          for (const it of (itens || [])) {
+            const sid = String((it as any).id || (it as any).sale_item_id || (it as any).saleItemId || '');
+            const unit = Number((it as any).preco_unitario || (it as any).precoUnitario || (it as any).preco || 0) || 0;
+            if (sid) unitBySid[sid] = unit;
+          }
+        } catch { /* ignore */ }
         const adjustments: any[] = Array.isArray(v.adjustments) ? v.adjustments : (Array.isArray(v.ajustes) ? v.ajustes : []);
         // Mapear quantidades devolvidas por item e trocas (diferença e método) por item
         const returnedByItem: Record<string, number> = {};
         const exchangeDiffByItem: Record<string, number> = {};
         const exchangePmByItem: Record<string, string> = {};
         const exchangesRaw: Array<{ sid?: string; rpid?: number; diff: number; pm?: string; qty?: number }> = [];
+        const exchangeMethodSum: Record<string, number> = {};
+        const returnMethodSum: Record<string, number> = {};
         let exchangeDiffTotal = 0;
         for (const a of adjustments) {
           try {
@@ -745,6 +760,24 @@ export class RelatorioVendasComponent implements OnInit, OnDestroy {
               const sid = String(a.sale_item_id || a.saleItem?.id || a.saleItemId || a.item_id || '');
               const q = Number(a.quantity || a.quantidade || 0) || 0;
               if (sid && q > 0) returnedByItem[sid] = (returnedByItem[sid] || 0) + q;
+              // Valor devolvido por método, se disponível
+              try {
+                const pm = (a as any).payment_method || (a as any).metodo_pagamento;
+                let valRaw: any = (a as any).amount ?? (a as any).valor ?? (a as any).refund_amount ?? (a as any).valor_reembolso;
+                if (valRaw == null) {
+                  const unit = Number(unitBySid[sid] || 0) || 0;
+                  valRaw = unit * q;
+                }
+                if (pm && valRaw != null) {
+                  let valNum = Number(valRaw);
+                  if (typeof valRaw === 'string') {
+                    const cleaned = valRaw.replace(/\s/g, '').replace(/\.(?=\d{3}(?:\D|$))/g, '').replace(',', '.');
+                    const parsed = Number(cleaned); if (!isNaN(parsed)) valNum = parsed;
+                  }
+                  const key = String(pm).toLowerCase();
+                  returnMethodSum[key] = (returnMethodSum[key] || 0) + (Number(valNum) || 0);
+                }
+              } catch { /* ignore */ }
             } else if (t === 'exchange' || t === 'troca') {
               let diffRaw: any = a.difference ?? a.diferenca ?? a.price_difference ?? (a as any).priceDifference ?? (a as any).valor_diferenca ?? a.amount ?? a.valor ?? 0;
               if (typeof diffRaw === 'string') {
@@ -762,6 +795,8 @@ export class RelatorioVendasComponent implements OnInit, OnDestroy {
               if (pm) {
                 exchangePmByItem[sid2] = String(pm);
                 (v as any).exchange_payment_methods = Array.from(new Set([...(v as any).exchange_payment_methods || [], String(pm)]));
+                const key = String(pm).toLowerCase();
+                exchangeMethodSum[key] = (exchangeMethodSum[key] || 0) + diffNum;
               }
               const rpidRaw = (a as any).replacement_product_id || (a as any).replacementProductId;
               const rpid = rpidRaw != null ? Number(rpidRaw) : undefined;
@@ -773,6 +808,8 @@ export class RelatorioVendasComponent implements OnInit, OnDestroy {
         const metodoResumo = this.buildPagamentoResumo(pagamentos);
         const metodosSet = new Set<MetodoPagamento>();
         for (const p of pagamentos) if (p?.metodo) metodosSet.add(p.metodo);
+        const pagamentosSum: Record<MetodoPagamento, number> = { dinheiro: 0, cartao_credito: 0, cartao_debito: 0, pix: 0 } as any;
+        try { for (const p of pagamentos) { if (p?.metodo != null) pagamentosSum[p.metodo] = (pagamentosSum[p.metodo] || 0) + Number(p.valor || 0); } } catch { /* ignore */ }
 
         const totalQuantidade = Array.isArray(itens) ? itens.reduce((s: number, it: any) => s + (Number(it.quantidade) || 0), 0) : 0;
         let totalValorBruto = (v.total_final ?? v.totalFinal ?? 0) as number;
@@ -1018,6 +1055,9 @@ export class RelatorioVendasComponent implements OnInit, OnDestroy {
         (linha as any).row_id = `checkout-${v.id}-${rowCounter++}`;
         (linha as any)._isCheckout = true;
         (linha as any).returned_total = returnedTotal;
+        (linha as any).pagamentos_sum = pagamentosSum;
+        (linha as any).exchange_method_sum = exchangeMethodSum;
+        (linha as any).return_method_sum = returnMethodSum;
         // Log de trocas por item para debug
         try {
           const itemsLog = (Array.isArray(itens) ? itens : []).map((it: any) => ({
@@ -1123,6 +1163,8 @@ export class RelatorioVendasComponent implements OnInit, OnDestroy {
     } catch (e) { console.debug('RELATORIO_VENDAS: failed to log sample', e); }
     this.calcularEstatisticas(this.vendasFiltradas);
     this.gerarRelatorios(this.vendasFiltradas);
+    // Ajustar resumos (dia/mês) para refletir valores líquidos (devoluções + trocas)
+    this.recomputeResumosFromNet();
   }
 
   toggleExpand(rowId: string): void {
@@ -1137,7 +1179,8 @@ export class RelatorioVendasComponent implements OnInit, OnDestroy {
   }
 
   calcularEstatisticas(vendasFiltradas?: Venda[]): void {
-    const list = vendasFiltradas ?? this.computeVendasFiltradas();
+    const raw = vendasFiltradas ?? this.computeVendasFiltradas();
+    const list = this.metricsBase(raw);
     this.totalVendas = list.length;
     // Usar valor líquido quando disponível
     this.receitaTotal = list.reduce((total, venda: any) => total + this.getNetValor(venda), 0);
@@ -1172,7 +1215,7 @@ export class RelatorioVendasComponent implements OnInit, OnDestroy {
   }
 
   gerarRelatorioDiario(vendasFiltradas?: Venda[]): void {
-    const list = vendasFiltradas ?? this.computeVendasFiltradas();
+    const list = this.metricsBase(vendasFiltradas ?? this.computeVendasFiltradas());
     const vendasPorDia = list.reduce((acc, venda) => {
       const data = extractLocalDate(venda.data_venda);
       if (!acc[data]) {
@@ -1223,7 +1266,7 @@ export class RelatorioVendasComponent implements OnInit, OnDestroy {
   }
 
   gerarRelatorioMensal(vendasFiltradas?: Venda[]): void {
-    const list = vendasFiltradas ?? this.computeVendasFiltradas();
+    const list = this.metricsBase(vendasFiltradas ?? this.computeVendasFiltradas());
     const vendasPorMes = list.reduce((acc, venda) => {
       const mes = extractYearMonth(venda.data_venda);
 
@@ -1251,6 +1294,7 @@ export class RelatorioVendasComponent implements OnInit, OnDestroy {
     this.vendasFiltradas = this.computeVendasFiltradas();
     this.calcularEstatisticas(this.vendasFiltradas);
     this.gerarRelatorios(this.vendasFiltradas);
+    this.recomputeResumosFromNet();
     this.total = this.vendasFiltradas.length;
     this.page = 1;
     // reset relatorio pagination to first page when filters change
@@ -1270,12 +1314,149 @@ export class RelatorioVendasComponent implements OnInit, OnDestroy {
     this.vendasFiltradas = this.computeVendasFiltradas();
     this.calcularEstatisticas(this.vendasFiltradas);
     this.gerarRelatorios(this.vendasFiltradas);
+    this.recomputeResumosFromNet();
     // reset page and pageSize to default (10) when clearing filters
     this.page = 1;
     this.setPageSize(10);
     // reset relatorio pagination to defaults (page 1, pageSize 5)
     this.relatorioPage = 1;
     this.relatorioSetPageSize(5);
+  }
+
+  // Recalcula os resumos diário/mensal para a tabela "Receita por forma de pagamento"
+  // somando diretamente: pagamentos por método + trocas por método - devoluções por método.
+  // Não faz rateio proporcional algum, evitando centavos artificiais.
+  private recomputeResumosFromNet(): void {
+    try {
+      const list = this.metricsBase(Array.isArray(this.vendasFiltradas) ? this.vendasFiltradas : []);
+      const todayIso = new Date().toISOString();
+      const todayYmd = extractLocalDate(todayIso);
+      const thisMonth = extractYearMonth(todayIso);
+
+      const isToday = (v: any) => {
+        try { return extractLocalDate(v?.data_venda) === todayYmd; } catch { return false; }
+      };
+      const isThisMonth = (v: any) => {
+        try { return extractYearMonth(v?.data_venda) === thisMonth; } catch { return false; }
+      };
+
+      const normalizarMetodo = (m: any): 'dinheiro' | 'cartao_credito' | 'cartao_debito' | 'pix' => {
+        const s = String(m || '').toLowerCase();
+        if (s.includes('pix')) return 'pix';
+        if (s.includes('deb')) return 'cartao_debito';
+        if (s.includes('cred')) return 'cartao_credito';
+        return 'dinheiro';
+      };
+
+      const somarPorMetodoReal = (subset: any[]): Record<string, number> => {
+        const acc: Record<string, number> = { dinheiro: 0, cartao_credito: 0, cartao_debito: 0, pix: 0 };
+        for (const v of subset) {
+          const local: Record<string, number> = { dinheiro: 0, cartao_credito: 0, cartao_debito: 0, pix: 0 };
+          const pagSum = (v as any).pagamentos_sum as Record<string, number> | undefined;
+          const exSum = (v as any).exchange_method_sum as Record<string, number> | undefined;
+          const retSum = (v as any).return_method_sum as Record<string, number> | undefined;
+          if (pagSum && Object.keys(pagSum).length) {
+            Object.entries(pagSum).forEach(([k, val]) => { const key = normalizarMetodo(k); local[key] += Number(val || 0); });
+          } else {
+            // Fallback: se não veio breakdown, credita tudo no método único
+            const key = normalizarMetodo((v as any).metodo_pagamento);
+            local[key] += this.getNetValor(v);
+          }
+          if (exSum && Object.keys(exSum).length) {
+            Object.entries(exSum).forEach(([k, val]) => { const key = normalizarMetodo(k); local[key] += Number(val || 0); });
+          }
+          if (retSum && Object.keys(retSum).length) {
+            Object.entries(retSum).forEach(([k, val]) => { const key = normalizarMetodo(k); local[key] -= Number(val || 0); });
+          }
+          // Garantir que a soma por método do pedido bata com o valor líquido do pedido (sem rateio, um método só)
+          const expected = this.getNetValor(v);
+          const localSum = Number(local['dinheiro'] || 0) + Number(local['cartao_credito' as any] || 0) + Number(local['cartao_debito' as any] || 0) + Number(local['pix'] || 0);
+          const delta = Math.round((expected - localSum) * 100) / 100; // cents safe
+          if (Math.abs(delta) >= 0.01) {
+            // escolher método fallback: prefere dinheiro; senão maior pagamento; senão método do pedido
+            let fallback: 'dinheiro' | 'cartao_credito' | 'cartao_debito' | 'pix' = 'dinheiro';
+            const keys: Array<'dinheiro' | 'cartao_credito' | 'cartao_debito' | 'pix'> = ['dinheiro', 'cartao_credito', 'cartao_debito', 'pix'];
+            if (!keys.some(k => (local[k] || 0) > 0)) {
+              fallback = normalizarMetodo((v as any).metodo_pagamento);
+            } else if ((local['dinheiro'] || 0) > 0) {
+              fallback = 'dinheiro';
+            } else {
+              // maior valor atual
+              let maxK: any = 'dinheiro'; let maxV = -Infinity;
+              for (const k of keys) { const val = Number(local[k] || 0); if (val > maxV) { maxV = val; maxK = k; } }
+              fallback = maxK;
+            }
+            local[fallback] = Number(local[fallback] || 0) + delta;
+          }
+          // acumular no total
+          acc['dinheiro'] += Number(local['dinheiro'] || 0);
+          acc['cartao_credito'] += Number(local['cartao_credito' as any] || 0);
+          acc['cartao_debito'] += Number(local['cartao_debito' as any] || 0);
+          acc['pix'] += Number(local['pix'] || 0);
+        }
+        return acc;
+      };
+
+      const aplicarResumoDireto = (resumo: any, subset: any[]) => {
+        if (!resumo) return;
+        try {
+          const por = somarPorMetodoReal(subset);
+          const total = Number(por['dinheiro'] || 0) + Number(por['cartao_credito'] || 0) + Number(por['cartao_debito'] || 0) + Number(por['pix'] || 0);
+          resumo.por_pagamento = por;
+          resumo.receita_total = total;
+          resumo.vendas_com_multiplo_pagamento = subset.filter((v: any) => Array.isArray((v as any).metodos_multi) && (v as any).metodos_multi.length > 1).length;
+          resumo.total_vendas = subset.length;
+          resumo.quantidade_vendida = subset.reduce((acc: number, v: any) => acc + (Number((v as any).quantidade_liquida ?? (v as any).quantidade_vendida ?? 0) || 0), 0);
+        } catch { /* ignore */ }
+      };
+
+      // Log original -> antes
+      try {
+        logger.info('RELATORIO_VENDAS', 'RESUMO_BEFORE', 'Resumo original (antes do ajuste)', {
+          dia: {
+            receita_total: this.resumoDia?.receita_total,
+            por_pagamento: this.resumoDia?.por_pagamento
+          },
+          mes: {
+            receita_total: this.resumoMes?.receita_total,
+            por_pagamento: this.resumoMes?.por_pagamento
+          }
+        });
+      } catch { /* ignore */ }
+
+      const subsetDia = list.filter(isToday);
+      const subsetMes = list.filter(isThisMonth);
+      aplicarResumoDireto(this.resumoDia, subsetDia);
+      aplicarResumoDireto(this.resumoMes, subsetMes);
+
+      // Log ajustado -> depois
+      try {
+        const sumPor = (p?: any) => (p ? (Number(p['dinheiro'] || 0) + Number(p['cartao_credito'] || 0) + Number(p['cartao_debito'] || 0) + Number(p['pix'] || 0)) : 0);
+        logger.info('RELATORIO_VENDAS', 'RESUMO_AFTER', 'Resumo ajustado (método real, sem rateio)', {
+          dia: {
+            receita_liquida: subsetDia.reduce((s, v: any) => s + this.getNetValor(v), 0),
+            por_pagamento: this.resumoDia?.por_pagamento,
+            soma_por_pagamento: sumPor(this.resumoDia?.por_pagamento)
+          },
+          mes: {
+            receita_liquida: subsetMes.reduce((s, v: any) => s + this.getNetValor(v), 0),
+            por_pagamento: this.resumoMes?.por_pagamento,
+            soma_por_pagamento: sumPor(this.resumoMes?.por_pagamento)
+          }
+        });
+      } catch { /* ignore */ }
+    } catch { /* ignore */ }
+  }
+
+  // Base para métricas: prioriza apenas linhas de checkout (uma por pedido)
+  private metricsBase(list: Venda[]): Venda[] {
+    try {
+      const onlyCheckout = (list || []).filter((v: any) => v && (v as any)._isCheckout === true);
+      if (onlyCheckout.length > 0) return onlyCheckout;
+      return list || [];
+    } catch {
+      return list || [];
+    }
   }
 
   exportarRelatorio(): void {
@@ -1328,10 +1509,13 @@ export class RelatorioVendasComponent implements OnInit, OnDestroy {
     try {
       if (venda == null) return 0;
       const bruto = Number(venda.preco_total ?? 0) || 0;
-      const liquido = Number(venda.preco_total_liquido ?? venda.net_total ?? NaN);
-      if (!isNaN(liquido)) return liquido;
+      const liquidoRaw = venda.preco_total_liquido ?? venda.net_total;
+      if (liquidoRaw != null && !isNaN(Number(liquidoRaw))) {
+        return Number(liquidoRaw) || 0; // já inclui trocas quando mapeado
+      }
       const devolvido = Number(venda.returned_total ?? 0) || 0;
-      return Math.max(0, bruto - devolvido);
+      const exch = Number((venda as any).exchange_difference_total || 0) || 0;
+      return Math.max(0, bruto - devolvido) + exch;
     } catch { return 0; }
   }
 
