@@ -1158,14 +1158,16 @@ export class CaixaComponent implements OnInit {
 
   // Tooltip detalhado para vendas no somatório do período
   getTooltipVendasSomatorio(): string {
-    // O somatório de vendas deve considerar somente vendas por método de pagamento.
-    // Se o backend fornecer breakdown (por_pagamento), usamos ele. Caso contrário,
-    // usamos a separação: Não-dinheiro (sumVendas) + Dinheiro (diferença).
+    // O somatório de vendas considera somente não-dinheiro (para não duplicar com entradas).
+    // A tooltip deve refletir exatamente o valor exibido no card:
+    // Exibido = Total (inclui dinheiro) - Dinheiro (após ajustes)
     const total = Number(this.receitaVendasTotal || 0);
-    const naoDinheiro = Number(this.sumVendas || 0); // cartões/pix/etc, sem dinheiro
+    const naoDinheiro = Number(this.sumVendas || 0);
+    // fallback padrão: calcular dinheiro a partir do que de fato exibimos (total - não-dinheiro)
     let dinheiro = Math.max(0, total - naoDinheiro);
 
-    // Tentar obter breakdown real do backend
+    // Opcionalmente usar breakdown do backend APENAS quando ele fechar com o total
+    // (caso contrário, preferimos o fallback acima para manter coerência com o card)
     let porPagamento: Record<string, number> | undefined;
     try {
       if (this.filtroModo === 'dia') {
@@ -1190,20 +1192,27 @@ export class CaixaComponent implements OnInit {
 
     let linhas: string[] = [];
     if (porPagamento && Object.keys(porPagamento).length) {
-      // Quando breakdown real existe, usá-lo diretamente e recalcular dinheiro
       const partes = Object.entries(porPagamento).map(([k, v]) => ({ k, v: Number(v || 0) }));
       const somaPartes = partes.reduce((s, p) => s + (p.v || 0), 0);
-      dinheiro = partes.find(p => p.k === 'dinheiro')?.v ?? Math.max(0, total - (somaPartes - (partes.find(p => p.k === 'dinheiro')?.v || 0)));
+      const dinheiroPart = partes.find(p => p.k === 'dinheiro')?.v ?? 0;
+      const diff = somaPartes - total;
+      // Só usar dinheiroPart se a soma por pagamento fechar com o total (sem devoluções/net)
+      if (Math.abs(diff) < 0.01) {
+        dinheiro = dinheiroPart;
+      } else {
+        // Mantém o fallback dinheiro = total - não-dinheiro para coincidir com o card
+      }
       linhas = partes
         .sort((a, b) => a.k.localeCompare(b.k))
         .map(p => `${label(p.k)}: ${fc(p.v)}`);
       try {
-        logger.info('CAIXA_COMPONENT', 'TOOLTIP_VENDAS_SOMATORIO_V2', 'Usando breakdown por_pagamento do backend', {
+        logger.info('CAIXA_COMPONENT', 'TOOLTIP_VENDAS_SOMATORIO_V2', 'Preparando tooltip de vendas', {
           filtroModo: this.filtroModo,
           total,
           porPagamento,
           somaPartes,
-          diff: somaPartes - total
+          diff,
+          dinheiroUsado: dinheiro
         });
       } catch { /* ignore */ }
     } else {
