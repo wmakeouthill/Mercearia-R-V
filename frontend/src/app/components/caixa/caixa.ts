@@ -507,11 +507,20 @@ export class CaixaComponent implements OnInit {
             };
 
             let sumVendasAdj = 0;
+            const vendasDebug: any[] = [];
             for (const v of consolidated.filter((c: any) => c.tipo === 'venda')) {
               let contribution = 0;
               const sessionKey = v.caixa_status_id != null ? String(v.caixa_status_id) : null;
+              const debugEntry: any = {
+                id: v.id,
+                sessionKey,
+                metodo: v.metodo_pagamento,
+                valor: v.valor,
+                badges: Array.isArray((v as any).pagamentos_badges) ? (v as any).pagamentos_badges.slice() : null,
+                contributionBefore: 0,
+                contributionAfter: 0
+              };
               if (Array.isArray(v.pagamentos_badges) && v.pagamentos_badges.length) {
-                // multi-payment: parse each badge
                 for (const b of v.pagamentos_badges) {
                   const parts = String(b).split('·');
                   const metodo = parts[0] ? parts[0].trim().toLowerCase() : '';
@@ -520,15 +529,14 @@ export class CaixaComponent implements OnInit {
                     const arr = entradasBySession.get(sessionKey) || [];
                     const idx = arr.findIndex(a => Math.abs(a - val) < 0.01);
                     if (idx >= 0) {
-                      arr.splice(idx, 1); // consume
+                      arr.splice(idx, 1);
                       entradasBySession.set(sessionKey, arr);
-                      continue; // skip this cash part
+                      continue;
                     }
                   }
                   contribution += val;
                 }
               } else {
-                // single-payment: use metodo_pagamento and valor
                 const metodo = (v.metodo_pagamento || '').toLowerCase();
                 const val = Number(v.valor || 0);
                 if (metodo === 'dinheiro' && sessionKey) {
@@ -545,9 +553,59 @@ export class CaixaComponent implements OnInit {
                   contribution = val;
                 }
               }
+              debugEntry.contributionAfter = contribution;
+              vendasDebug.push(debugEntry);
               sumVendasAdj += contribution;
             }
             this.sumVendas = sumVendasAdj;
+            // Preferir valor agregado do backend quando disponível (evita
+            // divergências por paginação em 'tudo')
+            try {
+              if (this.lastAggs && typeof (this.lastAggs as any).sum_vendas === 'number') {
+                const agg = Number((this.lastAggs as any).sum_vendas || 0);
+                this.sumVendas = agg;
+                logger.info('CAIXA_COMPONENT', 'SUMVENDAS_SET_AGG', 'sumVendas overridden by aggregated sum_vendas', {
+                  filtroModo: this.filtroModo,
+                  agg,
+                  fromLocal: sumVendasAdj
+                });
+              }
+            } catch { /* ignore */ }
+            try {
+              logger.info('CAIXA_COMPONENT', 'SUMVENDAS_SET_LOCAL', 'sumVendas set from local dedup', {
+                filtroModo: this.filtroModo,
+                sumVendasAdj,
+                sumEntradas: this.sumEntradas,
+                sumRetiradas: this.sumRetiradas,
+                totalCaixaPrev: sumVendasAdj + this.sumEntradas - this.sumRetiradas
+              });
+            } catch { /* ignore */ }
+            try {
+              const entradasDebug = Array.from(entradasBySession.entries()).map(([k, arr]) => ({ session: k, valoresRestantes: arr }));
+              let totalInclDinheiro = 0;
+              if (this.filtroModo === 'dia') {
+                totalInclDinheiro = Number((this.resumoVendasDia as any)?.receita_total || 0);
+              } else {
+                // Aqui estamos dentro do bloco (filtroModo !== 'mes'), logo o caso restante é 'tudo'
+                totalInclDinheiro = Number((this.resumoTotal as any)?.receita_total || 0);
+              }
+              const naoDinheiro = Number(this.sumVendas || 0);
+              const dinheiroEstimado = Math.max(0, totalInclDinheiro - naoDinheiro);
+              const totalCaixaPrev = naoDinheiro + this.sumEntradas - this.sumRetiradas;
+              logger.info('CAIXA_COMPONENT', 'DEDUP_DEBUG', 'Resumo deduplicacao vendas', {
+                filtroModo: this.filtroModo,
+                sumVendasAdj,
+                entradasDebug,
+                vendasDebugCount: vendasDebug.length,
+                vendasDebugSample: vendasDebug.slice(0, 10),
+                totalInclDinheiro,
+                naoDinheiro,
+                dinheiroEstimado,
+                sumEntradas: this.sumEntradas,
+                sumRetiradas: this.sumRetiradas,
+                totalCaixaPrev
+              });
+            } catch { /* ignore logging failures */ }
           }
           // Synthesize resumoVendasDia and resumo from consolidated totals for all modes.
           // For 'dia' prefer server-provided aggregates (lastAggs) when available to avoid double-counting.
@@ -566,6 +624,12 @@ export class CaixaComponent implements OnInit {
             this.sumRetiradas = Number(this.lastAggs.sum_retiradas || 0);
             // Preferir o agregado do backend que já exclui dinheiro, quando disponível
             this.sumVendas = Number(this.lastAggs.sum_vendas || 0);
+            try {
+              logger.info('CAIXA_COMPONENT', 'SUMVENDAS_SET_DIA', 'sumVendas set from lastAggs for DIA', {
+                sumVendas: this.sumVendas,
+                lastAggs: this.lastAggs
+              });
+            } catch { /* ignore */ }
             this.resumoVendasDia = { receita_total: Number(this.sumVendas || 0), total_vendas: Number(this.sumVendas || 0), quantidade_vendida: 0 } as any;
             this.resumoMovsDia = { data: this.dataSelecionada, saldo_movimentacoes: Number(this.sumEntradas || 0) - Number(this.sumRetiradas || 0) } as any;
 
@@ -576,10 +640,7 @@ export class CaixaComponent implements OnInit {
               saldoMovimentacoes: Number(this.sumEntradas || 0) - Number(this.sumRetiradas || 0)
             });
           } else {
-            this.resumoVendasDia = { receita_total: Number(this.sumVendas || 0), total_vendas: Number(this.sumVendas || 0), quantidade_vendida: 0 } as any;
-            if (this.filtroModo === 'dia') {
-              this.resumoMovsDia = { data: this.dataSelecionada, saldo_movimentacoes: Number(this.sumEntradas || 0) - Number(this.sumRetiradas || 0) } as any;
-            }
+            // Não sobrescrever os cards do DIA quando não estamos em modo 'dia'.
           }
 
           // Atualizar tooltips com os novos valores agregados
