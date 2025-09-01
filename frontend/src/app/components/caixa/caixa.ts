@@ -565,7 +565,7 @@ export class CaixaComponent implements OnInit {
             this.sumEntradas = Number(this.lastAggs.sum_entradas || 0);
             this.sumRetiradas = Number(this.lastAggs.sum_retiradas || 0);
             // Preferir o agregado do backend que já exclui dinheiro, quando disponível
-            this.sumVendas = Number((this.lastAggs.sum_vendas_net ?? this.lastAggs.sum_vendas) || 0);
+            this.sumVendas = Number(this.lastAggs.sum_vendas || 0);
             this.resumoVendasDia = { receita_total: Number(this.sumVendas || 0), total_vendas: Number(this.sumVendas || 0), quantidade_vendida: 0 } as any;
             this.resumoMovsDia = { data: this.dataSelecionada, saldo_movimentacoes: Number(this.sumEntradas || 0) - Number(this.sumRetiradas || 0) } as any;
 
@@ -620,79 +620,9 @@ export class CaixaComponent implements OnInit {
             error: () => { }
           });
         }
-        // Instead of fetching every page, request aggregated sums in one call
-        // to avoid many requests. Use the listing endpoint with aggs=true.
-        const aggsParams: any = {
-          tipo: this.filtroTipo || undefined,
-          metodo_pagamento: this.filtroMetodo || undefined,
-          hora_inicio: this.filtroHoraInicio || undefined,
-          hora_fim: this.filtroHoraFim || undefined,
-          aggs: true
-        };
-        if (this.filtroModo === 'dia') {
-          aggsParams.data = this.dataSelecionada;
-        } else if (this.filtroModo === 'mes') {
-          aggsParams.periodo_inicio = listingPeriodoInicio;
-          aggsParams.periodo_fim = listingPeriodoFim;
-        }
-
-        try {
-          // Prefer the dedicated summary endpoint to get aggregates in one call
-          const summaryObs = this.filtroModo === 'dia' || this.filtroModo === 'mes'
-            ? this.caixaService.listarMovimentacoesSummary({
-              data: this.filtroModo === 'dia' ? this.dataSelecionada : undefined,
-              periodo_inicio: this.filtroModo === 'mes' ? listingPeriodoInicio : undefined,
-              periodo_fim: this.filtroModo === 'mes' ? listingPeriodoFim : undefined,
-              // Removido: tipo: this.filtroTipo || undefined, (para incluir todas as movimentações)
-              // Removido: metodo_pagamento: this.filtroMetodo || undefined, (para incluir todas as movimentações)
-              hora_inicio: this.filtroHoraInicio || undefined,
-              hora_fim: this.filtroHoraFim || undefined,
-            })
-            : this.caixaService.listarMovimentacoesSummary({
-              // Removido: tipo: this.filtroTipo || undefined, (para incluir todas as movimentações)
-              // Removido: metodo_pagamento: this.filtroMetodo || undefined, (para incluir todas as movimentações)
-            });
-
-          summaryObs.subscribe({
-            next: (aggResp: any) => {
-              try {
-                if (aggResp) {
-                  logger.info('CAIXA_COMPONENT', 'AGGREGATES_SET_SUMMARY', 'Definindo valores agregados via summaryObs', {
-                    filtroModo: this.filtroModo,
-                    sumEntradasAntes: this.sumEntradas,
-                    sumRetiradasAntes: this.sumRetiradas,
-                    aggRespSumEntradas: aggResp?.sum_entradas,
-                    aggRespSumRetiradas: aggResp?.sum_retiradas,
-                    aggRespSumVendas: aggResp?.sum_vendas,
-                    aggRespSumVendasNet: aggResp?.sum_vendas_net
-                  });
-
-                  this.sumEntradas = Number(aggResp?.sum_entradas || 0);
-                  this.sumRetiradas = Number(aggResp?.sum_retiradas || 0);
-                  // sumVendas representa "não-dinheiro" para evitar duplicação
-                  this.sumVendas = Number((aggResp?.sum_vendas_net ?? aggResp?.sum_vendas) || 0);
-
-                  logger.info('CAIXA_COMPONENT', 'AGGREGATES_SET_SUMMARY_RESULT', 'Valores agregados definidos via summaryObs', {
-                    sumEntradas: this.sumEntradas,
-                    sumRetiradas: this.sumRetiradas,
-                    sumVendas: this.sumVendas,
-                    saldoCalculado: this.sumEntradas - this.sumRetiradas
-                  });
-
-                  // Atualizar tooltips após receber os valores agregados
-                  this.atualizarTooltipsMovimentacoes();
-
-                  // Do not overwrite the day-specific cards (`resumo`/`resumoVendasDia`) here: they
-                  // must always reflect the current real day (fetched above). Keep only the
-                  // aggregate sums (sumEntradas/sumRetiradas/sumVendas) for reporting purposes.
-                }
-              } catch (e) { logger.warn('CAIXA_COMPONENT', 'AGGS_PARSE_FAIL', 'Failed to parse summary response', e); }
-            },
-            error: (err) => { logger.warn('CAIXA_COMPONENT', 'AGGS_FAIL', 'Summary call failed', err); }
-          });
-        } catch (e) {
-          logger.warn('CAIXA_COMPONENT', 'AGGS_SUBSCRIBE_FAIL', 'Failed to subscribe to summary call', e);
-        }
+        // Avoid a second summary request here. Aggregates were already requested
+        // via aggsObs in the same forkJoin above. Using a second subscription here
+        // can lead to redundant/recursive requests and UI freezes.
         return;
       },
       error: (err) => {
@@ -1057,14 +987,15 @@ export class CaixaComponent implements OnInit {
   // Cache para armazenar os dados do mês
   private resumoMesCache: { receita_total: number; saldo_movimentacoes: number; por_pagamento?: Record<string, number> } | null = null;
   private lastMesLoaded: string = '';
+  private loadingResumoMes: boolean = false;
 
   private loadResumoMes(mesAno: string): void {
-    // Evitar chamadas desnecessárias se já temos os dados do mês
-    if (this.lastMesLoaded === mesAno && this.resumoMesCache) {
-      return;
-    }
+    // Evitar chamadas desnecessárias ou paralelas
+    if (this.loadingResumoMes) return;
+    if (this.lastMesLoaded === mesAno && this.resumoMesCache) return;
 
     this.lastMesLoaded = mesAno;
+    this.loadingResumoMes = true;
     const [ano, mes] = mesAno.split('-').map(Number);
     const dataInicio = `${ano}-${String(mes).padStart(2, '0')}-01`;
     const dataFim = new Date(ano, mes, 0).toISOString().split('T')[0];
@@ -1086,6 +1017,7 @@ export class CaixaComponent implements OnInit {
           saldo_movimentacoes: saldoMov,
           ...(porPagamento ? { por_pagamento: porPagamento } : {})
         };
+        this.loadingResumoMes = false;
       },
       error: (error) => {
         console.error('Erro ao buscar dados do mês:', error);
@@ -1093,6 +1025,7 @@ export class CaixaComponent implements OnInit {
           receita_total: 0,
           saldo_movimentacoes: 0
         };
+        this.loadingResumoMes = false;
       }
     });
   }
@@ -1136,30 +1069,10 @@ export class CaixaComponent implements OnInit {
   // Valor exibido em "Vendas" no card de Somatórios do Período:
   // total de vendas - dinheiro (para não duplicar com entradas de caixa)
   get vendasSomatorioDisplay(): number {
-    const total = Number(this.receitaVendasTotal || 0); // total de vendas (inclui dinheiro)
-    // tentar obter dinheiro a partir do breakdown por_pagamento, quando disponível
-    let dinheiroPg = 0;
-    try {
-      let porPagamento: Record<string, number> | undefined;
-      if (this.filtroModo === 'dia') {
-        porPagamento = (this.resumoVendasDia?.por_pagamento as any) || undefined;
-      } else if (this.filtroModo === 'mes') {
-        porPagamento = (this.resumoMesCache as any)?.por_pagamento || undefined;
-      } else {
-        porPagamento = this.resumoTotal?.por_pagamento || undefined;
-      }
-      if (porPagamento && typeof porPagamento['dinheiro'] === 'number') {
-        dinheiroPg = Number(porPagamento['dinheiro'] || 0);
-      }
-    } catch { /* ignore */ }
-    // fallback: se não houver breakdown, estimar dinheiro como diferença entre
-    // total (inclui dinheiro) e sumVendas (deduplicado sem dinheiro)
-    if (dinheiroPg <= 0) {
-      const naoDinheiroEstimado = Number(this.sumVendas || 0);
-      const dinheiroEstimado = Math.max(0, total - naoDinheiroEstimado);
-      return Math.max(0, total - dinheiroEstimado);
-    }
-    return Math.max(0, total - dinheiroPg);
+    // Exibir diretamente o valor deduplicado de vendas (somente não-dinheiro)
+    // calculado/fornecido pelo backend para evitar dupla contagem quando há
+    // devoluções em dinheiro (que já geram 'retirada' no caixa).
+    return Number(this.sumVendas || 0);
   }
 
   // Getter para tooltip: valor total de vendas COM dinheiro
