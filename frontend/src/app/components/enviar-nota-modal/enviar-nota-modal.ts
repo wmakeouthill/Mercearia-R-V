@@ -329,17 +329,53 @@ export class EnviarNotaModalComponent implements OnChanges {
       }
     }
 
-    // fecha imediatamente e mostra notificação global informando que o comprovante
-    // está sendo preparado/enviado para o WhatsApp do cliente
+    // Aviso imediato ao usuário
     try {
-      this.notificationService.notify({ type: 'info', message: 'Comprovante sendo preparado e enviado para o WhatsApp do cliente.' });
+      this.notificationService.notify({ type: 'info', message: 'Baixando o PDF do comprovante e abrindo o WhatsApp...' });
     } catch (e) {
       console.debug('notificationService.notify failed', e);
     }
-    this.closeModal();
 
-    const pdfUrl = this.apiService.getNotaPdfUrl(orderId);
-    const msg = `Segue a nota do seu último pedido na nossa loja: ${pdfUrl}`;
+    // 1) Baixar o PDF para a pasta de downloads com um nome amigável
+    const filename = `nota-${orderId}.pdf`;
+    let startedDownload = false;
+    try {
+      if (this.previewObjectUrl) {
+        const a = document.createElement('a');
+        a.href = String(this.previewObjectUrl);
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        startedDownload = true;
+      }
+    } catch (e) {
+      console.debug('WA download via previewObjectUrl failed', e);
+    }
+    if (!startedDownload) {
+      this.apiService.getNotaPdf(orderId).subscribe({
+        next: (blob: any) => {
+          try {
+            const url = window.URL.createObjectURL(blob as Blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => { try { window.URL.revokeObjectURL(url); } catch { } }, 4000);
+          } catch (err) {
+            console.error('WA fallback download failed', err);
+          }
+        },
+        error: (err) => {
+          console.error('GET_NOTA_PDF for WA failed', err);
+        }
+      });
+    }
+
+    // 2) Abrir WhatsApp Web já com a mensagem padrão
+    const msg = 'Segue a nota do seu pedido na nossa loja.';
     const waUrl = `https://web.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(msg)}`;
     try {
       const api = (window as any).electronAPI;
@@ -349,15 +385,18 @@ export class EnviarNotaModalComponent implements OnChanges {
         window.open(waUrl, '_blank');
       }
     } catch (e) {
-      window.open(waUrl, '_blank');
+      try { window.open(waUrl, '_blank'); } catch { }
     }
 
-    // opcional: notificar que o link do WhatsApp foi aberto
-    try {
-      this.notificationService.notify({ type: 'info', message: `WhatsApp aberto para ${this.modalCustomerPhone || 'cliente'}` });
-    } catch (e) {
-      console.debug('notificationService.notify failed', e);
-    }
+    // 3) Fechar o modal após breve atraso para garantir início do download
+    setTimeout(() => {
+      try { this.closeModal(); } catch { }
+      try {
+        this.notificationService.notify({ type: 'info', message: `WhatsApp aberto e PDF salvo como ${filename}` });
+      } catch (e) {
+        console.debug('notificationService.notify failed', e);
+      }
+    }, 500);
   }
 
   zoomIn(): void {
