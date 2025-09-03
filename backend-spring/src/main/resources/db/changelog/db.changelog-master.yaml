@@ -70,7 +70,208 @@ databaseChangeLog:
             class: com.example.backendspring.db.LiquibaseSeedUsers
 
   - changeSet:
-      id: 004-create-sale-deletions
+      id: 003a-create-produtos-table
+      author: system
+      changes:
+        - createTable:
+            tableName: produtos
+            ifNotExists: true
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: nome
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: codigo_barras
+                  type: VARCHAR(255)
+                  constraints:
+                    unique: true
+              - column:
+                  name: preco_venda
+                  type: DOUBLE PRECISION
+                  constraints:
+                    nullable: false
+              - column:
+                  name: quantidade_estoque
+                  type: INTEGER
+                  constraints:
+                    nullable: false
+                  defaultValueNumeric: 0
+              - column:
+                  name: imagem
+                  type: VARCHAR(255)
+
+  - changeSet:
+      id: 004-create-venda-cabecalho-table
+      author: system
+      changes:
+        - createTable:
+            tableName: venda_cabecalho
+            ifNotExists: true
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: data_venda
+                  type: TIMESTAMP WITH TIME ZONE
+                  constraints:
+                    nullable: false
+              - column:
+                  name: subtotal
+                  type: DOUBLE PRECISION
+                  constraints:
+                    nullable: false
+              - column:
+                  name: desconto
+                  type: DOUBLE PRECISION
+                  constraints:
+                    nullable: false
+              - column:
+                  name: acrescimo
+                  type: DOUBLE PRECISION
+                  constraints:
+                    nullable: false
+              - column:
+                  name: total_final
+                  type: DOUBLE PRECISION
+                  constraints:
+                    nullable: false
+              - column:
+                  name: adjusted_total
+                  type: DOUBLE PRECISION
+              - column:
+                  name: customer_name
+                  type: VARCHAR(255)
+              - column:
+                  name: customer_email
+                  type: VARCHAR(255)
+              - column:
+                  name: customer_phone
+                  type: VARCHAR(50)
+              - column:
+                  name: cliente_id
+                  type: BIGINT
+              - column:
+                  name: operador_id
+                  type: BIGINT
+              - column:
+                  name: caixa_status_id
+                  type: BIGINT
+              - column:
+                  name: status
+                  type: VARCHAR(50)
+
+  - changeSet:
+      id: 005-create-venda-itens-table
+      author: system
+      changes:
+        - createTable:
+            tableName: venda_itens
+            ifNotExists: true
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: venda_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: produto_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: quantidade
+                  type: INTEGER
+                  constraints:
+                    nullable: false
+              - column:
+                  name: preco_unitario
+                  type: DOUBLE PRECISION
+                  constraints:
+                    nullable: false
+              - column:
+                  name: preco_total
+                  type: DOUBLE PRECISION
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: venda_itens
+            baseColumnNames: venda_id
+            constraintName: fk_venda_itens_venda_cabecalho
+            referencedTableName: venda_cabecalho
+            referencedColumnNames: id
+        - addForeignKeyConstraint:
+            baseTableName: venda_itens
+            baseColumnNames: produto_id
+            constraintName: fk_venda_itens_produtos
+            referencedTableName: produtos
+            referencedColumnNames: id
+
+  - changeSet:
+      id: 006-create-venda-pagamentos-table
+      author: system
+      changes:
+        - createTable:
+            tableName: venda_pagamentos
+            ifNotExists: true
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: venda_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: metodo
+                  type: VARCHAR(50)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: valor
+                  type: DOUBLE PRECISION
+                  constraints:
+                    nullable: false
+              - column:
+                  name: troco
+                  type: DOUBLE PRECISION
+              - column:
+                  name: caixa_status_id
+                  type: BIGINT
+        - addForeignKeyConstraint:
+            baseTableName: venda_pagamentos
+            baseColumnNames: venda_id
+            constraintName: fk_venda_pagamentos_venda_cabecalho
+            referencedTableName: venda_cabecalho
+            referencedColumnNames: id
+
+  - changeSet:
+      id: 007-create-sale-deletions
       author: system
       changes:
         - createTable:
@@ -101,35 +302,8 @@ databaseChangeLog:
                   type: TIMESTAMP WITH TIME ZONE
 
   - changeSet:
-      id: 005-add-customer-fields-to-venda_cabecalho
+      id: 008-create-clientes-table
       author: system
-      preConditions:
-        - onFail: CONTINUE
-        - tableExists:
-            tableName: venda_cabecalho
-      changes:
-        - addColumn:
-            tableName: venda_cabecalho
-            columns:
-              - column:
-                  name: customer_name
-                  type: VARCHAR(255)
-              - column:
-                  name: customer_email
-                  type: VARCHAR(255)
-              - column:
-                  name: customer_phone
-                  type: VARCHAR(50)
-
-  - changeSet:
-      id: 007-create-clientes-and-link-to-vendas
-      author: system
-      preConditions:
-        - onFail: MARK_RAN
-        - not:
-            - columnExists:
-                tableName: vendas
-                columnName: cliente_id
       changes:
         - createTable:
             tableName: clientes
@@ -159,43 +333,6 @@ databaseChangeLog:
               - column:
                   name: created_at
                   type: TIMESTAMP WITH TIME ZONE
-        - addColumn:
-            tableName: vendas
-            columns:
-              - column:
-                  name: cliente_id
-                  type: BIGINT
-                  remarks: "FK para clientes (opcional)"
-        - addForeignKeyConstraint:
-            baseTableName: vendas
-            baseColumnNames: cliente_id
-            constraintName: fk_vendas_clientes
-            referencedTableName: clientes
-            referencedColumnNames: id
-
-  - changeSet:
-      id: 008-link-clientes-to-venda_cabecalho
-      author: system
-      preConditions:
-        - onFail: MARK_RAN
-        - not:
-            - columnExists:
-                tableName: venda_cabecalho
-                columnName: cliente_id
-      changes:
-        - addColumn:
-            tableName: venda_cabecalho
-            columns:
-              - column:
-                  name: cliente_id
-                  type: BIGINT
-                  remarks: "FK para clientes (opcional)"
-        - addForeignKeyConstraint:
-            baseTableName: venda_cabecalho
-            baseColumnNames: cliente_id
-            constraintName: fk_venda_cabecalho_clientes
-            referencedTableName: clientes
-            referencedColumnNames: id
 
   - changeSet:
       id: 009-add-caixa-fields-and-fks
@@ -205,6 +342,8 @@ databaseChangeLog:
         - "9:fc891c2a6b2d0ca0bfd949bd43b4a87c"
       preConditions:
         - onFail: MARK_RAN
+        - tableExists:
+            tableName: status_caixa
       changes:
         - addColumn:
             tableName: status_caixa
@@ -300,6 +439,8 @@ databaseChangeLog:
       author: system
       preConditions:
         - onFail: MARK_RAN
+        - tableExists:
+            tableName: status_caixa
       changes:
         - sql:
             sql: "ALTER TABLE status_caixa ADD COLUMN IF NOT EXISTS version BIGINT;"
@@ -307,29 +448,14 @@ databaseChangeLog:
             sql: "CREATE UNIQUE INDEX IF NOT EXISTS ux_status_caixa_terminal_aberto ON status_caixa (terminal_id) WHERE aberto = true;"
 
   - changeSet:
-      id: 011-add-operador-to-venda_cabecalho
+      id: 011-add-operador-to-caixa_movimentacoes
       author: system
       preConditions:
         - onFail: MARK_RAN
-      changes:
-        - addColumn:
-            tableName: venda_cabecalho
-            columns:
-              - column:
-                  name: operador_id
-                  type: BIGINT
-        - addForeignKeyConstraint:
-            baseTableName: venda_cabecalho
-            baseColumnNames: operador_id
-            constraintName: fk_venda_cabecalho_operador_usuarios
-            referencedTableName: usuarios
-            referencedColumnNames: id
-
-  - changeSet:
-      id: 012-add-operador-to-caixa_movimentacoes
-      author: system
-      preConditions:
-        - onFail: MARK_RAN
+        - not:
+            - columnExists:
+                tableName: caixa_movimentacoes
+                columnName: operador_id
       changes:
         - addColumn:
             tableName: caixa_movimentacoes
@@ -341,25 +467,6 @@ databaseChangeLog:
             baseTableName: caixa_movimentacoes
             baseColumnNames: operador_id
             constraintName: fk_caixa_movimentacoes_operador_usuarios
-            referencedTableName: usuarios
-            referencedColumnNames: id
-
-  - changeSet:
-      id: 013-add-operador-to-vendas
-      author: system
-      preConditions:
-        - onFail: MARK_RAN
-      changes:
-        - addColumn:
-            tableName: vendas
-            columns:
-              - column:
-                  name: operador_id
-                  type: BIGINT
-        - addForeignKeyConstraint:
-            baseTableName: vendas
-            baseColumnNames: operador_id
-            constraintName: fk_vendas_operador_usuarios
             referencedTableName: usuarios
             referencedColumnNames: id
 

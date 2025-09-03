@@ -45,7 +45,7 @@ public class PostgresEmbeddedConfig {
     @Bean(destroyMethod = "close")
     public EmbeddedPostgres embeddedPostgres() throws IOException {
         boolean persist = shouldPersistData();
-        Path dataDir = resolveInitialDataDirectory(persist);
+        Path dataDir = resolveInitialDataDirectory();
         log.info("Embedded Postgres data directory: {} (persist={})", dataDir, persist);
         // Limpar antigos diretórios temporários do embedded postgres para evitar
         // confusão
@@ -63,18 +63,22 @@ public class PostgresEmbeddedConfig {
         return !"false".equalsIgnoreCase(System.getenv("PERSIST_EMBEDDED_PG"));
     }
 
-    private Path resolveInitialDataDirectory(boolean persist) throws IOException {
-        if (!persist) {
-            return createTempDataDirectory();
-        }
+    private Path resolveInitialDataDirectory() {
+        // Em modo empacotado/produção, NÃO usar diretórios temporários: a única
+        // fonte de verdade do banco é resources/data/pg.
+        // Mesmo que persist seja falso, continuaremos usando o diretório persistente.
         Path persistentDir = resolvePersistentDataDirectoryFromEnv();
         ensureDirectory(persistentDir);
-        // Não migrar para diretório temporário em produção empacotada; apenas
-        // tentar limpar locks e seguir usando o diretório persistente para não
-        // criar bancos novos.
-        if (!handleStaleLockIfPresent(persistentDir)) {
-            return createTempDataDirectory();
+
+        // Verificar se o banco de dados está corrompido antes de tentar usar
+        if (isDatabaseCorrupted(persistentDir)) {
+            log.warn("Banco de dados PostgreSQL corrompido detectado em {}. Limpando para recriação...", persistentDir);
+            cleanupCorruptedDatabase(persistentDir);
         }
+
+        // Não migrar para TEMP: apenas limpar locks e seguir usando o diretório
+        // persistente para não criar bancos novos.
+        handleStaleLockIfPresent(persistentDir);
         return persistentDir;
     }
 
@@ -115,6 +119,12 @@ public class PostgresEmbeddedConfig {
         log.warn("Lock do Postgres encontrado em {} ou {}. Tentando identificar/encerrar processo antigo...",
                 pidLock, epgLock);
         try {
+            // Terminar processos PostgreSQL órfãos antes de remover locks
+            terminateOrphanedPostgresProcesses();
+
+            // Aguardar um pouco para que os processos sejam finalizados
+            safeSleepMillis(2000);
+
             // Preferir ler PID do postmaster.pid quando disponível
             if (Files.exists(pidLock)) {
                 Optional<Long> pidOpt = readPidFromLockFile(pidLock);
@@ -132,6 +142,9 @@ public class PostgresEmbeddedConfig {
             if (Files.exists(epgLock)) {
                 removeEpgLockIfPresent(epgLock);
             }
+
+            // Forçar limpeza adicional de arquivos de estado inconsistente
+            performAdditionalCleanup(persistentDir);
 
             log.info("Locks processados/removidos. Prosseguindo com diretório persistente.");
             return true;
@@ -300,25 +313,370 @@ public class PostgresEmbeddedConfig {
         }
     }
 
+    private void terminateOrphanedPostgresProcesses() {
+        try {
+            log.info("Verificando processos PostgreSQL órfãos...");
+
+            // Primeiro, tentar via tasklist
+            java.util.List<Long> pids = new java.util.ArrayList<>();
+            ProcessBuilder pb = new ProcessBuilder("tasklist", "/FI", "IMAGENAME eq postgres.exe", "/FO", "CSV");
+            Process process = pb.start();
+
+            try (java.io.BufferedReader reader = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(process.getInputStream()))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    if (line.contains("postgres.exe")) {
+                        // Parse CSV output: "ImageName","PID","SessionName","SessionNumber","MemUsage"
+                        String[] parts = line.split(",");
+                        if (parts.length >= 2) {
+                            String pidStr = parts[1].replace("\"", "").trim();
+                            try {
+                                long pid = Long.parseLong(pidStr);
+                                pids.add(pid);
+                                log.info("PostgreSQL órfão detectado (PID {}). Tentando terminar...", pid);
+                            } catch (NumberFormatException ignored) {
+                                // ignore invalid PID
+                            }
+                        }
+                    }
+                }
+            }
+            process.waitFor();
+
+            // Terminar todos os processos detectados
+            for (Long pid : pids) {
+                tryTerminateProcess(pid);
+            }
+
+            // Aguardar um pouco para os processos serem terminados
+            if (!pids.isEmpty()) {
+                safeSleepMillis(3000);
+
+                // Verificar se ainda há processos ativos
+                boolean stillHasProcesses = checkForRemainingPostgresProcesses();
+                if (stillHasProcesses) {
+                    log.info("Ainda há processos PostgreSQL ativos. Usando taskkill para forçar término...");
+                    try {
+                        ProcessBuilder killBuilder = new ProcessBuilder("taskkill", "/F", "/IM", "postgres.exe");
+                        Process killProcess = killBuilder.start();
+                        killProcess.waitFor();
+                        log.info("Comando taskkill executado");
+
+                        // Aguardar mais tempo após taskkill
+                        safeSleepMillis(3000);
+                    } catch (Exception e) {
+                        log.warn("Falha ao executar taskkill: {}", e.getMessage());
+                    }
+                }
+            }
+
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            log.warn("Interrompido ao verificar processos PostgreSQL órfãos: {}", ie.getMessage());
+        } catch (Exception e) {
+            log.warn("Erro ao verificar/terminar processos PostgreSQL órfãos: {}", e.getMessage());
+        }
+    }
+
+    private boolean checkForRemainingPostgresProcesses() {
+        try {
+            ProcessBuilder pb = new ProcessBuilder("tasklist", "/FI", "IMAGENAME eq postgres.exe", "/FO", "CSV");
+            Process process = pb.start();
+
+            boolean hasProcesses = false;
+            try (java.io.BufferedReader reader = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(process.getInputStream()))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    if (line.contains("postgres.exe")) {
+                        String[] parts = line.split(",");
+                        if (parts.length >= 2) {
+                            String pidStr = parts[1].replace("\"", "").trim();
+                            try {
+                                Long.parseLong(pidStr); // Só para validar se é um PID válido
+                                hasProcesses = true;
+                                log.debug("Processo PostgreSQL ainda ativo: PID {}", pidStr);
+                            } catch (NumberFormatException ignored) {
+                                // ignore invalid PID
+                            }
+                        }
+                    }
+                }
+            }
+
+            process.waitFor();
+            return hasProcesses;
+
+        } catch (Exception e) {
+            log.warn("Erro ao verificar processos PostgreSQL restantes: {}", e.getMessage());
+            return false; // Assumir que não há processos em caso de erro
+        }
+    }
+
+    private void performAdditionalCleanup(Path persistentDir) {
+        try {
+            // Remover arquivos de socket Unix se existirem (podem causar problemas)
+            Path[] socketsToRemove = {
+                    persistentDir.resolve(".s.PGSQL.5432"),
+                    persistentDir.resolve(".s.PGSQL.5432.lock"),
+                    persistentDir.resolve("postmaster.pid"),
+                    persistentDir.resolve("epg-lock")
+            };
+
+            for (Path socket : socketsToRemove) {
+                if (Files.exists(socket)) {
+                    Files.deleteIfExists(socket);
+                    log.info("Removido arquivo de estado: {}", socket);
+                }
+            }
+
+            // Limpar diretório pg_stat_tmp se existir (pode conter estados inconsistentes)
+            Path statTmpDir = persistentDir.resolve("pg_stat_tmp");
+            if (Files.exists(statTmpDir)) {
+                try (java.util.stream.Stream<Path> files = Files.list(statTmpDir)) {
+                    files.forEach(file -> {
+                        try {
+                            Files.deleteIfExists(file);
+                        } catch (IOException ignored) {
+                            // ignore
+                        }
+                    });
+                }
+                log.info("Limpo diretório pg_stat_tmp");
+            }
+        } catch (Exception e) {
+            log.warn("Erro durante limpeza adicional: {}", e.getMessage());
+        }
+    }
+
     private EmbeddedPostgres startEmbeddedPostgresWithRetries(Path dataDir, boolean persist, int maxAttempts)
             throws IOException {
         IOException lastError = null;
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
                 log.info("Iniciando Embedded Postgres (tentativa {}/{})...", attempt, maxAttempts);
+
+                // Limpeza preventiva antes de cada tentativa (exceto a primeira)
+                if (attempt > 1) {
+                    handleStaleLockIfPresent(dataDir);
+                    // Aguardar tempo adicional após limpeza
+                    safeSleepMillis(2000);
+                }
+
+                // Implementar backoff exponencial para locks
+                if (attempt > 1) {
+                    long backoffMs = Math.min(10000, 1000L * (attempt - 1) * (attempt - 1));
+                    log.info("Aguardando {} ms antes da tentativa {} (backoff exponencial)", backoffMs, attempt);
+                    safeSleepMillis(backoffMs);
+                }
+
                 return EmbeddedPostgres.builder()
                         .setDataDirectory(dataDir)
                         .setCleanDataDirectory(!persist)
+                        // NÃO fixar porta - deixar a biblioteca escolher uma porta disponível
+                        // .setPort(5432) - removido para evitar conflitos
+                        // Configurações compatíveis com PostgreSQL 9.5+ (moderna)
+                        .setServerConfig("shared_preload_libraries", "")
+                        .setServerConfig("max_connections", "50")
+                        .setServerConfig("shared_buffers", "16MB")
+                        .setServerConfig("wal_buffers", "1MB")
+                        // Configurações WAL otimizadas (min_wal_size deve ser >= 2x wal_segment_size)
+                        .setServerConfig("max_wal_size", "96MB")
+                        .setServerConfig("min_wal_size", "32MB")
+                        .setServerConfig("checkpoint_completion_target", "0.7")
+                        .setServerConfig("wal_writer_delay", "200ms")
+                        .setServerConfig("synchronous_commit", "off")
+                        .setServerConfig("fsync", "off") // Para desenvolvimento/embedded - melhora performance
+                        // Configurações adicionais para melhor compatibilidade Windows
+                        .setServerConfig("logging_collector", "off")
+                        .setServerConfig("log_destination", "stderr")
+                        .setServerConfig("log_min_messages", "warning")
                         .start();
             } catch (IOException ex) {
                 lastError = ex;
                 log.warn("Falha ao iniciar Embedded Postgres (tentativa {}/{}): {}", attempt, maxAttempts,
                         ex.getMessage());
-                // delegar tratamento da falha para reduzir complexidade
-                dataDir = handleStartFailure(attempt, maxAttempts, persist, dataDir);
+
+                // Se falha por OverlappingFileLockException ou contém "lock", fazer limpeza
+                // mais agressiva
+                String errorMsg = ex.getMessage() != null ? ex.getMessage().toLowerCase() : "";
+                if (errorMsg.contains("overlappingfilelockexception") ||
+                        errorMsg.contains("lock") ||
+                        errorMsg.contains("arquivo já está sendo usado")) {
+
+                    log.info("Detectado problema de lock ({}). Executando limpeza agressiva...", errorMsg);
+                    performAggressiveCleanup(dataDir);
+
+                    // Para problemas de lock, aguardar ainda mais tempo
+                    safeSleepMillis(8000);
+                } else {
+                    // Para outros tipos de erro, aguardar menos
+                    safeSleepMillis(3000);
+                }
             }
         }
-        throw lastError != null ? lastError : new IOException("Falha desconhecida ao iniciar Embedded Postgres");
+        throw lastError != null ? lastError
+                : new IOException(
+                        "Falha desconhecida ao iniciar Embedded Postgres após " + maxAttempts + " tentativas");
+    }
+
+    private void performAggressiveCleanup(Path dataDir) {
+        try {
+            log.info("Executando limpeza agressiva do diretório de dados...");
+
+            // Terminar todos os processos PostgreSQL múltiplas vezes se necessário
+            for (int i = 0; i < 3; i++) {
+                terminateOrphanedPostgresProcesses();
+                safeSleepMillis(1000);
+            }
+
+            // Aguardar processos terminarem completamente
+            safeSleepMillis(5000);
+
+            // Forçar limpeza de todos os handles de arquivo
+            try {
+                // Tentar forçar liberação de recursos
+                Runtime.getRuntime().runFinalization();
+                safeSleepMillis(2000);
+            } catch (Exception ignored) {
+            }
+
+            // Remover todos os arquivos de lock e estado com retry
+            for (int retry = 0; retry < 3; retry++) {
+                try {
+                    performAdditionalCleanup(dataDir);
+                    break; // Se sucesso, sair do loop
+                } catch (Exception e) {
+                    log.warn("Tentativa {} de limpeza adicional falhou: {}", retry + 1, e.getMessage());
+                    if (retry < 2) {
+                        safeSleepMillis(2000);
+                    }
+                }
+            }
+
+            // Tentar remover forçadamente arquivos problemáticos
+            forceRemoveLockFiles(dataDir);
+
+            // Aguardar para dar tempo aos handles de arquivo serem liberados
+            safeSleepMillis(3000);
+
+        } catch (Exception e) {
+            log.warn("Erro durante limpeza agressiva: {}", e.getMessage());
+        }
+    }
+
+    private void forceRemoveLockFiles(Path dataDir) {
+        if (!Files.exists(dataDir)) {
+            return;
+        }
+
+        try {
+            String[] lockFiles = {
+                    "epg-lock", "postmaster.pid", ".s.PGSQL.5432", ".s.PGSQL.5432.lock"
+            };
+
+            for (String lockFile : lockFiles) {
+                Path lockPath = dataDir.resolve(lockFile);
+                for (int attempt = 0; attempt < 5; attempt++) {
+                    try {
+                        if (Files.exists(lockPath)) {
+                            // Tentar alterar permissões antes de deletar
+                            try {
+                                lockPath.toFile().setWritable(true);
+                                lockPath.toFile().setReadable(true);
+                            } catch (Exception ignored) {
+                            }
+
+                            Files.deleteIfExists(lockPath);
+                            log.info("Arquivo de lock removido forçadamente: {}", lockFile);
+                            break;
+                        }
+                    } catch (Exception e) {
+                        if (attempt < 4) {
+                            log.debug("Tentativa {} falhou ao remover {}: {}", attempt + 1, lockFile, e.getMessage());
+                            safeSleepMillis(1000);
+                        } else {
+                            log.warn("Não foi possível remover arquivo de lock {} após 5 tentativas: {}", lockFile,
+                                    e.getMessage());
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Erro ao forçar remoção de arquivos de lock: {}", e.getMessage());
+        }
+    }
+
+    private boolean isDatabaseCorrupted(Path dataDir) {
+        if (!Files.exists(dataDir)) {
+            return false; // Não existe ainda, será criado
+        }
+
+        try {
+            // Verificar se diretórios essenciais do PostgreSQL existem
+            String[] requiredDirs = {
+                    "pg_notify", "pg_serial", "pg_snapshots", "pg_stat_tmp",
+                    "pg_multixact", "pg_wal", "base"
+            };
+
+            for (String requiredDir : requiredDirs) {
+                Path dirPath = dataDir.resolve(requiredDir);
+                if (!Files.exists(dirPath)) {
+                    log.warn("Diretório PostgreSQL essencial ausente: {}", requiredDir);
+                    return true;
+                }
+            }
+
+            // Verificar se arquivo de controle existe
+            Path pgControl = dataDir.resolve("global/pg_control");
+            if (!Files.exists(pgControl)) {
+                log.warn("Arquivo pg_control ausente - banco corrompido");
+                return true;
+            }
+
+            // Verificar se arquivo de versão existe
+            Path pgVersion = dataDir.resolve("PG_VERSION");
+            if (!Files.exists(pgVersion)) {
+                log.warn("Arquivo PG_VERSION ausente - banco corrompido");
+                return true;
+            }
+
+            return false;
+        } catch (Exception e) {
+            log.warn("Erro ao verificar integridade do banco: {}", e.getMessage());
+            return true; // Considerar corrompido em caso de erro
+        }
+    }
+
+    private void cleanupCorruptedDatabase(Path dataDir) {
+        try {
+            // Primeiro, terminar qualquer processo PostgreSQL
+            terminateOrphanedPostgresProcesses();
+            safeSleepMillis(3000);
+
+            // Remover completamente o diretório corrompido
+            if (Files.exists(dataDir)) {
+                log.info("Removendo diretório de banco corrompido: {}", dataDir);
+                try (java.util.stream.Stream<Path> walk = Files.walk(dataDir)) {
+                    walk.sorted(java.util.Comparator.reverseOrder())
+                            .forEach(path -> {
+                                try {
+                                    Files.deleteIfExists(path);
+                                } catch (IOException e) {
+                                    log.debug("Falha ao remover {}: {}", path, e.getMessage());
+                                }
+                            });
+                }
+            }
+
+            // Recriar diretório vazio
+            ensureDirectory(dataDir);
+            log.info("Diretório limpo e recriado: {}", dataDir);
+
+        } catch (Exception e) {
+            log.warn("Erro ao limpar banco corrompido: {}", e.getMessage());
+        }
     }
 
     private void collectPostgresLogsForDebug(Path dataDir, int tailLines) {
@@ -343,33 +701,6 @@ public class PostgresEmbeddedConfig {
         } catch (Exception e) {
             log.debug("Erro ao coletar logs do Postgres: {}", e.getMessage());
         }
-    }
-
-    private Path handleStartFailure(int attempt, int maxAttempts, boolean persist, Path dataDir) {
-        // coletar logs do Postgres para ajudar no diagnóstico
-        try {
-            collectPostgresLogsForDebug(dataDir, 200);
-        } catch (Exception ignored) {
-            log.debug("Falha ao coletar logs do Postgres para debug: {}", ignored.getMessage());
-        }
-
-        // se este é um diretório persistente e estamos na penúltima tentativa,
-        // mover o persistente para backup e usar um fresh temp dir
-        if (persist && attempt == maxAttempts - 1) {
-            try {
-                movePersistentDirToBackup(dataDir);
-            } catch (Exception e) {
-                log.debug("Falha ao mover persist dir para backup: {}", e.getMessage());
-            }
-        }
-
-        Path tmp = tryCreateTempDataDirectorySafe();
-        if (tmp != null) {
-            dataDir = tmp;
-            log.info("Usando diretório temporário para próxima tentativa: {}", dataDir);
-        }
-        safeSleepMillis(1500);
-        return dataDir;
     }
 
     private void processCandidateLog(Path cand, int tailLines) {
