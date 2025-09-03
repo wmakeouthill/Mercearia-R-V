@@ -1528,6 +1528,61 @@ function testBackendConnection(): Promise<BackendStatus> {
     });
 }
 
+function killAllPostgresProcesses(): void {
+    console.log('🗡️ Encerrando todos os processos PostgreSQL...');
+
+    if (process.platform === 'win32') {
+        try {
+            // Usar taskkill para encerrar TODOS os processos postgres.exe
+            const result = childProcess.spawnSync('taskkill', ['/IM', 'postgres.exe', '/F'], {
+                encoding: 'utf8'
+            });
+
+            if (result.stdout && result.stdout.includes('SUCCESS')) {
+                console.log('✅ Processos PostgreSQL encerrados com sucesso');
+            } else if (result.stderr && result.stderr.includes('No tasks')) {
+                console.log('ℹ️ Nenhum processo PostgreSQL encontrado');
+            } else {
+                console.log('⚠️ Resultado taskkill:', result.stdout || result.stderr);
+            }
+        } catch (e) {
+            console.warn('⚠️ Erro ao encerrar processos PostgreSQL:', (e as Error)?.message || e);
+        }
+
+        // Aguardar um pouco para os processos encerrarem
+        try {
+            childProcess.spawnSync('ping', ['127.0.0.1', '-n', '2'], { timeout: 3000 });
+        } catch { /* ignore */ }
+
+        // Verificar se ainda restam processos postgres.exe
+        try {
+            const checkResult = childProcess.spawnSync('tasklist', ['/FI', 'IMAGENAME eq postgres.exe'], {
+                encoding: 'utf8'
+            });
+
+            if (checkResult.stdout && checkResult.stdout.includes('postgres.exe')) {
+                console.log('⚠️ Alguns processos PostgreSQL ainda estão rodando');
+                console.log('   Tentando força bruta adicional...');
+
+                // Segunda tentativa com /T para toda árvore de processos
+                childProcess.spawnSync('taskkill', ['/IM', 'postgres.exe', '/T', '/F']);
+            } else {
+                console.log('✅ Todos os processos PostgreSQL foram encerrados');
+            }
+        } catch (e) {
+            console.warn('⚠️ Erro na verificação final:', (e as Error)?.message || e);
+        }
+    } else {
+        // Em sistemas Unix-like (macOS/Linux)
+        try {
+            childProcess.spawnSync('pkill', ['-f', 'postgres']);
+            console.log('✅ Processos PostgreSQL encerrados (Unix)');
+        } catch (e) {
+            console.warn('⚠️ Erro ao encerrar processos PostgreSQL (Unix):', (e as Error)?.message || e);
+        }
+    }
+}
+
 function stopBackend(): void {
     console.log('🛑 Parando backend...');
 
@@ -1546,6 +1601,9 @@ function stopBackend(): void {
     }
 
     isBackendReady = false;
+
+    // PRIMEIRO: Encerrar todos os processos PostgreSQL especificamente
+    killAllPostgresProcesses();
 
     if (backendProcess) {
         try {
@@ -1784,20 +1842,66 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {
         isQuitting = true;
+        console.log('🪟 Todas as janelas fechadas - encerrando aplicativo...');
+
+        // Encerrar processos PostgreSQL PRIMEIRO
+        killAllPostgresProcesses();
+
+        // Então encerrar o backend
         stopBackend();
+
         app.quit();
     }
 });
 
 app.on('before-quit', () => {
     isQuitting = true;
+    console.log('🚪 Aplicativo sendo encerrado - limpando processos...');
+
+    // Encerrar processos PostgreSQL PRIMEIRO
+    killAllPostgresProcesses();
+
+    // Então encerrar o backend
     stopBackend();
+
     try {
         // Garantir encerramento completo do processo árvore no Windows
         if (process.platform === 'win32' && backendProcess?.pid) {
             childProcess.spawnSync('taskkill', ['/PID', String(backendProcess.pid), '/T', '/F']);
         }
     } catch { /* ignore */ }
+
+    // Limpeza final adicional para garantir que NADA fique rodando
+    try {
+        if (process.platform === 'win32') {
+            // Última tentativa de encerrar qualquer processo postgres.exe remanescente
+            childProcess.spawnSync('taskkill', ['/IM', 'postgres.exe', '/F']);
+            // Encerrar possíveis processos cmd.exe órfãos relacionados
+            childProcess.spawnSync('taskkill', ['/IM', 'cmd.exe', '/F']);
+        }
+    } catch { /* ignore */ }
+
+    console.log('✅ Limpeza de processos concluída');
+});
+
+// Handlers adicionais para garantir limpeza em casos de encerramento forçado
+process.on('SIGINT', () => {
+    console.log('🛑 SIGINT recebido - encerrando aplicativo...');
+    killAllPostgresProcesses();
+    process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+    console.log('🛑 SIGTERM recebido - encerrando aplicativo...');
+    killAllPostgresProcesses();
+    process.exit(0);
+});
+
+// Handler para erros não capturados que possam encerrar o processo
+process.on('uncaughtException', (error) => {
+    console.error('❌ Erro não capturado:', error);
+    killAllPostgresProcesses();
+    process.exit(1);
 });
 
 ipcMain.handle('get-app-version', () => {

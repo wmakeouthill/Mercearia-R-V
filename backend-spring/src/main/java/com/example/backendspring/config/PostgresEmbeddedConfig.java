@@ -116,6 +116,23 @@ public class PostgresEmbeddedConfig {
             return true;
         }
 
+        // Em produção, se o banco parece estar funcionando, use limpeza rápida
+        boolean isProduction = "production".equals(System.getenv("NODE_ENV"));
+        boolean hasHealthyDatabase = isDatabaseHealthy(persistentDir);
+
+        if (isProduction && hasHealthyDatabase) {
+            log.info("Produção: banco aparenta estar saudável. Usando limpeza rápida de locks...");
+            try {
+                Files.deleteIfExists(pidLock);
+                Files.deleteIfExists(epgLock);
+                performAdditionalCleanup(persistentDir);
+                log.info("Locks removidos rapidamente em modo produção.");
+                return true;
+            } catch (IOException e) {
+                log.warn("Falha na limpeza rápida. Voltando para limpeza completa: {}", e.getMessage());
+            }
+        }
+
         log.warn("Lock do Postgres encontrado em {} ou {}. Tentando identificar/encerrar processo antigo...",
                 pidLock, epgLock);
         try {
@@ -647,6 +664,23 @@ public class PostgresEmbeddedConfig {
             log.warn("Erro ao verificar integridade do banco: {}", e.getMessage());
             return true; // Considerar corrompido em caso de erro
         }
+    }
+
+    private boolean isDatabaseHealthy(Path dataDir) {
+        if (!Files.exists(dataDir) || !Files.isDirectory(dataDir)) {
+            return false;
+        }
+
+        // Verificar se estruturas básicas do PostgreSQL existem
+        Path baseDir = dataDir.resolve("base");
+        Path globalDir = dataDir.resolve("global");
+        Path pgVersion = dataDir.resolve("PG_VERSION");
+        Path pgControl = globalDir.resolve("pg_control");
+
+        // Se os diretórios e arquivos essenciais existem, provavelmente está saudável
+        return Files.exists(baseDir) && Files.isDirectory(baseDir) &&
+                Files.exists(globalDir) && Files.isDirectory(globalDir) &&
+                Files.exists(pgVersion) && Files.exists(pgControl);
     }
 
     private void cleanupCorruptedDatabase(Path dataDir) {

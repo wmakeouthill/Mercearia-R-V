@@ -77,6 +77,14 @@
                 "to": "backend-spring/pg",
                 "filter": ["**/*"]
             },
+            {
+                "from": "../scripts/render-nota-pdf.js",
+                "to": "scripts/render-nota-pdf.js"
+            },
+            {
+                "from": "../scripts/node_modules",
+                "to": "scripts/node_modules"
+            },
             
             {
                 "from": "../frontend/dist/sistema-estoque/browser",
