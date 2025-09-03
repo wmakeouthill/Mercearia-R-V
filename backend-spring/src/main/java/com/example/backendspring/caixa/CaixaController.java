@@ -54,26 +54,34 @@ public class CaixaController {
     private static final String LABEL_DEVOLVIDO_SUFFIX = " (devolvido)";
 
     @GetMapping("/status")
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public ResponseEntity<Map<String, Object>> status() {
-        return caixaStatusRepository.findTopByOrderByIdDesc()
-                .map(cs -> {
-                    Map<String, Object> body = new LinkedHashMap<>();
-                    body.put("id", cs.getId());
-                    body.put("aberto", Boolean.TRUE.equals(cs.getAberto()));
-                    body.put("horario_abertura_obrigatorio", cs.getHorarioAberturaObrigatorio());
-                    body.put("horario_fechamento_obrigatorio", cs.getHorarioFechamentoObrigatorio());
-                    body.put("aberto_por", cs.getAbertoPor() != null ? cs.getAbertoPor().getId() : null);
-                    body.put("fechado_por", cs.getFechadoPor() != null ? cs.getFechadoPor().getId() : null);
-                    body.put("data_abertura", cs.getDataAbertura());
-                    body.put("data_fechamento", cs.getDataFechamento());
-                    body.put("criado_em", cs.getCriadoEm());
-                    body.put("atualizado_em", cs.getAtualizadoEm());
-                    body.put("aberto_por_username", cs.getAbertoPor() != null ? cs.getAbertoPor().getUsername() : null);
-                    body.put("fechado_por_username",
-                            cs.getFechadoPor() != null ? cs.getFechadoPor().getUsername() : null);
-                    return ResponseEntity.ok(body);
-                })
-                .orElse(ResponseEntity.ok(Map.of("id", 1, "aberto", false)));
+        try {
+            var opt = caixaStatusRepository.findTopByOrderByIdDesc();
+            if (opt.isEmpty()) {
+                return ResponseEntity.ok(Map.of("id", 1, "aberto", false));
+            }
+            var cs = opt.get();
+            var abertoPor = cs.getAbertoPor();
+            var fechadoPor = cs.getFechadoPor();
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("id", cs.getId());
+            body.put("aberto", Boolean.TRUE.equals(cs.getAberto()));
+            body.put("horario_abertura_obrigatorio", cs.getHorarioAberturaObrigatorio());
+            body.put("horario_fechamento_obrigatorio", cs.getHorarioFechamentoObrigatorio());
+            body.put("aberto_por", abertoPor != null ? abertoPor.getId() : null);
+            body.put("fechado_por", fechadoPor != null ? fechadoPor.getId() : null);
+            body.put("data_abertura", cs.getDataAbertura());
+            body.put("data_fechamento", cs.getDataFechamento());
+            body.put("criado_em", cs.getCriadoEm());
+            body.put("atualizado_em", cs.getAtualizadoEm());
+            body.put("aberto_por_username", abertoPor != null ? abertoPor.getUsername() : null);
+            body.put("fechado_por_username", fechadoPor != null ? fechadoPor.getUsername() : null);
+            return ResponseEntity.ok(body);
+        } catch (Exception e) {
+            log.warn("/api/caixa/status: exception, returning fallback", e);
+            return ResponseEntity.ok(Map.of("id", 1, "aberto", false));
+        }
     }
 
     private static String labelMetodoPagamento(String metodo) {

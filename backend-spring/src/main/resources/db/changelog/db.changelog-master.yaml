@@ -103,6 +103,10 @@ databaseChangeLog:
   - changeSet:
       id: 005-add-customer-fields-to-venda_cabecalho
       author: system
+      preConditions:
+        - onFail: CONTINUE
+        - tableExists:
+            tableName: venda_cabecalho
       changes:
         - addColumn:
             tableName: venda_cabecalho

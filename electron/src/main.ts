@@ -23,12 +23,42 @@ let backendShouldBeRunning = false; // Flag para saber se backend deveria estar 
 let currentBackendPort = 3000;
 // Forçar uso da porta 3000 em produção - não tentar portas alternativas por padrão
 const backendCandidatePorts = [3000];
+let backendHost = '127.0.0.1';
 let backendStarting = false; // Evitar starts concorrentes
 let backendStdoutStream: fs.WriteStream | null = null;
 let backendStderrStream: fs.WriteStream | null = null;
 // Flag para desativar completamente logs em arquivo (frontend.log, backend-stdout.log, backend-stderr.log)
 // Temporariamente habilitado para debugging em builds empacotados
 const DISABLE_FILE_LOGS = false;
+
+// Retry silencioso para garantir que a janela navegue para o frontend servido pelo backend
+let frontendRetryTimer: NodeJS.Timeout | null = null;
+function startFrontendRetryLoop(): void {
+    if (frontendRetryTimer) return;
+    frontendRetryTimer = setInterval(async () => {
+        try {
+            if (!mainWindow || mainWindow.isDestroyed()) return;
+            const currentUrl = mainWindow.webContents.getURL() || '';
+            const targetBase = `http://${backendHost}:${currentBackendPort}/app/`;
+            if (currentUrl.startsWith(targetBase)) {
+                return; // já estamos na URL correta
+            }
+            const status = await testBackendConnection();
+            if (status === 'healthy') {
+                console.log('🔁 Retry: backend saudável; navegando para', targetBase);
+                await mainWindow.loadURL(targetBase);
+            }
+        } catch (e) {
+            // manter silencioso; próximo tick tenta novamente
+        }
+    }, 1500);
+}
+function stopFrontendRetryLoop(): void {
+    if (frontendRetryTimer) {
+        clearInterval(frontendRetryTimer);
+        frontendRetryTimer = null;
+    }
+}
 
 // ==== Funções auxiliares para reduzir complexidade ====
 function attemptNextBackendPort(reason: string): void {
@@ -208,6 +238,21 @@ function getLocalIPv4(): string | null {
     return null;
 }
 
+function updateBackendHostFromLocalIp(): void {
+    try {
+        const ip = getLocalIPv4();
+        if (ip && ip !== '127.0.0.1') {
+            backendHost = ip;
+            console.log('🌐 Backend host definido para IP local ->', backendHost);
+        } else {
+            backendHost = '127.0.0.1';
+            console.log('🌐 Backend host permanece em 127.0.0.1');
+        }
+    } catch {
+        backendHost = '127.0.0.1';
+    }
+}
+
 // Em Windows, adiciona entrada no hosts apontando hostname -> ip, se ainda não existir
 function ensureHostsEntryWin(hostname: string, ip: string): void {
     try {
@@ -317,6 +362,8 @@ function determineWorkingDir(): string {
         : path.join(__dirname, '../resources/backend-spring');
 }
 
+let isQuitting = false;
+
 function attachBackendListeners(proc: childProcess.ChildProcess): void {
     if (proc.stdout) {
         proc.stdout.on('data', (data: Buffer) => {
@@ -338,7 +385,8 @@ function attachBackendListeners(proc: childProcess.ChildProcess): void {
             clearInterval(backendHealthCheckInterval);
             backendHealthCheckInterval = null;
         }
-        const shouldRestart = backendRestartAttempts < maxBackendRestartAttempts;
+        // Reiniciar somente se ainda devemos estar rodando e o app não está encerrando
+        const shouldRestart = backendShouldBeRunning && !isQuitting && (backendRestartAttempts < maxBackendRestartAttempts);
         if (shouldRestart) {
             backendRestartAttempts++;
             console.log(`🔄 Reiniciando backend automaticamente (tentativa ${backendRestartAttempts}/${maxBackendRestartAttempts})...`);
@@ -376,7 +424,14 @@ function getLogsDirectory(): string {
             return path.resolve(__dirname, '..');
         }
     }
-    // Em produção, usar diretório de dados do app do usuário
+    // Em produção, gravar na pasta do app (irmã de resources) para facilitar coleta
+    try {
+        const resPath = (process as any).resourcesPath as string | undefined;
+        if (resPath) {
+            const dir = path.dirname(resPath);
+            return dir;
+        }
+    } catch { /* ignore */ }
     return app.getPath('userData');
 }
 
@@ -394,7 +449,7 @@ function appendLogLine(line: string): void {
 // CONFIGURAÇÃO: Aguardar tudo estar pronto antes de mostrar? (APENAS EM PRODUÇÃO)
 // Em desenvolvimento sempre mostra imediatamente independente desta configuração
 // Forçar comportamento: não aguardar tudo para evitar janela invisível em builds empacotados
-const WAIT_FOR_EVERYTHING_READY = true; // true = aguarda / false = mostra imediatamente
+const WAIT_FOR_EVERYTHING_READY = false; // true = aguarda / false = mostra imediatamente
 // ⚠️ Se preferir aguardar backend+frontend antes de mostrar, altere para true
 
 function createWindow(): void {
@@ -435,19 +490,22 @@ function createWindow(): void {
 
     // Configurar CSP para permitir conexões com o backend local
     mainWindow.webContents.session.webRequest.onHeadersReceived((details: OnHeadersReceivedListenerDetails, callback: (response: HeadersReceivedResponse) => void) => {
+        const ip = backendHost;
+        const httpHosts = `http://localhost:* http://127.0.0.1:* http://${ip}:*`;
+        const httpsHosts = `https://localhost:* https://127.0.0.1:* https://${ip}:*`;
+        const wsHosts = `ws://localhost:* ws://127.0.0.1:* ws://${ip}:*`;
+        const csp = (
+            "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: " + httpHosts + ' ' + httpsHosts + '; ' +
+            "connect-src 'self' blob: " + httpHosts + ' ' + httpsHosts + ' ' + wsHosts + '; ' +
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval'; " +
+            "style-src 'self' 'unsafe-inline'; " +
+            "img-src 'self' data: blob: " + httpHosts + '; ' +
+            "font-src 'self' data:;"
+        );
         callback({
             responseHeaders: {
                 ...details.responseHeaders,
-                'Content-Security-Policy': [
-                    "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: " +
-                    "http://localhost:* http://127.0.0.1:* https://localhost:* https://127.0.0.1:*; " +
-                    // Allow blob: in connect-src so blob URLs created by the frontend are accessible
-                    "connect-src 'self' blob: http://localhost:* http://127.0.0.1:* https://localhost:* https://127.0.0.1:* ws://localhost:*; " +
-                    "script-src 'self' 'unsafe-inline' 'unsafe-eval'; " +
-                    "style-src 'self' 'unsafe-inline'; " +
-                    "img-src 'self' data: blob: http://localhost:* http://127.0.0.1:*; " +
-                    "font-src 'self' data:;"
-                ]
+                'Content-Security-Policy': [csp]
             }
         });
     });
@@ -635,6 +693,7 @@ function createWindow(): void {
         } else {
             console.log('🌐 Carregando frontend imediatamente...');
             loadProductionFrontend();
+            startFrontendRetryLoop();
         }
 
         // Fallback de segurança somente quando não exigimos aguardar tudo
@@ -664,20 +723,10 @@ function waitForBackendThenLoadFrontend(): void {
         console.log('✅ Backend saudável. Carregando frontend servido pelo backend...');
         sendSplashStatus('Backend pronto', 80);
         sendSplashStatus('Carregando frontend...', 90);
-        // Start loading the frontend served by backend. If the production HTTP load
-        // does not finish within a reasonable timeout, fall back to loading the
-        // packaged file to avoid leaving the user stuck on the splash.
-        let fallbackTimer: NodeJS.Timeout | null = null;
         try {
             if (mainWindow && !mainWindow.isDestroyed()) {
-                fallbackTimer = setTimeout(() => {
-                    console.warn('🚨 Fallback: frontend HTTP load did not finish in time, trying file fallback');
-                    loadFallbackFile();
-                }, 15000);
-
                 mainWindow.webContents.once('did-finish-load', () => {
                     try {
-                        if (fallbackTimer) { clearTimeout(fallbackTimer); fallbackTimer = null; }
                         sendSplashStatus('Aplicação pronta', 100);
                         mainWindow?.setOpacity(1.0);
                         mainWindow?.show();
@@ -686,10 +735,11 @@ function waitForBackendThenLoadFrontend(): void {
                 });
             }
             loadProductionFrontend();
+            // Iniciar retry silencioso para garantir navegação assim que o backend ficar pronto
+            startFrontendRetryLoop();
         } catch (e) {
             console.error('❌ Erro ao carregar frontend via backend, usando fallback file:', (e as Error)?.message || e);
-            if (fallbackTimer) { clearTimeout(fallbackTimer); }
-            loadFallbackFile();
+            loadErrorPage('Falha ao carregar frontend via backend', String((e as Error)?.message || e));
         }
     };
 
@@ -929,20 +979,17 @@ function loadProductionFrontend(): void {
     console.log('🔧 Debug: NODE_ENV =', process.env.NODE_ENV);
     console.log('🔧 Debug: app.isPackaged =', app.isPackaged);
     // Preferir carregar o frontend servido pelo backend (same-origin)
-    const backendUrl = `http://127.0.0.1:${currentBackendPort}`;
-    // Instead of falling back to file://, wait for the backend to become
-    // available and then load via HTTP (same-origin). This avoids file:/// URLs
-    // which break relative API calls.
+    const backendUrl = `http://${backendHost}:${currentBackendPort}`;
     (async () => {
         const appUrl = `${backendUrl}/app/`;
         const httpMod: any = require('http');
-        const maxAttempts = 120; // wait up to 120s
+        const maxAttempts = 180; // wait up to 180s on first boot (initdb)
         let attempts = 0;
         while (attempts < maxAttempts) {
             attempts++;
             try {
                 await new Promise<void>((resolve, reject) => {
-                    const req = httpMod.get(appUrl, { timeout: 3000 }, (res: any) => {
+                    const req = httpMod.get(appUrl, { timeout: 4000 }, (res: any) => {
                         const ok = typeof res?.statusCode === 'number' && res.statusCode < 400;
                         try { req.destroy(); } catch { }
                         if (ok) resolve(); else reject(new Error('status ' + res.statusCode));
@@ -958,7 +1005,7 @@ function loadProductionFrontend(): void {
                 await new Promise(r => setTimeout(r, 1000));
             }
         }
-        console.error('❌ Backend não respondeu dentro do tempo limite. Não será carregado o fallback file:// para evitar chamadas inválidas.');
+        console.error('❌ Backend não respondeu dentro do tempo limite. Mostrando página de erro.');
         loadErrorPage(`Backend not available after ${maxAttempts} seconds`, '');
     })();
 }
@@ -1137,15 +1184,15 @@ function createMenu(): void {
 async function preparePgData(): Promise<{ userDataDir: string; userPgDir: string; embeddedPgDir?: string }> {
     const userDataDir = app.getPath('userData');
     const resourceBase = process.resourcesPath ? process.resourcesPath : path.join(__dirname, '../resources');
-    // Explicit requirement: embedded PG data must live under resources/backend-spring/pg
-    const embeddedPgDir = path.join(resourceBase, 'backend-spring', 'pg');
+    // Explicit requirement: embedded PG data must live under resources/data/pg
+    const embeddedPgDir = path.join(resourceBase, 'data', 'pg');
 
     // Ensure directory exists (create if missing). In packaged apps extraResources will
     // provide this directory; here we create it if absent so installers can populate later.
     try {
         if (!fs.existsSync(embeddedPgDir)) {
             fs.mkdirSync(embeddedPgDir, { recursive: true });
-            console.log('📦 Created embedded Postgres directory at', embeddedPgDir);
+            console.log('📦 Created embedded Postgres data directory at', embeddedPgDir);
         }
     } catch (e) {
         console.error('❌ Cannot ensure embedded PG directory at', embeddedPgDir, ':', (e as Error)?.message || e);
@@ -1157,7 +1204,7 @@ async function preparePgData(): Promise<{ userDataDir: string; userPgDir: string
     try {
         fs.accessSync(embeddedPgDir, fs.constants.W_OK);
     } catch (e) {
-        console.error('❌ Embedded PG directory exists but is not writable:', embeddedPgDir);
+        console.error('❌ Embedded PG data directory exists but is not writable:', embeddedPgDir);
         throw new Error(`Embedded Postgres data directory exists but is not writable: ${embeddedPgDir}`);
     }
 
@@ -1172,6 +1219,10 @@ function buildEnvForBackend(userDataDir: string, userPgDir: string): NodeJS.Proc
         // Forçar apontar para o banco de dados copiado em userData (única fonte de verdade)
         PG_DATA_DIR: userPgDir,
         PERSIST_EMBEDDED_PG: 'true',
+        // Nunca inicializar/semear DB automaticamente em produção empacotada
+        SKIP_DB_INIT: 'true',
+        // Garantir que nenhum dump automático seja aplicado
+        APPLY_DB_DUMP: 'false',
         LOG_FILE: path.join(userDataDir, 'backend.log')
     } as NodeJS.ProcessEnv;
 }
@@ -1292,6 +1343,10 @@ async function launchBackendProcess(jarPath: string, userDataDir: string, env: N
             console.error('⚠️ Falha ao preparar arquivos de log do backend:', (e as Error)?.message || e);
         }
     }
+
+    // Garantir variáveis para backend reconhecer modo empacotado e diretórios
+    env.APP_PACKAGED = 'true';
+    env.LOG_FILE = path.join(getLogsDirectory(), 'backend.log');
 
     backendProcess = childProcess.spawn(javaExecutable, args, {
         stdio: 'pipe',
@@ -1425,7 +1480,7 @@ function testBackendConnection(): Promise<BackendStatus> {
 
         const http: typeof import('http') = require('http');
         const options = {
-            hostname: '127.0.0.1',
+            hostname: backendHost,
             port: currentBackendPort,
             path: '/health',
             method: 'GET',
@@ -1692,7 +1747,8 @@ app.whenReady().then(() => {
     // Em produção, tentar mapear `merceariarv.app` para o IP local no arquivo hosts (Windows)
     if (!isDev) {
         try {
-            const localIp = getLocalIPv4();
+            updateBackendHostFromLocalIp();
+            const localIp = backendHost !== '127.0.0.1' ? backendHost : getLocalIPv4();
             if (localIp) {
                 ensureHostsEntryWin('merceariarv.app', localIp);
             } else {
@@ -1725,13 +1781,21 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {
+        isQuitting = true;
         stopBackend();
         app.quit();
     }
 });
 
 app.on('before-quit', () => {
+    isQuitting = true;
     stopBackend();
+    try {
+        // Garantir encerramento completo do processo árvore no Windows
+        if (process.platform === 'win32' && backendProcess?.pid) {
+            childProcess.spawnSync('taskkill', ['/PID', String(backendProcess.pid), '/T', '/F']);
+        }
+    } catch { /* ignore */ }
 });
 
 ipcMain.handle('get-app-version', () => {
@@ -1761,7 +1825,7 @@ ipcMain.handle('test-backend-connection', async () => {
 
 // Expose backend URL for frontend via preload
 ipcMain.handle('get-backend-url', () => {
-    return `http://127.0.0.1:${currentBackendPort}`;
+    return `http://${backendHost}:${currentBackendPort}`;
 });
 
 // Open external URL in the user's default browser

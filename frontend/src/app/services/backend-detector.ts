@@ -29,10 +29,19 @@ export class BackendDetectorService {
 
     const ports = [3000, 3001, 3002];
     const maybeHost = typeof window !== 'undefined' ? (window.location?.hostname ?? '') : '';
+
+    // Se estamos acessando via navegador com hostname não-local (ex.: 192.168.x.x),
+    // priorizar estritamente a mesma origem primeiro para evitar CORS e uso de 127.0.0.1.
+    const isLocal = /^(localhost|127\.|0\.0\.0\.0)$/i.test(maybeHost);
+    if (maybeHost && !isLocal) {
+      return [`http://${maybeHost}:3000`];
+    }
+
+    // Caso local, testar host atual primeiro, depois 127.0.0.1 e localhost
     const hosts = [
+      maybeHost,
       '127.0.0.1',
-      'localhost',
-      maybeHost
+      'localhost'
     ].filter((h): h is string => Boolean(h));
 
     const urls: string[] = [];

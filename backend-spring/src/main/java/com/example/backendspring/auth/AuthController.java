@@ -79,7 +79,8 @@ public class AuthController {
                         "id", u.getId(),
                         KEY_USERNAME, u.getUsername(),
                         KEY_ROLE, u.getRole())))
-                .orElse(ResponseEntity.status(404).body(Map.<String, Object>of(KEY_ERROR, MSG_NAO_ENCONTRADO)));
+                // Tratar usuário não encontrado como não autenticado (token órfão)
+                .orElse(ResponseEntity.status(401).body(Map.<String, Object>of(KEY_ERROR, MSG_NAO_AUTENTICADO)));
     }
 
     @GetMapping("/me")
@@ -92,7 +93,8 @@ public class AuthController {
                         KEY_USERNAME, u.getUsername(),
                         KEY_ROLE, u.getRole(),
                         KEY_PODE_CONTROLAR_CAIXA, Boolean.TRUE.equals(u.getPodeControlarCaixa()))))
-                .orElse(ResponseEntity.status(404).body(Map.<String, Object>of(KEY_ERROR, MSG_NAO_ENCONTRADO)));
+                // Tratar usuário não encontrado como não autenticado (token órfão)
+                .orElse(ResponseEntity.status(401).body(Map.<String, Object>of(KEY_ERROR, MSG_NAO_AUTENTICADO)));
     }
 
     @PostMapping("/change-password")

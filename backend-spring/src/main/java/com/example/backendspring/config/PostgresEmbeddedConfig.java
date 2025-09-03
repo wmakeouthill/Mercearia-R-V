@@ -69,6 +69,9 @@ public class PostgresEmbeddedConfig {
         }
         Path persistentDir = resolvePersistentDataDirectoryFromEnv();
         ensureDirectory(persistentDir);
+        // Não migrar para diretório temporário em produção empacotada; apenas
+        // tentar limpar locks e seguir usando o diretório persistente para não
+        // criar bancos novos.
         if (!handleStaleLockIfPresent(persistentDir)) {
             return createTempDataDirectory();
         }
@@ -76,11 +79,14 @@ public class PostgresEmbeddedConfig {
     }
 
     private Path resolvePersistentDataDirectoryFromEnv() {
-        // When packaged, prefer resources/backend-spring/data/pg inside the app bundle
+        // When packaged, the installer copies development data folder
+        // "backend-spring/data"
+        // into Electron resources as "resources/data" (sibling of backend-spring).
+        // The backend runs with CWD = resources/backend-spring, so prefer ../data/pg.
         String packaged = System.getenv("APP_PACKAGED");
         if (packaged != null && packaged.equalsIgnoreCase("true")) {
-            Path packagedDir = Paths.get("resources", "backend-spring", "data", "pg").toAbsolutePath();
-            log.info("Packaged mode: using embedded Postgres data directory: {}", packagedDir);
+            Path packagedDir = Paths.get("..", "data", "pg").toAbsolutePath().normalize();
+            log.info("Packaged mode: using embedded Postgres data directory (../data/pg): {}", packagedDir);
             return packagedDir;
         }
 

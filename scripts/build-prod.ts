@@ -47,6 +47,15 @@ try {
         shell: 'powershell.exe'
     });
 
+    // Copiar frontend buildado para os recursos do backend (classpath:/frontend)
+    console.log('📋 Copiando frontend para recursos do backend...');
+    execSync('node ./scripts/copy-frontend-to-backend.js', {
+        stdio: 'inherit',
+        cwd: path.join(__dirname, '..'),
+        env: { ...process.env, NODE_ENV: 'production', FRONTEND_BASE_HREF: '/app/' },
+        shell: 'powershell.exe'
+    });
+
     // Build do backend SPRING (gera JAR)
     console.log('📦 Build do backend Spring...');
     // Run Maven without -q so build output is visible in the terminal

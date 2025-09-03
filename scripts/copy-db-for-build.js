@@ -96,8 +96,8 @@ function main() {
   // Instead of packaging a SQL dump, include the raw embedded Postgres data
   // directory so the packaged app can start with a pre-populated cluster.
   const srcDataDir = path.join(repoRoot, 'backend-spring', 'data');
-  const destDataDir = path.join(repoRoot, 'electron', 'resources', 'backend-spring', 'data');
-  console.log('Copying backend-spring/data from', srcDataDir, 'to electron resources', destDataDir);
+  const destDataDir = path.join(repoRoot, 'electron', 'resources', 'data');
+  console.log('Copying backend-spring/data from', srcDataDir, 'to electron resources/data', destDataDir);
   if (fs.existsSync(srcDataDir)) {
     try {
       copyDirSync(srcDataDir, destDataDir);

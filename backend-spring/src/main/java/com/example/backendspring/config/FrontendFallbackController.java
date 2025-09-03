@@ -1,8 +1,6 @@
 package com.example.backendspring.config;
 
 import org.springframework.stereotype.Controller;
-import org.springframework.web.bind.annotation.GetMapping;
-import jakarta.servlet.http.HttpServletRequest;
 
 /**
  * Fallback controller to support SPA deep links under /app/** by forwarding
@@ -11,13 +9,8 @@ import jakarta.servlet.http.HttpServletRequest;
 @Controller
 public class FrontendFallbackController {
 
-    @GetMapping("/app/**")
-    public String forwardAppPaths(HttpServletRequest request) {
-        String path = request.getRequestURI();
-        // If the path contains a dot, treat it as a file (leave to resource handler)
-        if (path != null && path.contains(".")) {
-            return null; // let Spring try to resolve static resource
-        }
-        return "forward:/app/index.html";
-    }
+    // Controller no longer needed because ResourceResolver handles SPA fallback.
+    // Keep class present (no mappings) to avoid component-scan surprises or wiring
+    // changes.
+    // If you prefer, this class can be deleted.
 }

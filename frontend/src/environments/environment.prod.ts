@@ -2,6 +2,10 @@
 function resolveApiBase(): string {
     const isBrowser = typeof window !== 'undefined' && !!window.location;
     if (isBrowser) {
+        // In Electron (file:// origin), force localhost backend
+        if (window.location.protocol === 'file:') {
+            return 'http://127.0.0.1:3000/api';
+        }
         const host = window.location.hostname;
         const isLocal = /^(localhost|127\.|0\.0\.0\.0)/.test(host);
         if (!isLocal) {
