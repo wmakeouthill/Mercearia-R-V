@@ -1223,6 +1223,8 @@ function buildEnvForBackend(userDataDir: string, userPgDir: string): NodeJS.Proc
         SKIP_DB_INIT: 'true',
         // Garantir que nenhum dump automático seja aplicado
         APPLY_DB_DUMP: 'false',
+        // Desabilitar Liquibase em produção pois o banco já vem pronto de desenvolvimento
+        LIQUIBASE_ENABLED: 'false',
         LOG_FILE: path.join(userDataDir, 'backend.log')
     } as NodeJS.ProcessEnv;
 }

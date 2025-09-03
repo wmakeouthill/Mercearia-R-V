@@ -25,7 +25,7 @@ spring:
           "[time_zone]": "UTC"
     open-in-view: false
   liquibase:
-    enabled: true
+    enabled: ${LIQUIBASE_ENABLED:true}
     change-log: classpath:db/changelog/db.changelog-master.yaml
 
 app:
