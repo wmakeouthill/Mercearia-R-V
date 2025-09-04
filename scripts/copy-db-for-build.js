@@ -15,9 +15,22 @@ function copyDirSync(src, dest) {
       copyDirSync(srcPath, destPath);
     } else if (entry.isFile()) {
       try {
+        // Preserve file attributes and timestamps for better fidelity
         fs.copyFileSync(srcPath, destPath);
+        const srcStats = fs.statSync(srcPath);
+        fs.utimesSync(destPath, srcStats.atime, srcStats.mtime);
       } catch (e) {
-        console.warn('Failed to copy file', srcPath, e.message || e);
+        console.error('⚠️  CRITICAL: Failed to copy file', srcPath, '->', destPath, ':', e.message || e);
+        // Don't continue silently - this could cause database corruption
+        throw e;
+      }
+    } else if (entry.isSymbolicLink()) {
+      try {
+        const linkTarget = fs.readlinkSync(srcPath);
+        fs.symlinkSync(linkTarget, destPath);
+        console.log('Copied symlink:', srcPath, '->', destPath);
+      } catch (e) {
+        console.warn('Failed to copy symlink', srcPath, ':', e.message || e);
       }
     }
   }
@@ -61,33 +74,36 @@ function runPgDumpWithDocker({ host, port, db, user, password, dockerImage }, sr
   console.log('pg_dump via Docker executado com sucesso, arquivo gerado em', srcDump);
 }
 
-function copyDumpAndSecrets(repoRoot, srcDump) {
-  const destDir = path.join(repoRoot, 'electron', 'resources', 'backend-spring', 'db');
-  const destDump = path.join(destDir, 'dump_data.sql');
-  try {
-    fs.mkdirSync(destDir, { recursive: true });
-    if (srcDump && fs.existsSync(srcDump)) {
-      fs.copyFileSync(srcDump, destDump);
-      console.log('DB dump copy completed successfully');
-    } else {
-      console.log('No SQL dump provided or not found; skipping dump copy');
+function countFiles(dir) {
+  let count = 0;
+  if (!fs.existsSync(dir)) return count;
+  
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      count += countFiles(fullPath);
+    } else if (entry.isFile() || entry.isSymbolicLink()) {
+      count++;
     }
-  } catch (e) {
-    console.error('DB dump copy failed:', e.message || e);
-    process.exit(2);
   }
+  return count;
+}
 
+function copySecretsOnly(repoRoot) {
+  // Only copy secrets - no duplicate database copy
   const secretsSrc = path.join(repoRoot, 'backend-spring', 'secrets');
   const secretsDest = path.join(repoRoot, 'electron', 'resources', 'backend-spring', 'secrets');
   if (fs.existsSync(secretsSrc)) {
     try {
       copyDirSync(secretsSrc, secretsDest);
-      console.log('Copied backend secrets for build');
+      console.log('✅ Copied backend secrets for build');
     } catch (e) {
-      console.warn('Failed to copy secrets:', e.message || e);
+      console.error('❌ Failed to copy secrets:', e.message || e);
+      process.exit(2);
     }
   } else {
-    console.log('No backend secrets directory found; skipping');
+    console.log('⚠️  No backend secrets directory found; skipping');
   }
 }
 
@@ -97,11 +113,28 @@ function main() {
   // directory so the packaged app can start with a pre-populated cluster.
   const srcDataDir = path.join(repoRoot, 'backend-spring', 'data');
   const destDataDir = path.join(repoRoot, 'electron', 'resources', 'data');
-  console.log('Copying backend-spring/data from', srcDataDir, 'to electron resources/data', destDataDir);
+  console.log('🗄️  Copying COMPLETE PostgreSQL database from', srcDataDir);
+  console.log('📁 Destination:', destDataDir);
+  
   if (fs.existsSync(srcDataDir)) {
     try {
+      // Clear destination first to ensure clean copy
+      if (fs.existsSync(destDataDir)) {
+        fs.rmSync(destDataDir, { recursive: true, force: true });
+      }
+      
       copyDirSync(srcDataDir, destDataDir);
-      console.log('Backend data directory copied successfully');
+      
+      // Validate copy by counting files
+      const srcFileCount = countFiles(srcDataDir);
+      const destFileCount = countFiles(destDataDir);
+      
+      if (srcFileCount === destFileCount) {
+        console.log(`✅ Backend data directory copied successfully: ${srcFileCount} files preserved`);
+      } else {
+        console.error(`❌ COPY INCOMPLETE! Source: ${srcFileCount} files, Destination: ${destFileCount} files`);
+        process.exit(2);
+      }
     } catch (e) {
       console.error('Failed to copy backend data directory:', e.message || e);
       process.exit(2);
@@ -110,8 +143,8 @@ function main() {
     console.log('No backend-spring/data directory found; skipping data packaging');
   }
 
-  // Still copy secrets if present
-  copyDumpAndSecrets(repoRoot, null);
+  // Copy only secrets (no duplicate database copy)
+  copySecretsOnly(repoRoot);
   // Também copiar imagem padrão do frontend para servir como logo do splash
   try {
     const frontendLogo = path.join(repoRoot, 'frontend', 'shared', 'padrao.png');

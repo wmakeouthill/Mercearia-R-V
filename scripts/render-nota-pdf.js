@@ -14,22 +14,43 @@ const path = require('path');
     const html = fs.readFileSync(inPath, 'utf8');
     const puppeteer = require('puppeteer');
 
-    const browser = await puppeteer.launch({ args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+    const browser = await puppeteer.launch({ 
+      args: [
+        '--no-sandbox', 
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-web-security',
+        '--disable-features=VizDisplayCompositor'
+      ] 
+    });
+    
     const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: 'networkidle0' });
+    
+    // Otimizar viewport para menor resolução
+    await page.setViewport({ 
+      width: 800, 
+      height: 600,
+      deviceScaleFactor: 1 // Reduzir de 2 para 1 para menor resolução
+    });
+    
+    await page.setContent(html, { waitUntil: 'domcontentloaded' }); // Mais rápido que networkidle0
 
-    // Ensure invoice element exists
-    const el = await page.$('.invoice') || await page.$('body');
-    const box = await el.boundingBox();
-
-    // convert px -> mm (assume 96dpi CSS)
-    const pxToMm = px => (px * 25.4) / 96.0;
-    // add small extra margin to avoid accidental page breaks and rounding issues
-    const widthMm = Math.max(40, Math.ceil(pxToMm(box.width) + 4));
-    const heightMm = Math.max(40, Math.ceil(pxToMm(box.height) + 4));
-
-    // force single-page output by setting exact width/height measured from content
-    await page.pdf({ path: outPath, width: `${widthMm}mm`, height: `${heightMm}mm`, printBackground: true, preferCSSPageSize: false });
+    // Usar formato A4 padrão em vez de tamanho customizado para melhor compressão
+    await page.pdf({ 
+      path: outPath, 
+      format: 'A4',
+      margin: {
+        top: '10mm',
+        bottom: '10mm', 
+        left: '10mm',
+        right: '10mm'
+      },
+      printBackground: true,
+      preferCSSPageSize: false,
+      // Configurações para reduzir tamanho do arquivo
+      displayHeaderFooter: false,
+      scale: 0.8 // Reduzir escala para 80% - menor tamanho
+    });
     await browser.close();
     process.exit(0);
   } catch (err) {

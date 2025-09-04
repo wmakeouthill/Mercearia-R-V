@@ -12,7 +12,7 @@
         "build:backend": "cd ../backend-spring && mvn -q -DskipTests package",
         "build:all": "npm run build:frontend && npm run build:backend && npm run build",
         "dist": "node ../scripts/copy-db-for-build.js && node ../scripts/create-deploy-package.js && electron-builder && node ../scripts/maybe_auto_deploy.js",
-        "dist:win": "node ../scripts/copy-db-for-build.js && node ../scripts/create-deploy-package.js && if exist dist-installer2\\win-unpacked (rmdir /S /Q dist-installer2\\win-unpacked) && electron-builder --win && node ../scripts/maybe_auto_deploy.js",
+        "dist:win": "node ../scripts/copy-db-for-build.js && node ../scripts/create-deploy-package.js && (rmdir /S /Q dist-installer2\\win-unpacked 2>nul || echo Cleaned) && electron-builder --win && node ../scripts/maybe_auto_deploy.js",
         "dist:mac": "node ../scripts/copy-db-for-build.js && node ../scripts/create-deploy-package.js && electron-builder --mac && node ../scripts/maybe_auto_deploy.js",
         "dist:linux": "node ../scripts/copy-db-for-build.js && node ../scripts/create-deploy-package.js && electron-builder --linux && node ../scripts/maybe_auto_deploy.js",
         "pack": "npm run build:all && electron-builder --dir"
@@ -61,8 +61,9 @@
                 "to": "backend-spring/backend-spring-0.0.1-SNAPSHOT.jar"
             },
             {
-                "from": "../backend-spring/data",
-                "to": "data"
+                "from": "resources/data",
+                "to": "data",
+                "filter": ["**/*"]
             },
             {
                 "from": "../backend-spring/secrets",
@@ -71,11 +72,6 @@
             {
                 "from": "../backend-spring/uploads/produtos",
                 "to": "backend-spring/uploads/produtos"
-            },
-            {
-                "from": "../backend-spring/pg",
-                "to": "backend-spring/pg",
-                "filter": ["**/*"]
             },
             {
                 "from": "../scripts/render-nota-pdf.js",
@@ -122,8 +118,14 @@
             "uninstallerIcon": "icon/icon.ico",
             "runAfterFinish": true,
             "perMachine": false,
-            "include": "build/installer.nsh"
+            "include": "build/installer.nsh",
+            "differentialPackage": false,
+            "warningsAsErrors": false,
+            "unicode": false,
+            "deleteAppDataOnUninstall": false
         },
+        "compression": "store",
+        "removePackageScripts": true,
         "mac": {
             "target": "dmg",
             "icon": "icon/icon.ico"

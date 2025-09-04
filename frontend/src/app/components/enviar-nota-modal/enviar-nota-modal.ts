@@ -409,6 +409,22 @@ export class EnviarNotaModalComponent implements OnChanges {
     this.reRenderPdf();
   }
 
+  private getWorkerPath(): string {
+    // Em desenvolvimento, usar path direto
+    if (window.location.hostname === 'localhost' || window.location.port === '4200') {
+      return '/assets/pdfjs/pdf.worker.min.js';
+    }
+
+    // Em produção, o frontend é servido pelo backend no contexto /app/
+    const baseHref = document.querySelector('base')?.getAttribute('href') || '/';
+    if (baseHref.includes('/app/')) {
+      return '/app/assets/pdfjs/pdf.worker.min.js';
+    }
+
+    // Fallback
+    return '/assets/pdfjs/pdf.worker.min.js';
+  }
+
   async fitWidth(): Promise<void> {
     if (!this.pdfViewerContainer) {
       return;
@@ -433,9 +449,34 @@ export class EnviarNotaModalComponent implements OnChanges {
         if (!this.pdfArrayBuffer) {
           return;
         }
-        const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf');
-        (pdfjsLib as any).GlobalWorkerOptions.workerSrc = '/assets/pdfjs/pdf.worker.min.js';
-        const loadingTask = (pdfjsLib as any).getDocument({ data: this.pdfArrayBuffer });
+
+        // Try different import approaches for better compatibility
+        let pdfjsLib: any;
+        try {
+          pdfjsLib = await import('pdfjs-dist/legacy/build/pdf');
+        } catch (e) {
+          console.warn('Legacy import failed, trying standard:', e);
+          pdfjsLib = await import('pdfjs-dist');
+        }
+
+        // Configure worker
+        try {
+          if (pdfjsLib.GlobalWorkerOptions) {
+            pdfjsLib.GlobalWorkerOptions.workerSrc = this.getWorkerPath();
+          } else if (pdfjsLib.default?.GlobalWorkerOptions) {
+            pdfjsLib.default.GlobalWorkerOptions.workerSrc = this.getWorkerPath();
+          }
+        } catch (e) {
+          console.warn('Worker configuration failed:', e);
+        }
+
+        // Get the getDocument function
+        const getDocument = pdfjsLib.getDocument || pdfjsLib.default?.getDocument;
+        if (!getDocument) {
+          throw new Error('getDocument function not found in pdfjs-dist');
+        }
+
+        const loadingTask = getDocument({ data: this.pdfArrayBuffer });
         this.pdfDoc = await loadingTask.promise;
       }
       this.cleanupObserverAndSlots();
@@ -457,9 +498,34 @@ export class EnviarNotaModalComponent implements OnChanges {
       this.cleanupObserverAndSlots();
       this.pdfViewerContainer.nativeElement.innerHTML = '';
       const arrayBuffer = await pdfBlob.arrayBuffer();
-      const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf');
-      try { (pdfjsLib as any).GlobalWorkerOptions.workerSrc = '/assets/pdfjs/pdf.worker.min.js'; } catch (e) { }
-      const loadingTask = (pdfjsLib as any).getDocument({ data: arrayBuffer });
+
+      // Try different import approaches for better compatibility
+      let pdfjsLib: any;
+      try {
+        pdfjsLib = await import('pdfjs-dist/legacy/build/pdf');
+      } catch (e) {
+        console.warn('Legacy import failed, trying standard:', e);
+        pdfjsLib = await import('pdfjs-dist');
+      }
+
+      // Configure worker
+      try {
+        if (pdfjsLib.GlobalWorkerOptions) {
+          pdfjsLib.GlobalWorkerOptions.workerSrc = this.getWorkerPath();
+        } else if (pdfjsLib.default?.GlobalWorkerOptions) {
+          pdfjsLib.default.GlobalWorkerOptions.workerSrc = this.getWorkerPath();
+        }
+      } catch (e) {
+        console.warn('Worker configuration failed:', e);
+      }
+
+      // Get the getDocument function
+      const getDocument = pdfjsLib.getDocument || pdfjsLib.default?.getDocument;
+      if (!getDocument) {
+        throw new Error('getDocument function not found in pdfjs-dist');
+      }
+
+      const loadingTask = getDocument({ data: arrayBuffer });
       const pdf = await loadingTask.promise;
       this.pdfArrayBuffer = arrayBuffer; this.pdfDoc = pdf; this.renderedPages.clear();
       if (pdf.numPages === 1) { await this.renderSinglePage(1); return; }

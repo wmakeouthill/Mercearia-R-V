@@ -445,16 +445,37 @@ export class RelatorioVendasComponent implements OnInit, OnDestroy {
       const arrayBuffer = await pdfBlob.arrayBuffer();
 
       // Dynamically import PDF.js
-      const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf');
+      // Try different import approaches for better compatibility
+      let pdfjsLib: any;
+      try {
+        pdfjsLib = await import('pdfjs-dist/legacy/build/pdf');
+      } catch (e) {
+        console.warn('Legacy import failed, trying standard:', e);
+        pdfjsLib = await import('pdfjs-dist');
+      }
 
       // Configure workerSrc to avoid "No GlobalWorkerOptions.workerSrc specified" error.
       try {
-        (pdfjsLib as any).GlobalWorkerOptions.workerSrc = '/assets/pdfjs/pdf.worker.min.js';
+        // Configure worker
+        try {
+          if (pdfjsLib.GlobalWorkerOptions) {
+            pdfjsLib.GlobalWorkerOptions.workerSrc = this.getWorkerPath();
+          } else if (pdfjsLib.default?.GlobalWorkerOptions) {
+            pdfjsLib.default.GlobalWorkerOptions.workerSrc = this.getWorkerPath();
+          }
+        } catch (e) {
+          console.warn('Worker configuration failed:', e);
+        }
       } catch (e) {
         console.warn('Could not set pdfjs workerSrc via GlobalWorkerOptions', e);
       }
 
-      const loadingTask = (pdfjsLib as any).getDocument({ data: arrayBuffer });
+      // Get the getDocument function
+      const getDocument = pdfjsLib.getDocument || pdfjsLib.default?.getDocument;
+      if (!getDocument) {
+        throw new Error('getDocument function not found in pdfjs-dist');
+      }
+      const loadingTask = getDocument({ data: arrayBuffer });
       const pdf = await loadingTask.promise;
 
       // save arrayBuffer and pdfDoc for zoom/pan operations and render-on-demand
@@ -490,9 +511,30 @@ export class RelatorioVendasComponent implements OnInit, OnDestroy {
       // If we have arrayBuffer but not pdfDoc, load it; otherwise reuse
       if (!this.pdfDoc) {
         if (!this.pdfArrayBuffer) return;
-        const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf');
-        (pdfjsLib as any).GlobalWorkerOptions.workerSrc = '/assets/pdfjs/pdf.worker.min.js';
-        const loadingTask = (pdfjsLib as any).getDocument({ data: this.pdfArrayBuffer });
+        // Try different import approaches for better compatibility
+        let pdfjsLib: any;
+        try {
+          pdfjsLib = await import('pdfjs-dist/legacy/build/pdf');
+        } catch (e) {
+          console.warn('Legacy import failed, trying standard:', e);
+          pdfjsLib = await import('pdfjs-dist');
+        }
+        // Configure worker
+        try {
+          if (pdfjsLib.GlobalWorkerOptions) {
+            pdfjsLib.GlobalWorkerOptions.workerSrc = this.getWorkerPath();
+          } else if (pdfjsLib.default?.GlobalWorkerOptions) {
+            pdfjsLib.default.GlobalWorkerOptions.workerSrc = this.getWorkerPath();
+          }
+        } catch (e) {
+          console.warn('Worker configuration failed:', e);
+        }
+        // Get the getDocument function
+        const getDocument = pdfjsLib.getDocument || pdfjsLib.default?.getDocument;
+        if (!getDocument) {
+          throw new Error('getDocument function not found in pdfjs-dist');
+        }
+        const loadingTask = getDocument({ data: this.pdfArrayBuffer });
         this.pdfDoc = await loadingTask.promise;
       }
 
@@ -1730,5 +1772,21 @@ export class RelatorioVendasComponent implements OnInit, OnDestroy {
     const msg = `Segue a nota do seu último pedido na nossa loja: ${pdfUrl}`;
     const waUrl = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
     window.open(waUrl, '_blank');
+  }
+
+  private getWorkerPath(): string {
+    // Em desenvolvimento, usar path direto
+    if (window.location.hostname === 'localhost' || window.location.port === '4200') {
+      return '/assets/pdfjs/pdf.worker.min.js';
+    }
+
+    // Em produção, o frontend é servido pelo backend no contexto /app/
+    const baseHref = document.querySelector('base')?.getAttribute('href') || '/';
+    if (baseHref.includes('/app/')) {
+      return '/app/assets/pdfjs/pdf.worker.min.js';
+    }
+
+    // Fallback
+    return '/assets/pdfjs/pdf.worker.min.js';
   }
 }

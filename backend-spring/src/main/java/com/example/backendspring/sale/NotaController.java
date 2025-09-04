@@ -91,20 +91,8 @@ public class NotaController {
         throw new IllegalStateException("Puppeteer render failed after " + attempts + " attempts");
     }
 
-    private String getProductImageDataUri(String imagePath) {
-        try {
-            if (imagePath == null || imagePath.isBlank())
-                return null;
-            Path p = Paths.get("uploads", "produtos", imagePath);
-            if (!Files.exists(p))
-                return null;
-            byte[] data = Files.readAllBytes(p);
-            String base64 = Base64.getEncoder().encodeToString(data);
-            return "data:image/png;base64," + base64;
-        } catch (Exception e) {
-            return null;
-        }
-    }
+    // Removed getProductImageDataUri method to reduce PDF size - no longer
+    // embedding product images
 
     private static final Logger log = LoggerFactory.getLogger(NotaController.class);
 
@@ -281,18 +269,8 @@ public class NotaController {
                 "&#39;");
     }
 
-    private String getLogoDataUri() {
-        try {
-            Path p = Paths.get("uploads", "produtos", "logo.png");
-            if (!Files.exists(p))
-                return null;
-            byte[] data = Files.readAllBytes(p);
-            String base64 = Base64.getEncoder().encodeToString(data);
-            return "data:image/png;base64," + base64;
-        } catch (Exception e) {
-            return null;
-        }
-    }
+    // Removed getLogoDataUri method to reduce PDF size - no longer embedding logo
+    // images
 
     private String buildHtmlForVenda(SaleOrder venda) {
         StringBuilder html = new StringBuilder();
@@ -305,50 +283,26 @@ public class NotaController {
         // of white space rather than split into multiple pages)
         // Let Puppeteer measure the .invoice bounding box and size the PDF to content
         // so we avoid forced pagination via @page CSS.
-        html.append(
-                "body{font-family: 'Segoe UI', Arial, Helvetica, sans-serif; font-size:9px; color:#111;margin:0;padding:0}");
-        // make invoice slightly narrower than page to avoid any clipping
-        html.append(
-                ".invoice{width:94mm;margin:0 auto;padding:6px 6px;font-family:'Segoe UI', Arial, Helvetica, sans-serif;background:#fff;color:#111;display:block;box-sizing:border-box;line-height:1}");
-        // keep logo small (receipt style) and centered
-        html.append(".logo{max-width:22mm;width:auto;height:auto;display:block;margin:4px auto 2px auto}");
-        // thumbnail and product layout
-        html.append(
-                ".thumb{width:10mm;height:10mm;margin-right:6px;border-radius:2px;object-fit:cover;display:inline-block}");
-        html.append(".store{font-size:12px;font-weight:700;text-align:center;margin-top:2px}");
+        // Simplified CSS for smaller PDF size
+        html.append("body{font-family:Arial,sans-serif;font-size:10px;color:#111;margin:0;padding:0}");
+        html.append(".invoice{width:90mm;margin:0 auto;padding:4px;background:#fff;color:#111}");
+        html.append(".store{font-size:12px;font-weight:700;text-align:center;margin:4px 0}");
         html.append(".meta{font-size:9px;color:#444;text-align:center;margin:2px 0}");
-        // table: let product column size by content; reserve fixed mm widths for
-        // numeric columns
-        html.append(
-                "table{width:100%;border-collapse:collapse;margin-top:6px;font-size:10px;table-layout:auto;box-sizing:border-box}");
-        html.append("th,td{padding:4px 6px;border-bottom:1px solid #ddd;box-sizing:border-box}");
-        // avoid double-thick line between last item row and the tfoot border: remove
-        // bottom border on the last tbody row so tfoot border-top is the single
-        // separator
+        html.append("table{width:100%;border-collapse:collapse;margin-top:4px;font-size:9px}");
+        html.append("th,td{padding:3px 4px;border-bottom:1px solid #ddd}");
         html.append("tbody tr:last-child td{border-bottom:none}");
-        html.append("td.prod{display:flex;align-items:center;gap:6px;white-space:normal;overflow-wrap:break-word}");
-        html.append(
-                ".prod-name{display:block;flex:1;min-width:0;white-space:normal;overflow-wrap:break-word;word-break:normal}");
-        html.append("td.qty{text-align:center;vertical-align:middle;white-space:nowrap}");
-        // center numeric columns
-        html.append("td.price{text-align:center;vertical-align:middle;white-space:nowrap;padding-right:4px}");
-        html.append("td.total{text-align:center;vertical-align:middle;white-space:nowrap;padding-right:4px}");
-        html.append("tfoot td{padding-top:8px;font-weight:700;border-top:1px solid #ddd}");
-        html.append(".small{font-size:10px;color:#666;text-align:center;margin-top:6px}");
+        html.append("td.prod{display:flex;align-items:center}");
+        html.append(".prod-name{flex:1;overflow-wrap:break-word}");
+        html.append("td.qty,td.price,td.total{text-align:center;white-space:nowrap}");
+        html.append("tfoot td{padding-top:6px;font-weight:700;border-top:1px solid #ddd}");
+        html.append(".small{font-size:9px;color:#666;text-align:center;margin-top:4px}");
         html.append("</style></head><body>");
 
         html.append("<div class=\"invoice\">\n");
 
-        String logoDataUri = getLogoDataUri();
-        // centered logo + store name
-        if (logoDataUri != null) {
-            html.append("<img class=\"logo\" src=\"").append(logoDataUri)
-                    .append("\" alt=\"logo\"/>\n");
-        } else {
-            html.append(
-                    "<div style=\"width:120px;height:60px;margin:0 auto;background:#f2f2f2;display:flex;align-items:center;justify-content:center;border-radius:4px;color:#666\">LOGO</div>\n");
-        }
-        html.append("<div class=\"store\">Mercearia R-V</div>\n");
+        // Simplified header without logo to reduce PDF size
+        html.append(
+                "<div class=\"store\" style=\"font-size:14px;font-weight:700;text-align:center;margin:6px 0;padding:8px;background:#f8f8f8;border-radius:4px\">MERCEARIA R-V</div>\n");
         html.append("<div class=\"meta\">Comprovante de Pedido</div>\n");
 
         DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
@@ -368,12 +322,10 @@ public class NotaController {
         html.append("<tbody>\n");
         venda.getItens().forEach(it -> {
             html.append("<tr>");
-            // product thumbnail (if present) + name
-            String imgUri = getProductImageDataUri(it.getProduto().getImagem());
+            // Skip product images to reduce PDF size - just show product name
             html.append("<td class=\"prod\">");
-            if (imgUri != null) {
-                html.append("<img class=\"thumb\" src=\"" + imgUri + "\" alt=\"\"/>");
-            }
+            // Optional: Add a generic product emoji instead of image
+            html.append("<span style=\"margin-right:6px;font-size:12px;\">📦</span>");
             html.append("<span class=\"prod-name\">" + escapeHtml(it.getProduto().getNome()) + "</span>");
             html.append(CLOSE_TD);
             html.append("<td class=\"qty\">").append(it.getQuantidade()).append(CLOSE_TD);
@@ -419,33 +371,27 @@ public class NotaController {
                     psb.append(", ");
                 String metodo = p.getMetodo() == null ? "" : p.getMetodo();
                 String label;
-                String iconSvg = "";
+                // Use simple text symbols instead of external images to reduce PDF size
                 switch (metodo) {
                     case "cartao_credito":
-                        label = "Cred";
-                        iconSvg = "<img src=\"https://twemoji.maxcdn.com/v/latest/svg/1f4b3.svg\" style=\"width:10px;height:10px;vertical-align:middle;margin-right:4px\"/>";
+                        label = "💳 Créd";
                         break;
                     case "cartao_debito":
-                        label = "Deb";
-                        iconSvg = "<img src=\"https://twemoji.maxcdn.com/v/latest/svg/1f4b3.svg\" style=\"width:10px;height:10px;vertical-align:middle;margin-right:4px\"/>";
+                        label = "💳 Déb";
                         break;
                     case "pix":
-                        label = "Pix";
-                        iconSvg = "<img src=\"https://twemoji.maxcdn.com/v/latest/svg/1f4f2.svg\" style=\"width:10px;height:10px;vertical-align:middle;margin-right:4px\"/>";
+                        label = "📱 Pix";
                         break;
                     case "dinheiro":
-                        label = "Dinheiro";
-                        iconSvg = "<img src=\"https://twemoji.maxcdn.com/v/latest/svg/1f4b5.svg\" style=\"width:10px;height:10px;vertical-align:middle;margin-right:4px\"/>";
+                        label = "💵 Dinheiro";
                         break;
                     default:
                         label = metodo;
                 }
                 // normalize spaces in label and remove trailing/leading spaces to avoid
-                // extra gap before ':'; append icon AFTER the label
+                // extra gap before ':'
                 String cleanLabel = label == null ? "" : label.replaceAll("\\s+", " ").trim();
                 psb.append(cleanLabel);
-                if (iconSvg != null && !iconSvg.isEmpty())
-                    psb.append(" ").append(iconSvg);
                 psb.append(": R$&#160;").append(String.format("%.2f", p.getValor()));
             }
             return psb.toString();
