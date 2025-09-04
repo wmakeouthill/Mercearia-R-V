@@ -269,8 +269,49 @@ public class NotaController {
                 "&#39;");
     }
 
-    // Removed getLogoDataUri method to reduce PDF size - no longer embedding logo
-    // images
+    // Optimized logo - smaller resolution for reduced PDF size
+    private String getLogoDataUri() {
+        try {
+            Path logoPath = Paths.get("uploads", "logo.png");
+            if (!Files.exists(logoPath)) {
+                return "";
+            }
+            byte[] logoBytes = Files.readAllBytes(logoPath);
+            // Keep logo but smaller - only use if file is reasonable size
+            if (logoBytes.length > 50000) { // > 50KB
+                return ""; // Skip large logos to keep PDF small
+            }
+            return "data:image/png;base64," + Base64.getEncoder().encodeToString(logoBytes);
+        } catch (Exception e) {
+            log.warn("Failed to load logo: {}", e.getMessage());
+            return "";
+        }
+    }
+
+    // Optimized product images - smaller resolution for reduced PDF size
+    private String getProductImageDataUri(Long productId) {
+        if (productId == null)
+            return "";
+        try {
+            Path imagePath = Paths.get("uploads", "produtos", "produto_" + productId + ".png");
+            if (!Files.exists(imagePath)) {
+                // Try default image
+                imagePath = Paths.get("uploads", "produtos", "padrao.png");
+                if (!Files.exists(imagePath)) {
+                    return "";
+                }
+            }
+            byte[] imageBytes = Files.readAllBytes(imagePath);
+            // Keep images but smaller - only use if file is reasonable size
+            if (imageBytes.length > 30000) { // > 30KB
+                return ""; // Skip large images to keep PDF small
+            }
+            return "data:image/png;base64," + Base64.getEncoder().encodeToString(imageBytes);
+        } catch (Exception e) {
+            log.debug("Failed to load product image for {}: {}", productId, e.getMessage());
+            return "";
+        }
+    }
 
     private String buildHtmlForVenda(SaleOrder venda) {
         StringBuilder html = new StringBuilder();
@@ -300,7 +341,14 @@ public class NotaController {
 
         html.append("<div class=\"invoice\">\n");
 
-        // Simplified header without logo to reduce PDF size
+        // Header with optimized logo (if available and reasonably sized)
+        String logoDataUri = getLogoDataUri();
+        if (!logoDataUri.isEmpty()) {
+            html.append("<div style=\"text-align:center;margin:6px 0\">");
+            html.append("<img src=\"").append(logoDataUri)
+                    .append("\" style=\"max-width:80px;max-height:40px;\" alt=\"Logo\" />");
+            html.append("</div>");
+        }
         html.append(
                 "<div class=\"store\" style=\"font-size:14px;font-weight:700;text-align:center;margin:6px 0;padding:8px;background:#f8f8f8;border-radius:4px\">MERCEARIA R-V</div>\n");
         html.append("<div class=\"meta\">Comprovante de Pedido</div>\n");
@@ -322,10 +370,15 @@ public class NotaController {
         html.append("<tbody>\n");
         venda.getItens().forEach(it -> {
             html.append("<tr>");
-            // Skip product images to reduce PDF size - just show product name
+            // Show product images if available and reasonably sized, otherwise use emoji
             html.append("<td class=\"prod\">");
-            // Optional: Add a generic product emoji instead of image
-            html.append("<span style=\"margin-right:6px;font-size:12px;\">📦</span>");
+            String productImageUri = getProductImageDataUri(it.getProduto().getId());
+            if (!productImageUri.isEmpty()) {
+                html.append("<img src=\"").append(productImageUri).append(
+                        "\" style=\"width:20px;height:20px;margin-right:6px;border-radius:3px;\" alt=\"Produto\" />");
+            } else {
+                html.append("<span style=\"margin-right:6px;font-size:12px;\">📦</span>");
+            }
             html.append("<span class=\"prod-name\">" + escapeHtml(it.getProduto().getNome()) + "</span>");
             html.append(CLOSE_TD);
             html.append("<td class=\"qty\">").append(it.getQuantidade()).append(CLOSE_TD);

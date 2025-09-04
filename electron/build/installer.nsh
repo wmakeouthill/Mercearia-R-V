@@ -10,17 +10,19 @@ InstallDir "C:\\${PRODUCT_NAME}"
 !macro customInstall
   ; Copiar dados do Postgres empacotado para o diretório de instalação (INSTDIR) durante a instalação
   DetailPrint "Copying embedded Postgres data to installation directory..."
-  CreateDirectory "$INSTDIR\\backend-spring\\data\\pg"
-  nsExec::ExecToLog 'xcopy "$INSTDIR\\resources\\backend-spring\\data\\pg" "$INSTDIR\\backend-spring\\data\\pg" /E /I /Y'
-  Pop $0
-  DetailPrint "Copy finished"
+  CreateDirectory "$INSTDIR\\backend-spring\\data"
+  ; Path corrigido conforme extraResources do package.json
+  IfFileExists "$INSTDIR\\resources\\data\\pg" 0 +3
+    nsExec::ExecToLog 'xcopy "$INSTDIR\\resources\\data\\pg" "$INSTDIR\\backend-spring\\data\\pg" /E /I /Y /Q'
+    DetailPrint "Postgres data copied successfully"
+  DetailPrint "Install customization finished"
 !macroend
 
 !macro customUnInstall
-  ; Remover entrada do hosts adicionada pelo app
+  ; Remover entrada do hosts adicionada pelo app (método simplificado)
   DetailPrint "Cleaning hosts entry for merceariarv.app..."
-  ; Escape $ as $$ so NSIS doesn't try to expand PowerShell variables
-  nsExec::ExecToLog 'powershell -Command "try { $$h = Join-Path $$env:windir \"System32\\drivers\\etc\\hosts\"; (Get-Content $$h) | Where-Object { $$_ -notmatch \"merceariarv.app\" } | Set-Content $$h } catch { exit 0 }"'
+  ; Usar findstr simples em vez de PowerShell complexo para evitar travamentos
+  nsExec::ExecToLog 'cmd /c "findstr /v /i "merceariarv.app" "%windir%\\System32\\drivers\\etc\\hosts" > "%temp%\\hosts_temp" 2>nul && move /y "%temp%\\hosts_temp" "%windir%\\System32\\drivers\\etc\\hosts" 2>nul || echo Hosts cleanup skipped"'
   Pop $0
   DetailPrint "Hosts cleanup finished"
 !macroend

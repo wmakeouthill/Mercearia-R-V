@@ -70,8 +70,14 @@
                 "to": "backend-spring/secrets"
             },
             {
-                "from": "../backend-spring/uploads/produtos",
-                "to": "backend-spring/uploads/produtos"
+                "from": "../backend-spring/uploads",
+                "to": "backend-spring/uploads",
+                "filter": ["**/*"]
+            },
+            {
+                "from": "../backend-spring/backups",
+                "to": "backend-spring/backups",
+                "filter": ["**/*"]
             },
             {
                 "from": "../scripts/render-nota-pdf.js",
@@ -122,9 +128,14 @@
             "differentialPackage": false,
             "warningsAsErrors": false,
             "unicode": false,
-            "deleteAppDataOnUninstall": false
+            "deleteAppDataOnUninstall": false,
+            "displayLanguageSelector": false,
+            "multiLanguageInstaller": false,
+            "packElevateHelper": false,
+            "removeDefaultUninstallWelcomePage": false,
+            "guid": "6c1e8b3f-4a2d-5e6f-9c8b-1a2b3c4d5e6f"
         },
-        "compression": "store",
+        "compression": "normal",
         "removePackageScripts": true,
         "mac": {
             "target": "dmg",
