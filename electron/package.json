@@ -39,6 +39,7 @@
             "output": "dist-installer2",
             "buildResources": "../resources"
         },
+        "afterPack": "build/afterpack.js",
         "icon": "icon/icon.ico",
         "files": [
             "dist/**/*",

@@ -31,7 +31,12 @@ function copyDirSync(src, dest) {
     } else if (entry.isFile()) {
       try {
         // CÓPIA INTEGRAL - ignora apenas nomes reservados do Windows
-        console.log(`📄 Copiando: ${srcPath} -> ${destPath}`);
+        // Log apenas a cada 100 arquivos para evitar poluir o terminal
+        if (global.fileCount % 100 === 0 || !global.fileCount) {
+          console.log(`📄 Copiando arquivo ${global.fileCount || 1}: ${path.basename(srcPath)}`);
+        }
+        global.fileCount = (global.fileCount || 0) + 1;
+        
         fs.copyFileSync(srcPath, destPath);
         
         // Preserve file attributes and timestamps for better fidelity
@@ -147,9 +152,25 @@ function copySecretsOnly(repoRoot, useCompiledPath = false) {
 function main() {
   const repoRoot = path.resolve(__dirname, '..');
   
-  // Verificar se já existe a pasta compilada (indicando que deve copiar direto para lá)
-  const compiledResourcesDir = path.join(repoRoot, 'electron', 'dist-installer2', 'win-unpacked', 'resources');
-  const useCompiledPath = fs.existsSync(compiledResourcesDir);
+  // Verificar se estamos sendo executados no contexto do afterPack hook
+  const afterPackTargetDir = process.env.AFTERPACK_TARGET_DIR;
+  let compiledResourcesDir, useCompiledPath;
+  
+  if (afterPackTargetDir) {
+    // Se executado via afterPack, usar o diretório fornecido pelo hook
+    compiledResourcesDir = path.join(afterPackTargetDir, 'resources');
+    useCompiledPath = true;
+    console.log(`🎯 AfterPack mode: Using target directory ${afterPackTargetDir}`);
+  } else {
+    // Verificar se já existe a pasta compilada (indicando que deve copiar direto para lá)
+    compiledResourcesDir = path.join(repoRoot, 'electron', 'dist-installer2', 'win-unpacked', 'resources');
+    useCompiledPath = fs.existsSync(compiledResourcesDir);
+    console.log(`🔍 Normal mode: Checking for compiled path`);
+  }
+  
+  console.log(`🔍 Debug: useCompiledPath = ${useCompiledPath}`);
+  console.log(`🔍 Debug: compiledResourcesDir = ${compiledResourcesDir}`);
+  console.log(`🔍 Debug: compiledResourcesDir exists = ${fs.existsSync(compiledResourcesDir)}`);
   
   // Instead of packaging a SQL dump, include the raw embedded Postgres data
   // directory so the packaged app can start with a pre-populated cluster.
@@ -160,13 +181,18 @@ function main() {
     
   console.log('🗄️  Copying COMPLETE PostgreSQL database from', srcDataDir);
   console.log(`📁 Destination: ${destDataDir} (${useCompiledPath ? 'COMPILED PATH' : 'STAGING PATH'})`);
+  console.log(`🔍 Debug: srcDataDir exists = ${fs.existsSync(srcDataDir)}`);
   
   if (fs.existsSync(srcDataDir)) {
     try {
       // Clear destination first to ensure clean copy
       if (fs.existsSync(destDataDir)) {
+        console.log(`🗑️  Removendo destino existente: ${destDataDir}`);
         fs.rmSync(destDataDir, { recursive: true, force: true });
       }
+      
+      console.log(`📋 Iniciando cópia de ${srcDataDir} para ${destDataDir}`);
+      global.fileCount = 0; // Reset counter
       
       copyDirSync(srcDataDir, destDataDir);
       

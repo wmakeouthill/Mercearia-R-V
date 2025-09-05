@@ -123,23 +123,21 @@ async function main() {
             { timeout: 5 * 60 * 1000 } // 5 minutos
         );
         
-        // 5. Build do electron-builder com configuração otimizada (SEM cópia de dados)
-        console.log('📦 Iniciando empacotamento DEFINITIVO...');
-        console.log('⚠️  Esta etapa pode demorar 20-30 minutos');
-        console.log('💡 Usando configuração otimizada e corrigida...\n');
+        // 5. Build do electron-builder APENAS empacotamento (SEM instalador NSIS)
+        console.log('📦 Iniciando empacotamento (sem instalador)...');
+        console.log('💡 Primeiro vamos criar a pasta compilada...\n');
         
         const builderCommand = [
             'npx electron-builder',
             '--win',
-            '--config.nsis.warningsAsErrors=false',
-            '--config.nsis.differentialPackage=false',
+            '--dir',
             '--config.directories.output=dist-installer2'
         ].join(' ');
         
         runCommand(
             builderCommand,
-            'Criando instalador Windows - CONFIGURAÇÃO DEFINITIVA',
-            { timeout: 35 * 60 * 1000 } // 35 minutos
+            'Criando pasta compilada Windows (sem instalador)',
+            { timeout: 15 * 60 * 1000 } // 15 minutos
         );
         
         // 6. Copiar banco de dados DIRETO para a pasta compilada (APÓS electron-builder)
@@ -150,7 +148,25 @@ async function main() {
             { timeout: 5 * 60 * 1000, cwd: electronDir } // 5 minutos
         );
         
-        // 7. Verificar resultado final
+        // 7. Criar instalador NSIS com dados completos
+        console.log('📦 Criando instalador NSIS com dados completos...');
+        console.log('⚠️  Esta etapa pode demorar 10-15 minutos');
+        
+        const nsisCommand = [
+            'npx electron-builder',
+            '--win',
+            '--config.nsis.warningsAsErrors=false',
+            '--config.nsis.differentialPackage=false',
+            '--config.directories.output=dist-installer2'
+        ].join(' ');
+        
+        runCommand(
+            nsisCommand,
+            'Criando instalador NSIS DEFINITIVO com dados completos',
+            { timeout: 20 * 60 * 1000 } // 20 minutos
+        );
+        
+        // 8. Verificar resultado final
         const installerPath = path.join(electronDir, 'dist-installer2');
         if (fs.existsSync(installerPath)) {
             const files = fs.readdirSync(installerPath);
