@@ -148,8 +148,10 @@
             "packElevateHelper": false,
             "removeDefaultUninstallWelcomePage": false,
             "guid": "6c1e8b3f-4a2d-5e6f-9c8b-1a2b3c4d5e6f",
-            "artifactName": "${productName}-Setup-${version}.${ext}"
+            "artifactName": "${productName}-Setup-${version}.${ext}",
+            "include": "build/installer.nsh"
         },
+        "compression": "store",
         "removePackageScripts": true,
         "nodeGypRebuild": false,
         "buildDependenciesFromSource": false,

@@ -1,3 +1,5 @@
+; NSIS Script Otimizado para instalação rápida
+
 ; Set default installation directory to root of C: for writable install location
 InstallDir "C:\\${PRODUCT_NAME}"
 
@@ -8,6 +10,9 @@ InstallDir "C:\\${PRODUCT_NAME}"
 !macroend
 
 !macro customInstall
+  ; Configurações para instalação rápida
+  SetDetailsPrint listonly
+  
   ; Copiar dados do Postgres empacotado para o diretório de instalação (INSTDIR) durante a instalação
   DetailPrint "Copying embedded Postgres data to installation directory..."
   CreateDirectory "$INSTDIR\\backend-spring\\data"
