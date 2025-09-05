@@ -11,11 +11,19 @@ function copyDirSync(src, dest) {
   for (const entry of entries) {
     const srcPath = path.join(src, entry.name);
     const destPath = path.join(dest, entry.name);
+    
+    // Pular arquivos com nomes reservados do Windows que causam problemas
+    const reservedNames = ['nul', 'con', 'prn', 'aux', 'com1', 'com2', 'com3', 'com4', 'com5', 'com6', 'com7', 'com8', 'com9', 'lpt1', 'lpt2', 'lpt3', 'lpt4', 'lpt5', 'lpt6', 'lpt7', 'lpt8', 'lpt9'];
+    if (reservedNames.includes(entry.name.toLowerCase())) {
+      console.log(`⚠️  Pulando arquivo com nome reservado do Windows: ${entry.name}`);
+      continue;
+    }
+    
     if (entry.isDirectory()) {
       copyDirSync(srcPath, destPath);
     } else if (entry.isFile()) {
       try {
-        // CÓPIA INTEGRAL - não ignora NENHUM arquivo
+        // CÓPIA INTEGRAL - ignora apenas nomes reservados do Windows
         console.log(`📄 Copiando: ${srcPath} -> ${destPath}`);
         fs.copyFileSync(srcPath, destPath);
         
@@ -91,6 +99,13 @@ function countFiles(dir) {
   const entries = fs.readdirSync(dir, { withFileTypes: true });
   for (const entry of entries) {
     const fullPath = path.join(dir, entry.name);
+    
+    // Pular arquivos com nomes reservados do Windows (mesmo filtro da cópia)
+    const reservedNames = ['nul', 'con', 'prn', 'aux', 'com1', 'com2', 'com3', 'com4', 'com5', 'com6', 'com7', 'com8', 'com9', 'lpt1', 'lpt2', 'lpt3', 'lpt4', 'lpt5', 'lpt6', 'lpt7', 'lpt8', 'lpt9'];
+    if (reservedNames.includes(entry.name.toLowerCase())) {
+      continue; // Não contar arquivos que são pulados na cópia
+    }
+    
     if (entry.isDirectory()) {
       count += countFiles(fullPath);
     } else if (entry.isFile() || entry.isSymbolicLink()) {

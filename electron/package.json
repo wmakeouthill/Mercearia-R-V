@@ -85,6 +85,10 @@
                 "to": "scripts/render-nota-pdf.js"
             },
             {
+                "from": "../scripts/cleanup-selective.js",
+                "to": "scripts/cleanup-selective.js"
+            },
+            {
                 "from": "../scripts/package.json",
                 "to": "scripts/package.json"
             },
@@ -110,7 +114,7 @@
                 ]
             }
         ],
-        "asar": true,
+        "asar": false,
         "asarUnpack": [
             "frontend/**/*"
         ],
@@ -136,7 +140,6 @@
             "uninstallerIcon": "icon/icon.ico",
             "runAfterFinish": true,
             "perMachine": false,
-            "include": "build/installer.nsh",
             "differentialPackage": false,
             "warningsAsErrors": false,
             "unicode": false,
@@ -146,14 +149,8 @@
             "packElevateHelper": false,
             "removeDefaultUninstallWelcomePage": false,
             "guid": "6c1e8b3f-4a2d-5e6f-9c8b-1a2b3c4d5e6f",
-            "artifactName": "${productName}-Setup-${version}.${ext}",
-            "installerSidebar": null,
-            "installerHeader": null,
-            "uninstallerSidebar": null,
-            "menuCategory": false,
-            "license": null
+            "artifactName": "${productName}-Setup-${version}.${ext}"
         },
-        "compression": "store",
         "removePackageScripts": true,
         "nodeGypRebuild": false,
         "buildDependenciesFromSource": false,

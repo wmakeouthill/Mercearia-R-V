@@ -20,7 +20,9 @@ const path = require('path');
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
         '--disable-web-security',
-        '--disable-features=VizDisplayCompositor'
+        '--disable-features=VizDisplayCompositor',
+        '--font-render-hinting=none',
+        '--disable-font-subpixel-positioning'
       ] 
     });
     
@@ -35,8 +37,8 @@ const path = require('path');
     
     await page.setContent(html, { waitUntil: 'domcontentloaded' }); // Mais rápido que networkidle0
 
-    // Aguardar o conteúdo ser totalmente carregado
-    await page.waitForTimeout(500);
+    // Aguardar o conteúdo ser totalmente carregado, incluindo imagens
+    await page.waitForTimeout(1500);
     
     // Medir o tamanho real do conteúdo
     const contentDimensions = await page.evaluate(() => {

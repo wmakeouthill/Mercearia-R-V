@@ -7,6 +7,21 @@ import * as childProcess from 'child_process';
 import * as net from 'net';
 import * as fs from 'fs';
 
+// Função para carregar o script de limpeza com caminho correto
+function loadCleanupModule() {
+    try {
+        const cleanupPath = process.resourcesPath
+            ? path.join(process.resourcesPath, 'scripts', 'cleanup-selective.js')
+            : path.resolve(__dirname, '..', 'scripts', 'cleanup-selective.js');
+
+        console.log(`Tentando carregar cleanup de: ${cleanupPath}`);
+        return require(cleanupPath);
+    } catch (error) {
+        console.warn('Não foi possível carregar o módulo de limpeza:', error.message);
+        return { cleanup: () => Promise.resolve() }; // fallback
+    }
+}
+
 // Adicionar switches cedo para aceitar certificados self-signed e evitar GPU crash em alguns ambientes Windows
 app.commandLine.appendSwitch('ignore-certificate-errors');
 app.commandLine.appendSwitch('allow-insecure-localhost', 'true');
@@ -1867,19 +1882,35 @@ app.on('window-all-closed', () => {
         isQuitting = true;
         console.log('🪟 Todas as janelas fechadas - encerrando aplicativo...');
 
+        // Executar limpeza automática completa
+        console.log('🧹 Executando limpeza automática...');
+
         // Encerrar processos PostgreSQL PRIMEIRO
         killAllPostgresProcesses();
 
         // Então encerrar o backend
         stopBackend();
 
-        app.quit();
+        // Executar limpeza adicional via script
+        try {
+            const { cleanup } = loadCleanupModule();
+            cleanup().then(() => {
+                console.log('✅ Limpeza automática concluída');
+                app.quit();
+            });
+        } catch (error) {
+            console.error('⚠️ Erro na limpeza automática:', error);
+            app.quit();
+        }
     }
 });
 
 app.on('before-quit', () => {
     isQuitting = true;
     console.log('🚪 Aplicativo sendo encerrado - limpando processos...');
+
+    // Executar limpeza automática completa primeiro
+    console.log('🧹 Executando limpeza antes do quit...');
 
     // Encerrar processos PostgreSQL PRIMEIRO
     killAllPostgresProcesses();
@@ -1903,6 +1934,16 @@ app.on('before-quit', () => {
             childProcess.spawnSync('taskkill', ['/IM', 'cmd.exe', '/F']);
         }
     } catch { /* ignore */ }
+
+    // Executar limpeza adicional via script
+    try {
+        const { cleanup } = loadCleanupModule();
+        cleanup().catch((error: any) => {
+            console.error('⚠️ Erro na limpeza final:', error);
+        });
+    } catch (error) {
+        console.error('⚠️ Erro ao executar limpeza final:', error);
+    }
 
     console.log('✅ Limpeza de processos concluída');
 });

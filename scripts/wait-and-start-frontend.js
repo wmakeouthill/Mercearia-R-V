@@ -2,6 +2,7 @@ const http = require('http');
 const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const { cleanup } = require('./cleanup-selective');
 
 const FAST_MODE = process.env.FAST_FRONTEND_START === 'true';
 if (FAST_MODE) {
@@ -80,8 +81,26 @@ async function startFrontend() {
   }
   const proc = spawn('npm', script.split(' '), { cwd: 'frontend', stdio: 'inherit', shell: true, env: extraEnv });
   proc.on('error', (err) => console.error('❌ Erro ao iniciar Frontend:', err));
-  proc.on('close', (code) => console.log(`🔚 Frontend finalizado com código ${code}`));
+  proc.on('close', (code) => {
+    console.log(`🔚 Frontend finalizado com código ${code}`);
+    // Executar limpeza quando Frontend for fechado
+    console.log('🧹 Executando limpeza automática...');
+    cleanup().then(() => {
+      console.log('✅ Limpeza concluída após fechamento do Frontend');
+    });
+  });
 }
+
+// Capturar sinais de finalização para limpeza automática
+process.on('SIGINT', () => {
+  console.log('\n🛑 SIGINT recebido no wait-frontend, executando limpeza...');
+  cleanup().then(() => process.exit(0));
+});
+
+process.on('SIGTERM', () => {
+  console.log('\n🛑 SIGTERM recebido no wait-frontend, executando limpeza...');
+  cleanup().then(() => process.exit(0));
+});
 
 startFrontend().catch(console.error);
 

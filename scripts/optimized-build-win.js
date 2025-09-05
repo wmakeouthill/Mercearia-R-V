@@ -47,15 +47,17 @@ function cleanupBuild() {
     const pathsToClean = [
         path.join(electronDir, 'dist-installer2'),
         path.join(electronDir, 'dist'),
-        path.join(electronDir, 'node_modules/.cache')
+        path.join(electronDir, 'node_modules/.cache'),
+        path.join(electronDir, 'resources')
     ];
     
     pathsToClean.forEach(p => {
         if (fs.existsSync(p)) {
             try {
-                execSync(`rmdir /S /Q "${p}" 2>nul || rm -rf "${p}"`, { 
-                    stdio: 'pipe', 
-                    timeout: 10000 
+                // Usar PowerShell para forçar remoção no Windows
+                execSync(`powershell -Command "Remove-Item -Path '${p}' -Recurse -Force -ErrorAction SilentlyContinue"`, {
+                    stdio: 'pipe',
+                    timeout: 30000
                 });
                 console.log(`  ✅ Removido: ${p}`);
             } catch (e) {
@@ -121,7 +123,15 @@ async function main() {
             { timeout: 5 * 60 * 1000 } // 5 minutos
         );
         
-        // 5. Build do electron-builder com configuração otimizada
+        // 5. Copiar banco de dados do desenvolvimento (POR ÚLTIMO antes do empacotamento)
+        console.log('🗄️ Copiando banco de dados de desenvolvimento...');
+        runCommand(
+            'node ../scripts/copy-db-for-build.js',
+            'Copiando banco de dados COMPLETO de desenvolvimento',
+            { timeout: 5 * 60 * 1000, cwd: electronDir } // 5 minutos
+        );
+        
+        // 6. Build do electron-builder com configuração otimizada
         console.log('📦 Iniciando empacotamento DEFINITIVO...');
         console.log('⚠️  Esta etapa pode demorar 20-30 minutos');
         console.log('💡 Usando configuração otimizada e corrigida...\n');
@@ -129,7 +139,6 @@ async function main() {
         const builderCommand = [
             'npx electron-builder',
             '--win',
-            '--config.compression=store',
             '--config.nsis.warningsAsErrors=false',
             '--config.nsis.differentialPackage=false',
             '--config.directories.output=dist-installer2'
@@ -141,7 +150,7 @@ async function main() {
             { timeout: 35 * 60 * 1000 } // 35 minutos
         );
         
-        // 6. Verificar resultado final
+        // 7. Verificar resultado final
         const installerPath = path.join(electronDir, 'dist-installer2');
         if (fs.existsSync(installerPath)) {
             const files = fs.readdirSync(installerPath);

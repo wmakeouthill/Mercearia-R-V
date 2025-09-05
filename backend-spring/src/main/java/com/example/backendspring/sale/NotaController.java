@@ -274,7 +274,7 @@ public class NotaController {
         try {
             // Try multiple possible locations for the logo - incluindo produção
             Path[] logoPaths = {
-                    Paths.get("uploads", "logo.png"), // Desenvolvimento
+                    Paths.get("uploads", "logo.png"), // Desenvolvimento - cwd é backend-spring
                     Paths.get("backend-spring", "uploads", "logo.png"), // Build local
                     Paths.get("..", "uploads", "logo.png"), // Relativo ao parent
                     Paths.get(System.getProperty("user.dir"), "uploads", "logo.png"), // Absoluto dev
@@ -308,10 +308,10 @@ public class NotaController {
             }
 
             byte[] logoBytes = Files.readAllBytes(logoPath);
-            // Keep logo but smaller - only use if file is reasonable size
-            if (logoBytes.length > 50000) { // > 50KB
+            // Keep logo but allow larger sizes for better quality
+            if (logoBytes.length > 1000000) { // > 1MB
                 log.debug("Logo file too large: {} bytes", logoBytes.length);
-                return ""; // Skip large logos to keep PDF small
+                return ""; // Skip very large logos
             }
 
             log.debug("Logo loaded successfully from: {}", logoPath.toAbsolutePath());
@@ -334,7 +334,7 @@ public class NotaController {
 
             // Try multiple possible base paths for uploads - incluindo produção
             String[] basePaths = {
-                    "uploads", // Desenvolvimento
+                    "uploads", // Desenvolvimento - cwd é backend-spring
                     "backend-spring/uploads", // Build local
                     "../uploads", // Relativo parent
                     System.getProperty("user.dir") + "/uploads", // Absoluto dev
@@ -388,10 +388,10 @@ public class NotaController {
             }
 
             byte[] imageBytes = Files.readAllBytes(imagePath);
-            // Keep images but smaller - only use if file is reasonable size
-            if (imageBytes.length > 30000) { // > 30KB
+            // Keep images but allow larger sizes for better quality
+            if (imageBytes.length > 1000000) { // > 1MB
                 log.debug("Product image for {} too large: {} bytes", productId, imageBytes.length);
-                return ""; // Skip large images to keep PDF small
+                return ""; // Skip very large images
             }
 
             String mimeType = foundExtension.equals("jpg") ? "jpeg" : foundExtension;
@@ -415,7 +415,8 @@ public class NotaController {
         // Let Puppeteer measure the .invoice bounding box and size the PDF to content
         // so we avoid forced pagination via @page CSS.
         // Improved CSS for better appearance and wider layout
-        html.append("body{font-family:Arial,sans-serif;font-size:11px;color:#222;margin:0;padding:0;background:#fff}");
+        html.append(
+                "body{font-family:'Segoe UI Emoji','Apple Color Emoji','Noto Color Emoji',Arial,sans-serif;font-size:11px;color:#222;margin:0;padding:0;background:#fff}");
         html.append(".invoice{width:120mm;margin:0 auto;padding:8px;background:#fff;color:#222;border:1px solid #ddd}");
         html.append(
                 ".store{font-size:16px;font-weight:700;text-align:center;margin:8px 0;padding:8px;background:#f8f9fa;border-radius:6px;border:1px solid #e9ecef}");
@@ -437,17 +438,19 @@ public class NotaController {
 
         // Header with optimized logo (if available and reasonably sized)
         String logoDataUri = getLogoDataUri();
+        log.info("Logo DataURI loaded: {}",
+                logoDataUri.isEmpty() ? "EMPTY" : "SUCCESS (" + logoDataUri.length() + " chars)");
         html.append("<div class=\"store\">");
         if (!logoDataUri.isEmpty()) {
             html.append("<div style=\"text-align:center;margin-bottom:8px\">");
             html.append("<img src=\"").append(logoDataUri)
                     .append("\" style=\"max-width:120px;max-height:60px;\" alt=\"Logo da Mercearia\" />");
-            html.append("</div>");
-            html.append("<div style=\"font-size:14px;\">MERCEARIA R-V</div>");
+            html.append(CLOSE_DIV);
+            html.append("<div style=\"font-size:14px;\">MERCEARIA R-V").append(CLOSE_DIV);
         } else {
             html.append("🏪 MERCEARIA R-V");
         }
-        html.append("</div>");
+        html.append(CLOSE_DIV);
         html.append("<div class=\"meta\">Comprovante de Pedido</div>\n");
 
         DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
@@ -470,6 +473,8 @@ public class NotaController {
             // Show product images if available and reasonably sized, otherwise use emoji
             html.append("<td class=\"prod\">");
             String productImageUri = getProductImageDataUri(it.getProduto().getId());
+            log.info("Product {} image URI: {}", it.getProduto().getId(),
+                    productImageUri.isEmpty() ? "EMPTY" : "SUCCESS (" + productImageUri.length() + " chars)");
             if (!productImageUri.isEmpty()) {
                 html.append("<img src=\"").append(productImageUri).append(
                         "\" style=\"width:28px;height:28px;margin-right:8px;border-radius:4px;border:1px solid #e9ecef;object-fit:cover;\" alt=\"Produto\" />");

@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const { showNetworkInfo } = require('./show-network-info');
+const { cleanup } = require('./cleanup-selective');
 
 console.log('⏳ Aguardando serviços ficarem prontos...');
 
@@ -97,8 +98,24 @@ async function startElectron() {
 
     electronProcess.on('close', (code) => {
         console.log(`🔚 Electron finalizado com código ${code}`);
+        // Executar limpeza quando Electron for fechado
+        console.log('🧹 Executando limpeza automática...');
+        cleanup().then(() => {
+            console.log('✅ Limpeza concluída após fechamento do Electron');
+        });
     });
 }
+
+// Capturar sinais de finalização para limpeza automática
+process.on('SIGINT', () => {
+    console.log('\n🛑 SIGINT recebido no wait-electron, executando limpeza...');
+    cleanup().then(() => process.exit(0));
+});
+
+process.on('SIGTERM', () => {
+    console.log('\n🛑 SIGTERM recebido no wait-electron, executando limpeza...');
+    cleanup().then(() => process.exit(0));
+});
 
 // Executar
 startElectron().catch(console.error);
