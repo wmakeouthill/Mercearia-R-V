@@ -1230,7 +1230,7 @@ function buildEnvForBackend(userDataDir: string, userPgDir: string): NodeJS.Proc
 }
 
 // Ajusta e injeta caminhos de pg_dump/pg_restore empacotados (ou do sistema em dev)
-function injectPgBinPaths(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+function injectPgBinPaths(env: NodeJS.ProcessEnv, userDataDir?: string): NodeJS.ProcessEnv {
     try {
         const resourceBase = process.resourcesPath ? process.resourcesPath : path.join(__dirname, '../resources');
         const platform = process.platform; // 'win32' | 'linux' | 'darwin'
@@ -1269,11 +1269,34 @@ function injectPgBinPaths(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
         const dumpPath = foundDump || 'pg_dump';
         const restorePath = foundRestore || 'pg_restore';
 
+        // Configurar diretório de backup no userData (não nos arquivos do app)
+        const appUserDataDir = userDataDir || app.getPath('userData');
+        const backupDir = path.join(appUserDataDir, 'backups');
+
+        // Criar diretório de backup se não existir
+        try {
+            if (!fs.existsSync(backupDir)) {
+                fs.mkdirSync(backupDir, { recursive: true });
+            }
+        } catch (e) {
+            console.warn('⚠️ Falha ao criar diretório de backup:', (e as Error)?.message || e);
+        }
+
         // Injetar via SPRING_APPLICATION_JSON para que o Spring Boot receba as propriedades
-        const springJson = { ...(env.SPRING_APPLICATION_JSON ? JSON.parse(env.SPRING_APPLICATION_JSON) : {}), app: { ...(env.SPRING_APPLICATION_JSON ? JSON.parse(env.SPRING_APPLICATION_JSON).app || {} : {}), pgDumpPath: dumpPath, pgRestorePath: restorePath } };
+        const springJson = {
+            ...(env.SPRING_APPLICATION_JSON ? JSON.parse(env.SPRING_APPLICATION_JSON) : {}),
+            app: {
+                ...(env.SPRING_APPLICATION_JSON ? JSON.parse(env.SPRING_APPLICATION_JSON).app || {} : {}),
+                pgDumpPath: dumpPath,
+                pgRestorePath: restorePath,
+                backupDir: backupDir,
+                enableDatabaseReset: false // Produção sempre com reset desabilitado
+            }
+        };
         env.SPRING_APPLICATION_JSON = JSON.stringify(springJson);
         console.log('🔧 Injetado SPRING_APPLICATION_JSON.app.pgDumpPath =', dumpPath);
         console.log('🔧 Injetado SPRING_APPLICATION_JSON.app.pgRestorePath =', restorePath);
+        console.log('🔧 Injetado SPRING_APPLICATION_JSON.app.backupDir =', backupDir);
     } catch (e) {
         console.warn('⚠️ Falha ao injetar caminhos de pg_dump/pg_restore:', (e as Error)?.message || e);
     }
@@ -1425,7 +1448,7 @@ async function startBackend(): Promise<void> {
         const { userDataDir, userPgDir } = await preparePgData();
         sendSplashStatus('Iniciando banco de dados embutido...', 25);
         let env = buildEnvForBackend(userDataDir, userPgDir);
-        env = injectPgBinPaths(env);
+        env = injectPgBinPaths(env, userDataDir);
         await launchBackendProcess(jarPath, userDataDir, env);
     } catch (error) {
         console.error('❌ Erro ao iniciar backend:', error);

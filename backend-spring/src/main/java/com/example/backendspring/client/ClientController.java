@@ -122,10 +122,6 @@ public class ClientController {
         return ResponseEntity.ok(resp);
     }
 
-    // legacy mapping removed — keep signature for API compatibility if needed later
-    private java.util.Map<String, Object> mapLegacySale(Object s) {
-        return java.util.Collections.emptyMap();
-    }
 
     private java.util.Map<String, Object> mapSaleOrder(com.example.backendspring.sale.SaleOrder o) {
         var m = new java.util.LinkedHashMap<String, Object>();

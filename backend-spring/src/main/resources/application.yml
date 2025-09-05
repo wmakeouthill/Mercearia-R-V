@@ -32,6 +32,11 @@ app:
   jwt:
     secret: ${JWT_SECRET:dev-secret-please-change-me-0123456789-ABCDEFGHIJKLMNOPQRSTUVWXYZ}
     expiration: 86400000 # 24h em ms
+  # PostgreSQL backup/restore tools paths
+  pgDumpPath: ${PG_DUMP_PATH:pg_dump}
+  pgRestorePath: ${PG_RESTORE_PATH:pg_restore}
+  backupDir: ${BACKUP_DIR:backups}
+  enableDatabaseReset: ${ENABLE_DATABASE_RESET:false}
 
 # CORS permissivo similar ao Express
 cors:

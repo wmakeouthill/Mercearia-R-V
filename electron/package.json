@@ -87,7 +87,11 @@
                 "from": "../scripts/node_modules",
                 "to": "scripts/node_modules"
             },
-            
+            {
+                "from": "../backend-spring/pg/win",
+                "to": "backend-spring/pg/win",
+                "filter": ["**/*"]
+            },
             {
                 "from": "../frontend/dist/sistema-estoque/browser",
                 "to": "frontend",
