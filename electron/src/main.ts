@@ -1305,7 +1305,7 @@ function injectPgBinPaths(env: NodeJS.ProcessEnv, userDataDir?: string): NodeJS.
                 pgDumpPath: dumpPath,
                 pgRestorePath: restorePath,
                 backupDir: backupDir,
-                enableDatabaseReset: false // Produção sempre com reset desabilitado
+                enableDatabaseReset: true // Permitir reset em produção para ferramentas críticas
             }
         };
         env.SPRING_APPLICATION_JSON = JSON.stringify(springJson);
