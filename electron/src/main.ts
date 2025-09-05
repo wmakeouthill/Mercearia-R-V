@@ -1240,7 +1240,7 @@ function buildEnvForBackend(userDataDir: string, userPgDir: string): NodeJS.Proc
         APPLY_DB_DUMP: 'false',
         // Desabilitar Liquibase em produção pois o banco já vem pronto de desenvolvimento
         LIQUIBASE_ENABLED: 'false',
-        LOG_FILE: path.join(userDataDir, 'backend.log')
+        LOG_FILE: path.join(getLogsDirectory(), 'backend.log')
     } as NodeJS.ProcessEnv;
 }
 
@@ -1284,9 +1284,8 @@ function injectPgBinPaths(env: NodeJS.ProcessEnv, userDataDir?: string): NodeJS.
         const dumpPath = foundDump || 'pg_dump';
         const restorePath = foundRestore || 'pg_restore';
 
-        // Configurar diretório de backup no userData (não nos arquivos do app)
-        const appUserDataDir = userDataDir || app.getPath('userData');
-        const backupDir = path.join(appUserDataDir, 'backups');
+        // Configurar diretório de backup dentro de resources (como em dev)
+        const backupDir = path.join(resourceBase, 'backups');
 
         // Criar diretório de backup se não existir
         try {
