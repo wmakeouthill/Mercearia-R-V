@@ -552,7 +552,13 @@ export class EnviarNotaModalComponent implements OnChanges {
         return;
       }
       await page.render({ canvasContext: ctx, viewport }).promise;
-      this.pdfViewerContainer.nativeElement.appendChild(canvas);
+
+      // Ajustar o container ao tamanho do canvas
+      const container = this.pdfViewerContainer.nativeElement;
+      container.style.height = `${canvas.height + 16}px`; // padding extra
+      container.style.minHeight = `${canvas.height + 16}px`;
+
+      container.appendChild(canvas);
       this.renderedPages.add(pageNum);
     } catch (e) {
       console.error('renderSinglePage failed', e);

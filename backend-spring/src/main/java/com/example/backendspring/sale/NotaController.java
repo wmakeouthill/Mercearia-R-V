@@ -272,15 +272,35 @@ public class NotaController {
     // Optimized logo - smaller resolution for reduced PDF size
     private String getLogoDataUri() {
         try {
-            Path logoPath = Paths.get("uploads", "logo.png");
-            if (!Files.exists(logoPath)) {
+            // Try multiple possible locations for the logo
+            Path[] logoPaths = {
+                    Paths.get("uploads", "logo.png"),
+                    Paths.get("backend-spring", "uploads", "logo.png"),
+                    Paths.get("..", "uploads", "logo.png"),
+                    Paths.get(System.getProperty("user.dir"), "uploads", "logo.png")
+            };
+
+            Path logoPath = null;
+            for (Path testPath : logoPaths) {
+                if (Files.exists(testPath)) {
+                    logoPath = testPath;
+                    break;
+                }
+            }
+
+            if (logoPath == null) {
+                log.debug("Logo not found in any of the expected paths");
                 return "";
             }
+
             byte[] logoBytes = Files.readAllBytes(logoPath);
             // Keep logo but smaller - only use if file is reasonable size
             if (logoBytes.length > 50000) { // > 50KB
+                log.debug("Logo file too large: {} bytes", logoBytes.length);
                 return ""; // Skip large logos to keep PDF small
             }
+
+            log.debug("Logo loaded successfully from: {}", logoPath.toAbsolutePath());
             return "data:image/png;base64," + Base64.getEncoder().encodeToString(logoBytes);
         } catch (Exception e) {
             log.warn("Failed to load logo: {}", e.getMessage());
@@ -293,20 +313,64 @@ public class NotaController {
         if (productId == null)
             return "";
         try {
-            Path imagePath = Paths.get("uploads", "produtos", "produto_" + productId + ".png");
-            if (!Files.exists(imagePath)) {
-                // Try default image
-                imagePath = Paths.get("uploads", "produtos", "padrao.png");
-                if (!Files.exists(imagePath)) {
+            // Try different image extensions
+            String[] extensions = { "png", "jpg", "jpeg", "webp", "gif" };
+            Path imagePath = null;
+            String foundExtension = "png";
+
+            // Try multiple possible base paths for uploads
+            String[] basePaths = {
+                    "uploads",
+                    "backend-spring/uploads",
+                    "../uploads",
+                    System.getProperty("user.dir") + "/uploads"
+            };
+
+            // First, try to find the product-specific image
+            for (String basePath : basePaths) {
+                for (String ext : extensions) {
+                    Path testPath = Paths.get(basePath, "produtos", "produto_" + productId + "." + ext);
+                    if (Files.exists(testPath)) {
+                        imagePath = testPath;
+                        foundExtension = ext;
+                        break;
+                    }
+                }
+                if (imagePath != null)
+                    break;
+            }
+
+            // If no product-specific image found, try default image
+            if (imagePath == null) {
+                for (String basePath : basePaths) {
+                    for (String ext : extensions) {
+                        Path testPath = Paths.get(basePath, "produtos", "padrao." + ext);
+                        if (Files.exists(testPath)) {
+                            imagePath = testPath;
+                            foundExtension = ext;
+                            break;
+                        }
+                    }
+                    if (imagePath != null)
+                        break;
+                }
+
+                if (imagePath == null) {
+                    log.debug("No product image found for product {} in any of the expected paths", productId);
                     return "";
                 }
             }
+
             byte[] imageBytes = Files.readAllBytes(imagePath);
             // Keep images but smaller - only use if file is reasonable size
             if (imageBytes.length > 30000) { // > 30KB
+                log.debug("Product image for {} too large: {} bytes", productId, imageBytes.length);
                 return ""; // Skip large images to keep PDF small
             }
-            return "data:image/png;base64," + Base64.getEncoder().encodeToString(imageBytes);
+
+            String mimeType = foundExtension.equals("jpg") ? "jpeg" : foundExtension;
+            log.debug("Product image loaded successfully from: {}", imagePath.toAbsolutePath());
+            return "data:image/" + mimeType + ";base64," + Base64.getEncoder().encodeToString(imageBytes);
         } catch (Exception e) {
             log.debug("Failed to load product image for {}: {}", productId, e.getMessage());
             return "";
@@ -324,33 +388,40 @@ public class NotaController {
         // of white space rather than split into multiple pages)
         // Let Puppeteer measure the .invoice bounding box and size the PDF to content
         // so we avoid forced pagination via @page CSS.
-        // Simplified CSS for smaller PDF size
-        html.append("body{font-family:Arial,sans-serif;font-size:10px;color:#111;margin:0;padding:0}");
-        html.append(".invoice{width:90mm;margin:0 auto;padding:4px;background:#fff;color:#111}");
-        html.append(".store{font-size:12px;font-weight:700;text-align:center;margin:4px 0}");
-        html.append(".meta{font-size:9px;color:#444;text-align:center;margin:2px 0}");
-        html.append("table{width:100%;border-collapse:collapse;margin-top:4px;font-size:9px}");
-        html.append("th,td{padding:3px 4px;border-bottom:1px solid #ddd}");
-        html.append("tbody tr:last-child td{border-bottom:none}");
-        html.append("td.prod{display:flex;align-items:center}");
-        html.append(".prod-name{flex:1;overflow-wrap:break-word}");
-        html.append("td.qty,td.price,td.total{text-align:center;white-space:nowrap}");
-        html.append("tfoot td{padding-top:6px;font-weight:700;border-top:1px solid #ddd}");
-        html.append(".small{font-size:9px;color:#666;text-align:center;margin-top:4px}");
+        // Improved CSS for better appearance and wider layout
+        html.append("body{font-family:Arial,sans-serif;font-size:11px;color:#222;margin:0;padding:0;background:#fff}");
+        html.append(".invoice{width:120mm;margin:0 auto;padding:8px;background:#fff;color:#222;border:1px solid #ddd}");
+        html.append(
+                ".store{font-size:16px;font-weight:700;text-align:center;margin:8px 0;padding:8px;background:#f8f9fa;border-radius:6px;border:1px solid #e9ecef}");
+        html.append(".meta{font-size:10px;color:#555;text-align:center;margin:6px 0}");
+        html.append(
+                "table{width:100%;border-collapse:collapse;margin-top:8px;font-size:10px;border:1px solid #dee2e6}");
+        html.append(
+                "th{padding:8px 6px;background:#f8f9fa;font-weight:700;border-bottom:2px solid #dee2e6;color:#495057}");
+        html.append("td{padding:6px;border-bottom:1px solid #e9ecef}");
+        html.append("tbody tr:last-child td{border-bottom:1px solid #dee2e6}");
+        html.append("td.prod{display:flex;align-items:center;min-height:32px}");
+        html.append(".prod-name{flex:1;overflow-wrap:break-word;font-weight:500}");
+        html.append("td.qty,td.price,td.total{text-align:center;white-space:nowrap;font-weight:500}");
+        html.append("tfoot td{padding:10px 6px;font-weight:700;border-top:2px solid #dee2e6;background:#f8f9fa}");
+        html.append(".small{font-size:10px;color:#666;text-align:center;margin:6px 0;padding:4px}");
         html.append("</style></head><body>");
 
         html.append("<div class=\"invoice\">\n");
 
         // Header with optimized logo (if available and reasonably sized)
         String logoDataUri = getLogoDataUri();
+        html.append("<div class=\"store\">");
         if (!logoDataUri.isEmpty()) {
-            html.append("<div style=\"text-align:center;margin:6px 0\">");
+            html.append("<div style=\"text-align:center;margin-bottom:8px\">");
             html.append("<img src=\"").append(logoDataUri)
-                    .append("\" style=\"max-width:80px;max-height:40px;\" alt=\"Logo\" />");
+                    .append("\" style=\"max-width:120px;max-height:60px;\" alt=\"Logo da Mercearia\" />");
             html.append("</div>");
+            html.append("<div style=\"font-size:14px;\">MERCEARIA R-V</div>");
+        } else {
+            html.append("🏪 MERCEARIA R-V");
         }
-        html.append(
-                "<div class=\"store\" style=\"font-size:14px;font-weight:700;text-align:center;margin:6px 0;padding:8px;background:#f8f8f8;border-radius:4px\">MERCEARIA R-V</div>\n");
+        html.append("</div>");
         html.append("<div class=\"meta\">Comprovante de Pedido</div>\n");
 
         DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
@@ -375,9 +446,10 @@ public class NotaController {
             String productImageUri = getProductImageDataUri(it.getProduto().getId());
             if (!productImageUri.isEmpty()) {
                 html.append("<img src=\"").append(productImageUri).append(
-                        "\" style=\"width:20px;height:20px;margin-right:6px;border-radius:3px;\" alt=\"Produto\" />");
+                        "\" style=\"width:28px;height:28px;margin-right:8px;border-radius:4px;border:1px solid #e9ecef;object-fit:cover;\" alt=\"Produto\" />");
             } else {
-                html.append("<span style=\"margin-right:6px;font-size:12px;\">📦</span>");
+                html.append(
+                        "<span style=\"margin-right:8px;font-size:16px;width:28px;text-align:center;display:inline-block;\">📦</span>");
             }
             html.append("<span class=\"prod-name\">" + escapeHtml(it.getProduto().getNome()) + "</span>");
             html.append(CLOSE_TD);

@@ -35,21 +35,38 @@ const path = require('path');
     
     await page.setContent(html, { waitUntil: 'domcontentloaded' }); // Mais rápido que networkidle0
 
-    // Usar formato A4 padrão em vez de tamanho customizado para melhor compressão
+    // Aguardar o conteúdo ser totalmente carregado
+    await page.waitForTimeout(500);
+    
+    // Medir o tamanho real do conteúdo
+    const contentDimensions = await page.evaluate(() => {
+      const invoice = document.querySelector('.invoice');
+      if (invoice) {
+        const rect = invoice.getBoundingClientRect();
+        return {
+          width: Math.ceil(rect.width + 32), // padding extra
+          height: Math.ceil(rect.height + 32) // padding extra
+        };
+      }
+      return { width: 400, height: 600 };
+    });
+
+    // Usar tamanho customizado baseado no conteúdo para eliminar espaço em branco
     await page.pdf({ 
       path: outPath, 
-      format: 'A4',
+      width: `${contentDimensions.width}px`,
+      height: `${contentDimensions.height}px`,
       margin: {
-        top: '10mm',
-        bottom: '10mm', 
-        left: '10mm',
-        right: '10mm'
+        top: '5mm',
+        bottom: '5mm', 
+        left: '5mm',
+        right: '5mm'
       },
       printBackground: true,
       preferCSSPageSize: false,
       // Configurações para reduzir tamanho do arquivo
       displayHeaderFooter: false,
-      scale: 0.8 // Reduzir escala para 80% - menor tamanho
+      scale: 0.85 // Escala otimizada
     });
     await browser.close();
     process.exit(0);
