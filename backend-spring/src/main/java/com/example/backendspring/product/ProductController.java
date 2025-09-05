@@ -159,7 +159,7 @@ public class ProductController {
                     .contentType(MediaType.IMAGE_PNG)
                     .body(Files.readAllBytes(defaultPath));
         }
-        if (!fileName.matches("produto_\\d+\\.(jpeg|jpg|png|gif|webp)")) {
+        if (!fileName.matches("produto_\\d+\\.(png|jpeg|jpg|gif|webp)")) {
             return ResponseEntity.badRequest().build();
         }
         Path path = Paths.get(UPLOADS_DIR, PRODUTOS_DIR, fileName);
@@ -184,16 +184,109 @@ public class ProductController {
                     || imageType.equalsIgnoreCase("webp"))) {
                 return null;
             }
-            String fileName = "produto_" + produtoId + "." + imageType;
+
+            // Decodificar base64
+            byte[] bytes = java.util.Base64.getDecoder().decode(data);
+
+            // Redimensionar para 300x300px
+            byte[] resizedBytes = resizeImageTo300x300(bytes);
+
+            String fileName = "produto_" + produtoId + ".png"; // Sempre salvar como PNG para qualidade
             Path dir = Paths.get(UPLOADS_DIR, PRODUTOS_DIR);
             Files.createDirectories(dir);
             Path file = dir.resolve(fileName);
-            byte[] bytes = java.util.Base64.getDecoder().decode(data);
-            Files.write(file, bytes, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+            Files.write(file, resizedBytes, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
             return fileName;
         } catch (Exception e) {
             return null;
         }
+    }
+
+    private byte[] resizeImageTo300x300(byte[] originalImageBytes) throws IOException {
+        // Ler imagem original
+        java.io.ByteArrayInputStream bais = new java.io.ByteArrayInputStream(originalImageBytes);
+        java.awt.image.BufferedImage originalImage = javax.imageio.ImageIO.read(bais);
+
+        if (originalImage == null) {
+            throw new IOException("Não foi possível ler a imagem");
+        }
+
+        // Criar nova imagem 300x300
+        java.awt.image.BufferedImage resizedImage = new java.awt.image.BufferedImage(
+                300, 300, java.awt.image.BufferedImage.TYPE_INT_RGB);
+
+        // Configurar renderização de alta qualidade
+        java.awt.Graphics2D g2d = resizedImage.createGraphics();
+        g2d.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION,
+                java.awt.RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+        g2d.setRenderingHint(java.awt.RenderingHints.KEY_RENDERING,
+                java.awt.RenderingHints.VALUE_RENDER_QUALITY);
+        g2d.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING,
+                java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+
+        // Preencher fundo branco
+        g2d.setColor(java.awt.Color.WHITE);
+        g2d.fillRect(0, 0, 300, 300);
+
+        // Calcular dimensões para manter proporção e centralizar
+        int sourceWidth = originalImage.getWidth();
+        int sourceHeight = originalImage.getHeight();
+        int sourceX = 0;
+        int sourceY = 0;
+
+        if (sourceWidth > sourceHeight) {
+            // Imagem mais larga - cortar laterais para ficar quadrada
+            sourceWidth = sourceHeight;
+            sourceX = (originalImage.getWidth() - sourceHeight) / 2;
+        } else if (sourceHeight > sourceWidth) {
+            // Imagem mais alta - cortar topo/fundo para ficar quadrada
+            sourceHeight = sourceWidth;
+            sourceY = (originalImage.getHeight() - sourceWidth) / 2;
+        }
+
+        // Desenhar imagem redimensionada
+        g2d.drawImage(originalImage,
+                0, 0, 300, 300, // destino (canvas)
+                sourceX, sourceY, sourceX + sourceWidth, sourceY + sourceHeight, // origem (imagem)
+                null);
+        g2d.dispose();
+
+        // Converter para bytes com compressão agressiva para ficar abaixo de 200KB
+        return compressImageTo200KB(resizedImage);
+    }
+
+    private byte[] compressImageTo200KB(java.awt.image.BufferedImage image) throws IOException {
+        // Compressão agressiva - priorizar tamanho pequeno sobre qualidade
+        // Tentar JPEG com várias qualidades, priorizando a menor possível
+
+        for (float quality = 0.5f; quality >= 0.05f; quality -= 0.05f) {
+            byte[] jpegBytes = compressAsJPEG(image, quality);
+
+            // Se ficou menor que 200KB ou é a última tentativa, usar este
+            if (jpegBytes.length <= 200 * 1024 || quality <= 0.05f) {
+                return jpegBytes;
+            }
+        }
+
+        // Fallback: JPEG com qualidade mínima
+        return compressAsJPEG(image, 0.05f);
+    }
+
+    private byte[] compressAsJPEG(java.awt.image.BufferedImage image, float quality) throws IOException {
+        java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+        javax.imageio.ImageWriter writer = javax.imageio.ImageIO.getImageWritersByFormatName("jpg").next();
+        javax.imageio.stream.ImageOutputStream ios = javax.imageio.ImageIO.createImageOutputStream(baos);
+        writer.setOutput(ios);
+
+        javax.imageio.ImageWriteParam param = writer.getDefaultWriteParam();
+        param.setCompressionMode(javax.imageio.ImageWriteParam.MODE_EXPLICIT);
+        param.setCompressionQuality(quality);
+
+        writer.write(null, new javax.imageio.IIOImage(image, null, null), param);
+        writer.dispose();
+        ios.close();
+
+        return baos.toByteArray();
     }
 
     private void deleteImage(String fileName) {

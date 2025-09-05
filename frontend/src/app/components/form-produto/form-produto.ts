@@ -199,31 +199,64 @@ export class FormProdutoComponent implements OnInit {
     this.imagemBase64 = null;
   }
 
-  onImageSelected(event: any): void {
+  async onImageSelected(event: any): Promise<void> {
     const file = event.target.files[0];
-    if (file) {
-      // Validar usando serviço (tipos e tamanho)
-      const validation = this.imageService.validateImageFile(file);
-      if (!validation.valid) {
-        this.error = validation.error || 'Imagem inválida';
+    if (!file) return;
+
+    // Validar tipo básico
+    const basicValidation = this.imageService.validateImageFile(file);
+    if (!basicValidation.valid) {
+      this.error = basicValidation.error || 'Imagem inválida';
+      return;
+    }
+
+    // Verificar se precisa de compressão
+    const compressionCheck = await this.imageService.needsCompression(file);
+
+    if (compressionCheck.needsCompression) {
+      // Oferecer compressão automática
+      const shouldCompress = confirm(
+        `${compressionCheck.reason}. \n\nSua imagem será redimensionada para 300x300px e comprimida para ficar menor e mais otimizada.\n\nDeseja continuar?`
+      );
+
+      if (!shouldCompress) {
+        this.error = 'Imagem cancelada pelo usuário';
         return;
       }
 
-      this.imagemFile = file;
+      try {
+        // Comprimir automaticamente
+        this.imagemBase64 = await this.imageService.resizeAndCompressImage(file);
+        this.imagemPreview = this.imagemBase64;
+        this.imagemFile = file;
+        this.error = '';
 
-      // Criar preview
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        this.imagemPreview = e.target?.result as string;
-        this.imagemBase64 = this.imagemPreview;
-      };
-      reader.readAsDataURL(file);
+        // Calcular tamanho aproximado da imagem comprimida
+        const compressedSize = Math.round((this.imagemBase64.split(',')[1].length * 3) / 4 / 1024);
+        console.log(`Imagem comprimida para ~${compressedSize}KB e 300x300px`);
+        return;
+      } catch (err: any) {
+        this.error = 'Erro ao comprimir a imagem: ' + (err?.message || err);
+        logger.error('FORM_PRODUTO', 'IMAGE_COMPRESSION', 'Erro ao comprimir imagem', err);
+        return;
+      }
+    } else {
+      // Imagem já está dentro dos limites, processar normalmente
+      try {
+        this.imagemFile = file;
+        this.imagemBase64 = await this.imageService.fileToBase64(file);
+        this.imagemPreview = this.imagemBase64;
+        this.error = '';
 
-      this.error = '';
+        const sizeKB = Math.round(file.size / 1024);
+        const dims = compressionCheck.dimensions;
+        console.log(`Imagem aceita sem compressão: ${sizeKB}KB, ${dims?.width}x${dims?.height}px`);
+      } catch (err: any) {
+        this.error = 'Erro ao processar a imagem: ' + (err?.message || err);
+        logger.error('FORM_PRODUTO', 'IMAGE_PROCESSING', 'Erro ao processar imagem', err);
+      }
     }
-  }
-
-  removerImagem(): void {
+  } removerImagem(): void {
     this.imagemPreview = null;
     this.imagemFile = null;
     this.imagemBase64 = null;
