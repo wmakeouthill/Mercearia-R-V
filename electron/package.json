@@ -12,7 +12,8 @@
         "build:backend": "cd ../backend-spring && mvn -q -DskipTests package",
         "build:all": "npm run build:frontend && npm run build:backend && npm run build",
         "dist": "node ../scripts/copy-db-for-build.js && node ../scripts/create-deploy-package.js && electron-builder && node ../scripts/maybe_auto_deploy.js",
-        "dist:win": "node ../scripts/copy-db-for-build.js && node ../scripts/create-deploy-package.js && (rmdir /S /Q dist-installer2\\win-unpacked 2>nul || echo Cleaned) && electron-builder --win && node ../scripts/maybe_auto_deploy.js",
+        "dist:win": "node ../scripts/optimized-build-win.js",
+        "dist:win-old": "node ../scripts/create-deploy-package.js && (rmdir /S /Q dist-installer2\\win-unpacked 2>nul || echo Cleaned) && npm run build:all && node ../scripts/copy-db-for-build.js && electron-builder --win && node ../scripts/maybe_auto_deploy.js",
         "dist:mac": "node ../scripts/copy-db-for-build.js && node ../scripts/create-deploy-package.js && electron-builder --mac && node ../scripts/maybe_auto_deploy.js",
         "dist:linux": "node ../scripts/copy-db-for-build.js && node ../scripts/create-deploy-package.js && electron-builder --linux && node ../scripts/maybe_auto_deploy.js",
         "pack": "npm run build:all && electron-builder --dir"
@@ -104,8 +105,6 @@
         "asarUnpack": [
             "frontend/**/*"
         ],
-        "nodeGypRebuild": false,
-        "buildDependenciesFromSource": false,
         "win": {
             "target": [
                 {
@@ -137,10 +136,19 @@
             "multiLanguageInstaller": false,
             "packElevateHelper": false,
             "removeDefaultUninstallWelcomePage": false,
-            "guid": "6c1e8b3f-4a2d-5e6f-9c8b-1a2b3c4d5e6f"
+            "guid": "6c1e8b3f-4a2d-5e6f-9c8b-1a2b3c4d5e6f",
+            "artifactName": "${productName}-Setup-${version}.${ext}",
+            "installerSidebar": null,
+            "installerHeader": null,
+            "uninstallerSidebar": null,
+            "menuCategory": false,
+            "license": null
         },
-        "compression": "normal",
+        "compression": "store",
         "removePackageScripts": true,
+        "nodeGypRebuild": false,
+        "buildDependenciesFromSource": false,
+        "npmRebuild": false,
         "mac": {
             "target": "dmg",
             "icon": "icon/icon.ico"
