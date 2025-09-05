@@ -17,6 +17,8 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.format.DateTimeFormatter;
 import java.util.Base64;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import org.springframework.lang.Nullable;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -333,16 +335,50 @@ public class NotaController {
         }
 
         try {
-            // Reduzir qualidade JPEG através de reescrita simples
-            // Para PNG, apenas retornar original se estiver dentro do limite
-            return imageBytes; // Por enquanto, apenas retorna original
+            // Usar BufferedImage para redimensionar e comprimir
+            ByteArrayInputStream bais = new ByteArrayInputStream(imageBytes);
+            java.awt.image.BufferedImage originalImage = javax.imageio.ImageIO.read(bais);
+
+            if (originalImage == null) {
+                return imageBytes; // Não conseguiu ler a imagem
+            }
+
+            // Redimensionar para tamanho pequeno (adequado para PDF)
+            int newWidth = Math.min(originalImage.getWidth(), 64); // Max 64px width
+            int newHeight = (int) ((double) newWidth / originalImage.getWidth() * originalImage.getHeight());
+
+            java.awt.image.BufferedImage resizedImage = new java.awt.image.BufferedImage(newWidth, newHeight,
+                    java.awt.image.BufferedImage.TYPE_INT_RGB);
+            java.awt.Graphics2D g2d = resizedImage.createGraphics();
+            g2d.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION,
+                    java.awt.RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+            g2d.drawImage(originalImage, 0, 0, newWidth, newHeight, null);
+            g2d.dispose();
+
+            // Converter para JPEG com qualidade reduzida
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            javax.imageio.ImageWriter writer = javax.imageio.ImageIO.getImageWritersByFormatName("jpg").next();
+            javax.imageio.stream.ImageOutputStream ios = javax.imageio.ImageIO.createImageOutputStream(baos);
+            writer.setOutput(ios);
+
+            javax.imageio.ImageWriteParam writeParam = writer.getDefaultWriteParam();
+            writeParam.setCompressionMode(javax.imageio.ImageWriteParam.MODE_EXPLICIT);
+            writeParam.setCompressionQuality(0.6f); // 60% quality
+
+            writer.write(null, new javax.imageio.IIOImage(resizedImage, null, null), writeParam);
+            writer.dispose();
+            ios.close();
+
+            byte[] compressedBytes = baos.toByteArray();
+            log.debug("Image compressed from {}KB to {}KB", imageBytes.length / 1024, compressedBytes.length / 1024);
+            return compressedBytes;
+
         } catch (Exception e) {
             log.debug("Failed to compress image: {}", e.getMessage());
             return imageBytes;
         }
-    }
+    } // Optimized product images - smaller resolution for reduced PDF size
 
-    // Optimized product images - smaller resolution for reduced PDF size
     private String getProductImageDataUri(Long productId) {
         if (productId == null)
             return "";
@@ -417,7 +453,9 @@ public class NotaController {
             // Comprimir imagem de produto se necessário
             byte[] compressedBytes = compressImageIfNeeded(imageBytes, 20000); // Max 20KB para produtos
 
-            String mimeType = foundExtension.equals("jpg") ? "jpeg" : foundExtension;
+            // Se houve compressão, usar JPEG; senão usar extensão original
+            String mimeType = (compressedBytes.length < imageBytes.length) ? "jpeg"
+                    : (foundExtension.equals("jpg") ? "jpeg" : foundExtension);
             log.debug("Product image loaded successfully from: {} (original: {}KB, compressed: {}KB)",
                     imagePath.toAbsolutePath(), imageBytes.length / 1024, compressedBytes.length / 1024);
             return "data:image/" + mimeType + ";base64," + Base64.getEncoder().encodeToString(compressedBytes);
@@ -469,10 +507,8 @@ public class NotaController {
                 logoDataUri.isEmpty() ? "EMPTY" : "SUCCESS (" + logoDataUri.length() + " chars)");
         html.append("<div class=\"store\">");
         if (!logoDataUri.isEmpty()) {
-            html.append("<div style=\"text-align:center;margin-bottom:8px\">");
             html.append("<img src=\"").append(logoDataUri)
-                    .append("\" style=\"max-width:120px;max-height:60px;\" alt=\"Logo da Mercearia\" />");
-            html.append(CLOSE_DIV);
+                    .append("\" style=\"max-width:150px;max-height:80px;\" alt=\"Logo da Mercearia\" />");
         } else {
             html.append("🏪 MERCEARIA R-V"); // Voltar ao emoji direto
         }
@@ -556,19 +592,19 @@ public class NotaController {
                     psb.append(", ");
                 String metodo = p.getMetodo() == null ? "" : p.getMetodo();
                 String label;
-                // Use símbolos alternativos que funcionam melhor em PDF
+                // Use símbolos que funcionam melhor em PDF
                 switch (metodo) {
                     case "cartao_credito":
-                        label = "💳 Créd"; // Voltar aos emojis Unicode diretos
+                        label = "[💳] Créd"; // Colocar entre colchetes pode ajudar
                         break;
                     case "cartao_debito":
-                        label = "💳 Déb"; // Voltar aos emojis Unicode diretos
+                        label = "[💳] Déb"; // Colocar entre colchetes pode ajudar
                         break;
                     case "pix":
-                        label = "📱 Pix"; // Voltar aos emojis Unicode diretos
+                        label = "[📱] Pix"; // Colocar entre colchetes pode ajudar
                         break;
                     case "dinheiro":
-                        label = "💵 Dinheiro"; // Voltar aos emojis Unicode diretos
+                        label = "[💵] Dinheiro"; // Colocar entre colchetes pode ajudar
                         break;
                     default:
                         label = metodo;

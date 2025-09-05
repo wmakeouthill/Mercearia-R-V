@@ -90,6 +90,18 @@ const path = require('path');
     });
     console.log('Emoji debug completo:', JSON.stringify(emojiCheck, null, 2));
 
+    // Aguardar fonts e emojis carregarem completamente
+    await page.waitForTimeout(2000); // 2 segundos para garantir que tudo carregou
+    
+    // Forçar re-render para garantir que emojis apareçam
+    await page.evaluate(() => {
+      // Forçar repaint da página
+      document.body.style.display = 'none';
+      const height = document.body.offsetHeight; // trigger reflow
+      document.body.style.display = '';
+      return height;
+    });
+
     // Aguardar o conteúdo ser totalmente carregado, incluindo imagens
     console.log('Emoji debug completo:', JSON.stringify(emojiCheck, null, 2));
 
