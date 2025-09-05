@@ -308,10 +308,10 @@ public class NotaController {
             }
 
             byte[] logoBytes = Files.readAllBytes(logoPath);
-            // Keep logo but allow larger sizes for better quality
-            if (logoBytes.length > 1000000) { // > 1MB
-                log.debug("Logo file too large: {} bytes", logoBytes.length);
-                return ""; // Skip very large logos
+            // Limite muito menor para PDF leve
+            if (logoBytes.length > 50000) { // > 50KB apenas
+                log.debug("Logo file too large: {} bytes (limit: 50KB)", logoBytes.length);
+                return ""; // Skip large logos
             }
 
             log.debug("Logo loaded successfully from: {}", logoPath.toAbsolutePath());
@@ -388,10 +388,10 @@ public class NotaController {
             }
 
             byte[] imageBytes = Files.readAllBytes(imagePath);
-            // Keep images but allow larger sizes for better quality
-            if (imageBytes.length > 1000000) { // > 1MB
-                log.debug("Product image for {} too large: {} bytes", productId, imageBytes.length);
-                return ""; // Skip very large images
+            // Limite de 300KB para imagens de produtos
+            if (imageBytes.length > 300000) { // > 300KB
+                log.debug("Product image for {} too large: {} bytes (limit: 300KB)", productId, imageBytes.length);
+                return ""; // Skip large images
             }
 
             String mimeType = foundExtension.equals("jpg") ? "jpeg" : foundExtension;
@@ -405,8 +405,9 @@ public class NotaController {
 
     private String buildHtmlForVenda(SaleOrder venda) {
         StringBuilder html = new StringBuilder();
-        html.append("<?xml version=\"1.0\" encoding=\"utf-8\"?>");
-        html.append("<html xmlns=\"http://www.w3.org/1999/xhtml\"><head><meta charset=\"utf-8\" />");
+        html.append("<!DOCTYPE html>");
+        html.append("<html><head><meta charset=\"utf-8\" />");
+        html.append("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />");
         html.append("<style>");
         // estimate page height based on number of items so PDF is cropped to content
         // increase per-item estimate to avoid accidental pagination; allow large
@@ -416,7 +417,7 @@ public class NotaController {
         // so we avoid forced pagination via @page CSS.
         // Improved CSS for better appearance and wider layout
         html.append(
-                "body{font-family:'Segoe UI Emoji','Apple Color Emoji','Noto Color Emoji',Arial,sans-serif;font-size:11px;color:#222;margin:0;padding:0;background:#fff}");
+                "body{font-family:'Segoe UI','Segoe UI Emoji','Apple Color Emoji','Noto Color Emoji',Arial,sans-serif;font-size:11px;color:#222;margin:0;padding:0;background:#fff}");
         html.append(
                 ".invoice{width:120mm;margin:0;padding:8px;background:#fff;color:#222;border:1px solid #ddd;box-sizing:border-box}");
         html.append(
@@ -447,9 +448,8 @@ public class NotaController {
             html.append("<img src=\"").append(logoDataUri)
                     .append("\" style=\"max-width:120px;max-height:60px;\" alt=\"Logo da Mercearia\" />");
             html.append(CLOSE_DIV);
-            html.append("<div style=\"font-size:14px;\">MERCEARIA R-V").append(CLOSE_DIV);
         } else {
-            html.append("🏪 MERCEARIA R-V");
+            html.append("&#127978; MERCEARIA R-V"); // 🏪 como entidade HTML
         }
         html.append(CLOSE_DIV);
         html.append("<div class=\"meta\">Comprovante de Pedido</div>\n");
@@ -481,7 +481,10 @@ public class NotaController {
                         "\" style=\"width:28px;height:28px;margin-right:8px;border-radius:4px;border:1px solid #e9ecef;object-fit:cover;\" alt=\"Produto\" />");
             } else {
                 html.append(
-                        "<span style=\"margin-right:8px;font-size:16px;width:28px;text-align:center;display:inline-block;\">📦</span>");
+                        "<span style=\"margin-right:8px;font-size:16px;width:28px;text-align:center;display:inline-block;\">&#128230;</span>"); // 📦
+                                                                                                                                                // como
+                                                                                                                                                // entidade
+                                                                                                                                                // HTML
             }
             html.append("<span class=\"prod-name\">" + escapeHtml(it.getProduto().getNome()) + "</span>");
             html.append(CLOSE_TD);
@@ -531,16 +534,16 @@ public class NotaController {
                 // Use simple text symbols instead of external images to reduce PDF size
                 switch (metodo) {
                     case "cartao_credito":
-                        label = "💳 Créd";
+                        label = "&#128179; Créd"; // 💳 como entidade HTML
                         break;
                     case "cartao_debito":
-                        label = "💳 Déb";
+                        label = "&#128179; Déb"; // 💳 como entidade HTML
                         break;
                     case "pix":
-                        label = "📱 Pix";
+                        label = "&#128241; Pix"; // 📱 como entidade HTML
                         break;
                     case "dinheiro":
-                        label = "💵 Dinheiro";
+                        label = "&#128181; Dinheiro"; // 💵 como entidade HTML
                         break;
                     default:
                         label = metodo;

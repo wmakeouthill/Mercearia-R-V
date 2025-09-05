@@ -20,30 +20,69 @@ const path = require('path');
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
         '--disable-web-security',
-        '--disable-features=VizDisplayCompositor'
+        '--disable-features=VizDisplayCompositor',
+        '--disable-font-subpixel-positioning',
+        '--enable-font-antialiasing',
+        '--font-render-hinting=slight',
+        '--lang=pt-BR'
       ] 
     });
     
     const page = await browser.newPage();
     
-    // Viewport maior para melhor renderização de emojis
+    // Viewport otimizado para renderização de emojis
     await page.setViewport({ 
-      width: 1200, 
-      height: 800,
+      width: 1000, 
+      height: 700,
       deviceScaleFactor: 1
+    });
+
+    // Configurar codificação para suportar emojis
+    await page.setExtraHTTPHeaders({
+      'Accept-Charset': 'utf-8'
+    });
+
+    // Injetar CSS adicional para garantir renderização de emojis
+    await page.addStyleTag({
+      content: `
+        * {
+          font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', system-ui, -apple-system, sans-serif !important;
+        }
+        .emoji {
+          font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji' !important;
+          font-size: 14px !important;
+        }
+      `
     });
     
     await page.setContent(html, { waitUntil: 'networkidle0' }); // Aguardar tudo carregar
 
     // Debug: verificar se emojis estão presentes no DOM
     const emojiCheck = await page.evaluate(() => {
-      const paymentText = document.querySelector('tfoot td')?.textContent || '';
+      const paymentCell = document.querySelector('tfoot td');
+      const paymentText = paymentCell?.textContent || '';
+      const paymentHTML = paymentCell?.innerHTML || '';
+      
+      // Verificar cada emoji individualmente
+      const hasCardEmoji = paymentText.includes('💳');
+      const hasPhoneEmoji = paymentText.includes('📱');
+      const hasMoneyEmoji = paymentText.includes('💵');
+      
       return {
-        hasEmojis: /💳|📱|💵/.test(paymentText),
-        paymentText: paymentText.substring(0, 100)
+        paymentText: paymentText.substring(0, 200),
+        paymentHTML: paymentHTML.substring(0, 200),
+        hasCardEmoji,
+        hasPhoneEmoji, 
+        hasMoneyEmoji,
+        textLength: paymentText.length,
+        // Verificar se há caracteres Unicode de emojis
+        unicodePresent: /[\u{1F300}-\u{1F9FF}]/u.test(paymentText)
       };
     });
-    console.log('Emoji check:', emojiCheck);
+    console.log('Emoji debug completo:', JSON.stringify(emojiCheck, null, 2));
+
+    // Aguardar o conteúdo ser totalmente carregado, incluindo imagens
+    console.log('Emoji debug completo:', JSON.stringify(emojiCheck, null, 2));
 
     // Aguardar o conteúdo ser totalmente carregado, incluindo imagens
     await page.waitForTimeout(1500);
@@ -62,7 +101,7 @@ const path = require('path');
       return { width: 400, height: 600 };
     });
 
-    // PDF com tamanho EXATO do conteúdo
+    // PDF com tamanho EXATO do conteúdo e máxima compressão
     await page.pdf({ 
       path: outPath, 
       width: `${contentDimensions.width}px`,
@@ -76,7 +115,11 @@ const path = require('path');
       printBackground: true,
       preferCSSPageSize: false,
       displayHeaderFooter: false,
-      scale: 1.0 // Escala 1:1 para precisão máxima
+      scale: 1.0,
+      format: null,
+      tagged: false, // Remove acessibilidade para PDF menor
+      outline: false, // Remove outline para PDF menor 
+      timeout: 30000
     });
     await browser.close();
     process.exit(0);
