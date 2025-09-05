@@ -63,8 +63,7 @@
             },
             {
                 "from": "resources/data",
-                "to": "data",
-                "filter": ["**/*"]
+                "to": "data"
             },
             {
                 "from": "../backend-spring/secrets",

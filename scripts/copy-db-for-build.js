@@ -19,6 +19,13 @@ function copyDirSync(src, dest) {
       continue;
     }
     
+    // Pular arquivos específicos do PostgreSQL que podem causar problemas quando copiados de um banco ativo
+    const problematicFiles = ['postmaster.pid'];
+    if (problematicFiles.includes(entry.name.toLowerCase())) {
+      console.log(`⚠️  Pulando arquivo problemático do PostgreSQL: ${entry.name} (será recriado na inicialização)`);
+      continue;
+    }
+    
     if (entry.isDirectory()) {
       copyDirSync(srcPath, destPath);
     } else if (entry.isFile()) {
@@ -100,9 +107,11 @@ function countFiles(dir) {
   for (const entry of entries) {
     const fullPath = path.join(dir, entry.name);
     
-    // Pular arquivos com nomes reservados do Windows (mesmo filtro da cópia)
+    // Pular arquivos com nomes reservados do Windows e arquivos problemáticos do PostgreSQL
     const reservedNames = ['nul', 'con', 'prn', 'aux', 'com1', 'com2', 'com3', 'com4', 'com5', 'com6', 'com7', 'com8', 'com9', 'lpt1', 'lpt2', 'lpt3', 'lpt4', 'lpt5', 'lpt6', 'lpt7', 'lpt8', 'lpt9'];
-    if (reservedNames.includes(entry.name.toLowerCase())) {
+    const problematicFiles = ['postmaster.pid', 'postmaster.opts.bak', 'postgresql.conf.bak'];
+    
+    if (reservedNames.includes(entry.name.toLowerCase()) || problematicFiles.includes(entry.name)) {
       continue; // Não contar arquivos que são pulados na cópia
     }
     
