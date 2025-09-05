@@ -15,10 +15,19 @@ function copyDirSync(src, dest) {
       copyDirSync(srcPath, destPath);
     } else if (entry.isFile()) {
       try {
-        // Preserve file attributes and timestamps for better fidelity
+        // CÓPIA INTEGRAL - não ignora NENHUM arquivo
+        console.log(`📄 Copiando: ${srcPath} -> ${destPath}`);
         fs.copyFileSync(srcPath, destPath);
+        
+        // Preserve file attributes and timestamps for better fidelity
         const srcStats = fs.statSync(srcPath);
         fs.utimesSync(destPath, srcStats.atime, srcStats.mtime);
+        
+        // Verificar se a cópia foi bem-sucedida comparando tamanhos
+        const destStats = fs.statSync(destPath);
+        if (srcStats.size !== destStats.size) {
+          throw new Error(`Copy verification failed: size mismatch (src: ${srcStats.size}, dest: ${destStats.size})`);
+        }
       } catch (e) {
         console.error('⚠️  CRITICAL: Failed to copy file', srcPath, '->', destPath, ':', e.message || e);
         // Don't continue silently - this could cause database corruption
@@ -28,9 +37,10 @@ function copyDirSync(src, dest) {
       try {
         const linkTarget = fs.readlinkSync(srcPath);
         fs.symlinkSync(linkTarget, destPath);
-        console.log('Copied symlink:', srcPath, '->', destPath);
+        console.log('📎 Copied symlink:', srcPath, '->', destPath);
       } catch (e) {
         console.warn('Failed to copy symlink', srcPath, ':', e.message || e);
+        // Continue for symlinks as they're not critical
       }
     }
   }

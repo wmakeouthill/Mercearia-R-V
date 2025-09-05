@@ -272,24 +272,38 @@ public class NotaController {
     // Optimized logo - smaller resolution for reduced PDF size
     private String getLogoDataUri() {
         try {
-            // Try multiple possible locations for the logo
+            // Try multiple possible locations for the logo - incluindo produção
             Path[] logoPaths = {
-                    Paths.get("uploads", "logo.png"),
-                    Paths.get("backend-spring", "uploads", "logo.png"),
-                    Paths.get("..", "uploads", "logo.png"),
-                    Paths.get(System.getProperty("user.dir"), "uploads", "logo.png")
+                    Paths.get("uploads", "logo.png"), // Desenvolvimento
+                    Paths.get("backend-spring", "uploads", "logo.png"), // Build local
+                    Paths.get("..", "uploads", "logo.png"), // Relativo ao parent
+                    Paths.get(System.getProperty("user.dir"), "uploads", "logo.png"), // Absoluto dev
+                    // Caminhos para produção (executável standalone)
+                    Paths.get("resources", "backend-spring", "uploads", "logo.png"), // Produção
+                    Paths.get("..", "resources", "backend-spring", "uploads", "logo.png"), // Produção relativo
+                    Paths.get(".", "backend-spring", "uploads", "logo.png"), // Dentro do app
+                    // Caminho do electron em produção
+                    Paths.get("app.asar.unpacked", "backend-spring", "uploads", "logo.png"),
+                    // Caminho padrão para imagem
+                    Paths.get("uploads", "padrao.png"),
+                    Paths.get("backend-spring", "uploads", "produtos", "padrao.png")
             };
 
             Path logoPath = null;
             for (Path testPath : logoPaths) {
                 if (Files.exists(testPath)) {
                     logoPath = testPath;
+                    log.debug("Logo found at: {}", testPath.toAbsolutePath());
                     break;
                 }
             }
 
             if (logoPath == null) {
                 log.debug("Logo not found in any of the expected paths");
+                // Lista os caminhos testados para debug
+                for (Path testPath : logoPaths) {
+                    log.debug("Tested path: {}", testPath.toAbsolutePath());
+                }
                 return "";
             }
 
@@ -318,12 +332,18 @@ public class NotaController {
             Path imagePath = null;
             String foundExtension = "png";
 
-            // Try multiple possible base paths for uploads
+            // Try multiple possible base paths for uploads - incluindo produção
             String[] basePaths = {
-                    "uploads",
-                    "backend-spring/uploads",
-                    "../uploads",
-                    System.getProperty("user.dir") + "/uploads"
+                    "uploads", // Desenvolvimento
+                    "backend-spring/uploads", // Build local
+                    "../uploads", // Relativo parent
+                    System.getProperty("user.dir") + "/uploads", // Absoluto dev
+                    // Caminhos para produção (executável standalone)
+                    "resources/backend-spring/uploads", // Produção
+                    "../resources/backend-spring/uploads", // Produção relativo
+                    "./backend-spring/uploads", // Dentro do app
+                    // Caminho do electron em produção
+                    "app.asar.unpacked/backend-spring/uploads"
             };
 
             // First, try to find the product-specific image
@@ -342,12 +362,14 @@ public class NotaController {
 
             // If no product-specific image found, try default image
             if (imagePath == null) {
+                log.debug("Produto {} sem imagem específica, tentando imagem padrão...", productId);
                 for (String basePath : basePaths) {
                     for (String ext : extensions) {
                         Path testPath = Paths.get(basePath, "produtos", "padrao." + ext);
                         if (Files.exists(testPath)) {
                             imagePath = testPath;
                             foundExtension = ext;
+                            log.debug("Usando imagem padrão: {}", testPath.toAbsolutePath());
                             break;
                         }
                     }
@@ -357,6 +379,10 @@ public class NotaController {
 
                 if (imagePath == null) {
                     log.debug("No product image found for product {} in any of the expected paths", productId);
+                    // Lista os caminhos testados para debug
+                    for (String basePath : basePaths) {
+                        log.debug("Tested base path: {}/produtos/", basePath);
+                    }
                     return "";
                 }
             }

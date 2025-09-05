@@ -13,7 +13,7 @@
         "build:all": "npm run build:frontend && npm run build:backend && npm run build",
         "dist": "node ../scripts/copy-db-for-build.js && node ../scripts/create-deploy-package.js && electron-builder && node ../scripts/maybe_auto_deploy.js",
         "dist:win": "node ../scripts/optimized-build-win.js",
-        "dist:win-old": "node ../scripts/create-deploy-package.js && (rmdir /S /Q dist-installer2\\win-unpacked 2>nul || echo Cleaned) && npm run build:all && node ../scripts/copy-db-for-build.js && electron-builder --win && node ../scripts/maybe_auto_deploy.js",
+        "dist:win-legacy": "node ../scripts/create-deploy-package.js && (rmdir /S /Q dist-installer2\\win-unpacked 2>nul || echo Cleaned) && npm run build:all && node ../scripts/copy-db-for-build.js && electron-builder --win && node ../scripts/maybe_auto_deploy.js",
         "dist:mac": "node ../scripts/copy-db-for-build.js && node ../scripts/create-deploy-package.js && electron-builder --mac && node ../scripts/maybe_auto_deploy.js",
         "dist:linux": "node ../scripts/copy-db-for-build.js && node ../scripts/create-deploy-package.js && electron-builder --linux && node ../scripts/maybe_auto_deploy.js",
         "pack": "npm run build:all && electron-builder --dir"
@@ -85,8 +85,17 @@
                 "to": "scripts/render-nota-pdf.js"
             },
             {
+                "from": "../scripts/package.json",
+                "to": "scripts/package.json"
+            },
+            {
                 "from": "../scripts/node_modules",
-                "to": "scripts/node_modules"
+                "to": "scripts/node_modules",
+                "filter": [
+                    "**/*",
+                    "!sistema-estoque/**/*",
+                    "!sistema-estoque"
+                ]
             },
             {
                 "from": "../backend-spring/pg/win",
