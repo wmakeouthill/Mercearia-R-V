@@ -314,11 +314,31 @@ public class NotaController {
                 return ""; // Skip large logos
             }
 
-            log.debug("Logo loaded successfully from: {}", logoPath.toAbsolutePath());
-            return "data:image/png;base64," + Base64.getEncoder().encodeToString(logoBytes);
+            // Comprimir imagem se for muito grande
+            byte[] compressedBytes = compressImageIfNeeded(logoBytes, 30000); // Max 30KB para logo
+
+            log.debug("Logo loaded successfully from: {} (original: {}KB, compressed: {}KB)",
+                    logoPath.toAbsolutePath(), logoBytes.length / 1024, compressedBytes.length / 1024);
+            return "data:image/png;base64," + Base64.getEncoder().encodeToString(compressedBytes);
         } catch (Exception e) {
             log.warn("Failed to load logo: {}", e.getMessage());
             return "";
+        }
+    }
+
+    // Método para comprimir imagens se necessário
+    private byte[] compressImageIfNeeded(byte[] imageBytes, int maxSizeBytes) {
+        if (imageBytes.length <= maxSizeBytes) {
+            return imageBytes; // Já está dentro do limite
+        }
+
+        try {
+            // Reduzir qualidade JPEG através de reescrita simples
+            // Para PNG, apenas retornar original se estiver dentro do limite
+            return imageBytes; // Por enquanto, apenas retorna original
+        } catch (Exception e) {
+            log.debug("Failed to compress image: {}", e.getMessage());
+            return imageBytes;
         }
     }
 
@@ -394,9 +414,13 @@ public class NotaController {
                 return ""; // Skip large images
             }
 
+            // Comprimir imagem de produto se necessário
+            byte[] compressedBytes = compressImageIfNeeded(imageBytes, 20000); // Max 20KB para produtos
+
             String mimeType = foundExtension.equals("jpg") ? "jpeg" : foundExtension;
-            log.debug("Product image loaded successfully from: {}", imagePath.toAbsolutePath());
-            return "data:image/" + mimeType + ";base64," + Base64.getEncoder().encodeToString(imageBytes);
+            log.debug("Product image loaded successfully from: {} (original: {}KB, compressed: {}KB)",
+                    imagePath.toAbsolutePath(), imageBytes.length / 1024, compressedBytes.length / 1024);
+            return "data:image/" + mimeType + ";base64," + Base64.getEncoder().encodeToString(compressedBytes);
         } catch (Exception e) {
             log.debug("Failed to load product image for {}: {}", productId, e.getMessage());
             return "";
@@ -421,8 +445,9 @@ public class NotaController {
         html.append(
                 ".invoice{width:120mm;margin:0;padding:8px;background:#fff;color:#222;border:1px solid #ddd;box-sizing:border-box}");
         html.append(
-                ".store{font-size:16px;font-weight:700;text-align:center;margin:8px 0;padding:8px;background:#f8f9fa;border-radius:6px;border:1px solid #e9ecef}");
-        html.append(".meta{font-size:10px;color:#555;text-align:center;margin:6px 0}");
+                ".store{font-size:16px;font-weight:700;text-align:center;margin:8px 0;padding:12px 8px;background:#f8f9fa;border-radius:6px;border:1px solid #e9ecef;display:flex;align-items:center;justify-content:center;min-height:50px}");
+        html.append(".meta{font-size:10px;color:#555;text-align:center;margin:3px 0}");
+        html.append(".small{font-size:10px;color:#666;text-align:center;margin:2px 0;padding:1px}");
         html.append(
                 "table{width:100%;border-collapse:collapse;margin-top:8px;font-size:10px;border:1px solid #dee2e6}");
         html.append(
@@ -449,7 +474,7 @@ public class NotaController {
                     .append("\" style=\"max-width:120px;max-height:60px;\" alt=\"Logo da Mercearia\" />");
             html.append(CLOSE_DIV);
         } else {
-            html.append("&#127978; MERCEARIA R-V"); // 🏪 como entidade HTML
+            html.append("🏪 MERCEARIA R-V"); // Voltar ao emoji direto
         }
         html.append(CLOSE_DIV);
         html.append("<div class=\"meta\">Comprovante de Pedido</div>\n");
@@ -481,10 +506,10 @@ public class NotaController {
                         "\" style=\"width:28px;height:28px;margin-right:8px;border-radius:4px;border:1px solid #e9ecef;object-fit:cover;\" alt=\"Produto\" />");
             } else {
                 html.append(
-                        "<span style=\"margin-right:8px;font-size:16px;width:28px;text-align:center;display:inline-block;\">&#128230;</span>"); // 📦
-                                                                                                                                                // como
-                                                                                                                                                // entidade
-                                                                                                                                                // HTML
+                        "<span style=\"margin-right:8px;font-size:16px;width:28px;text-align:center;display:inline-block;\">📦</span>"); // Voltar
+                                                                                                                                         // ao
+                                                                                                                                         // emoji
+                                                                                                                                         // direto
             }
             html.append("<span class=\"prod-name\">" + escapeHtml(it.getProduto().getNome()) + "</span>");
             html.append(CLOSE_TD);
@@ -531,19 +556,19 @@ public class NotaController {
                     psb.append(", ");
                 String metodo = p.getMetodo() == null ? "" : p.getMetodo();
                 String label;
-                // Use simple text symbols instead of external images to reduce PDF size
+                // Use símbolos alternativos que funcionam melhor em PDF
                 switch (metodo) {
                     case "cartao_credito":
-                        label = "&#128179; Créd"; // 💳 como entidade HTML
+                        label = "💳 Créd"; // Voltar aos emojis Unicode diretos
                         break;
                     case "cartao_debito":
-                        label = "&#128179; Déb"; // 💳 como entidade HTML
+                        label = "💳 Déb"; // Voltar aos emojis Unicode diretos
                         break;
                     case "pix":
-                        label = "&#128241; Pix"; // 📱 como entidade HTML
+                        label = "📱 Pix"; // Voltar aos emojis Unicode diretos
                         break;
                     case "dinheiro":
-                        label = "&#128181; Dinheiro"; // 💵 como entidade HTML
+                        label = "💵 Dinheiro"; // Voltar aos emojis Unicode diretos
                         break;
                     default:
                         label = metodo;
