@@ -62,14 +62,6 @@
                 "to": "backend-spring/backend-spring-0.0.1-SNAPSHOT.jar"
             },
             {
-                "from": "resources/data",
-                "to": "data"
-            },
-            {
-                "from": "../backend-spring/secrets",
-                "to": "backend-spring/secrets"
-            },
-            {
                 "from": "../backend-spring/uploads",
                 "to": "backend-spring/uploads",
                 "filter": ["**/*"]

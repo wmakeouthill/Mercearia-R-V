@@ -123,15 +123,7 @@ async function main() {
             { timeout: 5 * 60 * 1000 } // 5 minutos
         );
         
-        // 5. Copiar banco de dados do desenvolvimento (POR ÚLTIMO antes do empacotamento)
-        console.log('🗄️ Copiando banco de dados de desenvolvimento...');
-        runCommand(
-            'node ../scripts/copy-db-for-build.js',
-            'Copiando banco de dados COMPLETO de desenvolvimento',
-            { timeout: 5 * 60 * 1000, cwd: electronDir } // 5 minutos
-        );
-        
-        // 6. Build do electron-builder com configuração otimizada
+        // 5. Build do electron-builder com configuração otimizada (SEM cópia de dados)
         console.log('📦 Iniciando empacotamento DEFINITIVO...');
         console.log('⚠️  Esta etapa pode demorar 20-30 minutos');
         console.log('💡 Usando configuração otimizada e corrigida...\n');
@@ -148,6 +140,14 @@ async function main() {
             builderCommand,
             'Criando instalador Windows - CONFIGURAÇÃO DEFINITIVA',
             { timeout: 35 * 60 * 1000 } // 35 minutos
+        );
+        
+        // 6. Copiar banco de dados DIRETO para a pasta compilada (APÓS electron-builder)
+        console.log('�️ Copiando banco de dados DIRETAMENTE para pasta compilada...');
+        runCommand(
+            'node ../scripts/copy-db-for-build.js',
+            'Copiando banco de dados COMPLETO diretamente para executável compilado',
+            { timeout: 5 * 60 * 1000, cwd: electronDir } // 5 minutos
         );
         
         // 7. Verificar resultado final

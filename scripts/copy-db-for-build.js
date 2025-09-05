@@ -124,14 +124,17 @@ function countFiles(dir) {
   return count;
 }
 
-function copySecretsOnly(repoRoot) {
+function copySecretsOnly(repoRoot, useCompiledPath = false) {
   // Only copy secrets - no duplicate database copy
   const secretsSrc = path.join(repoRoot, 'backend-spring', 'secrets');
-  const secretsDest = path.join(repoRoot, 'electron', 'resources', 'backend-spring', 'secrets');
+  const secretsDest = useCompiledPath 
+    ? path.join(repoRoot, 'electron', 'dist-installer2', 'win-unpacked', 'resources', 'backend-spring', 'secrets')
+    : path.join(repoRoot, 'electron', 'resources', 'backend-spring', 'secrets');
+  
   if (fs.existsSync(secretsSrc)) {
     try {
       copyDirSync(secretsSrc, secretsDest);
-      console.log('✅ Copied backend secrets for build');
+      console.log(`✅ Copied backend secrets to ${useCompiledPath ? 'compiled' : 'staging'} directory`);
     } catch (e) {
       console.error('❌ Failed to copy secrets:', e.message || e);
       process.exit(2);
@@ -143,12 +146,20 @@ function copySecretsOnly(repoRoot) {
 
 function main() {
   const repoRoot = path.resolve(__dirname, '..');
+  
+  // Verificar se já existe a pasta compilada (indicando que deve copiar direto para lá)
+  const compiledResourcesDir = path.join(repoRoot, 'electron', 'dist-installer2', 'win-unpacked', 'resources');
+  const useCompiledPath = fs.existsSync(compiledResourcesDir);
+  
   // Instead of packaging a SQL dump, include the raw embedded Postgres data
   // directory so the packaged app can start with a pre-populated cluster.
   const srcDataDir = path.join(repoRoot, 'backend-spring', 'data');
-  const destDataDir = path.join(repoRoot, 'electron', 'resources', 'data');
+  const destDataDir = useCompiledPath 
+    ? path.join(compiledResourcesDir, 'data')
+    : path.join(repoRoot, 'electron', 'resources', 'data');
+    
   console.log('🗄️  Copying COMPLETE PostgreSQL database from', srcDataDir);
-  console.log('📁 Destination:', destDataDir);
+  console.log(`📁 Destination: ${destDataDir} (${useCompiledPath ? 'COMPILED PATH' : 'STAGING PATH'})`);
   
   if (fs.existsSync(srcDataDir)) {
     try {
@@ -178,25 +189,33 @@ function main() {
   }
 
   // Copy only secrets (no duplicate database copy)
-  copySecretsOnly(repoRoot);
+  copySecretsOnly(repoRoot, useCompiledPath);
+  
   // Também copiar imagem padrão do frontend para servir como logo do splash
   try {
     const frontendLogo = path.join(repoRoot, 'frontend', 'shared', 'padrao.png');
-    const destResourcesAssetsDir = path.join(repoRoot, 'electron', 'resources', 'assets');
+    const destResourcesAssetsDir = useCompiledPath 
+      ? path.join(compiledResourcesDir, 'assets')
+      : path.join(repoRoot, 'electron', 'resources', 'assets');
     const destAssetsDir = path.join(repoRoot, 'electron', 'assets');
+    
     if (fs.existsSync(frontendLogo)) {
-      // Copy into electron/resources/assets (used by extraResources or runtime access)
+      // Copy into the appropriate resources directory
       fs.mkdirSync(destResourcesAssetsDir, { recursive: true });
       fs.copyFileSync(frontendLogo, path.join(destResourcesAssetsDir, 'logo.png'));
-      // Also copy into electron/assets so it is included inside the asar at assets/logo.png
-      fs.mkdirSync(destAssetsDir, { recursive: true });
-      fs.copyFileSync(frontendLogo, path.join(destAssetsDir, 'logo.png'));
-      console.log('Copied frontend logo to electron resources as assets/logo.png and to electron/assets/logo.png');
+      
+      // Also copy into electron/assets so it is included inside the asar at assets/logo.png (only if not using compiled path)
+      if (!useCompiledPath) {
+        fs.mkdirSync(destAssetsDir, { recursive: true });
+        fs.copyFileSync(frontendLogo, path.join(destAssetsDir, 'logo.png'));
+      }
+      
+      console.log(`Copied frontend logo to ${useCompiledPath ? 'compiled' : 'staging'} resources directory`);
     } else {
       console.log('No frontend logo found at', frontendLogo);
     }
   } catch (e) {
-    console.warn('Failed to copy frontend logo to electron resources/assets and electron/assets:', e.message || e);
+    console.warn('Failed to copy frontend logo:', e.message || e);
   }
 }
 
