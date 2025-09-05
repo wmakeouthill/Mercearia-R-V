@@ -12,7 +12,7 @@ const parentPid = process.ppid;
 
 function execCommand(command) {
   return new Promise((resolve) => {
-    exec(command, { encoding: 'utf8' }, (error, stdout, stderr) => {
+    exec(command, { encoding: 'utf8', stdio: 'ignore' }, (error, stdout, stderr) => {
       resolve({ stdout: stdout || '', stderr: stderr || '', error });
     });
   });
@@ -48,9 +48,9 @@ async function cleanup() {
                   parseInt(pid) !== currentPid && parseInt(pid) !== parentPid) {
                 
                 // Verificar se é um processo Java (Spring Boot) ou servidor web
-                const { stdout: processInfo } = await execCommand(`tasklist /FI "PID eq ${pid}" /FO CSV 2>nul`);
+                const { stdout: processInfo } = await execCommand(`tasklist /FI "PID eq ${pid}" /FO CSV`);
                 if (processInfo && (processInfo.includes('java.exe') || processInfo.includes('node.exe'))) {
-                  await execCommand(`taskkill /F /PID ${pid} 2>nul`);
+                  await execCommand(`taskkill /F /PID ${pid}`);
                   console.log(`🔓 Porta ${port} liberada (PID: ${pid})`);
                 }
               }
@@ -64,16 +64,16 @@ async function cleanup() {
     
     // 2. Finalizar apenas processos Java órfãos (Spring Boot anteriores)
     console.log('🔴 Finalizando processos Java órfãos...');
-    const { stdout: javaProcesses } = await execCommand('tasklist /FI "IMAGENAME eq java.exe" /FO CSV 2>nul');
+    const { stdout: javaProcesses } = await execCommand('tasklist /FI "IMAGENAME eq java.exe" /FO CSV');
     if (javaProcesses && javaProcesses.includes('java.exe')) {
       // Finalizar apenas processos Java que não são o atual
-      await execCommand('taskkill /F /IM java.exe /T 2>nul');
+      await execCommand('taskkill /F /IM java.exe /T');
       console.log('ℹ️  Processos Java anteriores finalizados');
     }
     
     // 3. Finalizar apenas processos PostgreSQL órfãos
     console.log('🔴 Finalizando processos PostgreSQL órfãos...');
-    const pgResult = await execCommand('taskkill /F /IM postgres.exe /T 2>nul');
+    const pgResult = await execCommand('taskkill /F /IM postgres.exe /T');
     if (!pgResult.error) {
       console.log('ℹ️  Processos PostgreSQL finalizados');
     }

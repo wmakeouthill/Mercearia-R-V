@@ -11,8 +11,8 @@ function killHangingProcesses() {
     try {
         // Matar apenas processos electron, não todos os node.js
         const commands = [
-            'taskkill /F /IM electron.exe /T 2>nul || echo "Nenhum electron encontrado"',
-            'taskkill /F /IM "Sistema de Gestão de Estoque.exe" /T 2>nul || echo "Nenhum app encontrado"'
+            'taskkill /F /IM electron.exe /T || echo "Nenhum electron encontrado"',
+            'taskkill /F /IM "Sistema de Gestão de Estoque.exe" /T || echo "Nenhum app encontrado"'
         ];
         
         commands.forEach(cmd => {
@@ -39,7 +39,7 @@ async function fixOneDrivePermissions() {
         if (fs.existsSync('dist-installer2')) {
             console.log('🗑️ Removendo pasta de build anterior...');
             try {
-                execSync('rmdir /S /Q dist-installer2 2>nul', { stdio: 'pipe', timeout: 10000 });
+                execSync('rmdir /S /Q dist-installer2', { stdio: 'pipe', timeout: 10000 });
             } catch (e) {
                 try {
                     execSync('rm -rf dist-installer2', { stdio: 'pipe', timeout: 10000 });

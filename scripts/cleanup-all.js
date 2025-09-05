@@ -9,7 +9,7 @@ console.log('🧹 Iniciando limpeza completa de processos...');
 // Função para executar comando e aguardar resultado
 function execCommand(command) {
   return new Promise((resolve) => {
-    exec(command, { encoding: 'utf8' }, (error, stdout, stderr) => {
+    exec(command, { encoding: 'utf8', stdio: 'ignore' }, (error, stdout, stderr) => {
       resolve({ stdout: stdout || '', stderr: stderr || '', error });
     });
   });
@@ -31,21 +31,21 @@ async function cleanup() {
   try {
     // 1. Finalizar processos Java (Spring Boot)
     console.log('🔴 Finalizando processos Java...');
-    const javaResult = await execCommand('taskkill /F /IM java.exe /T 2>nul');
+    const javaResult = await execCommand('taskkill /F /IM java.exe /T');
     if (javaResult.error) {
       console.log('ℹ️  Nenhum processo Java encontrado');
     }
     
     // 2. Finalizar processos Node.js
     console.log('🔴 Finalizando processos Node.js...');
-    const nodeResult = await execCommand('taskkill /F /IM node.exe /T 2>nul');
+    const nodeResult = await execCommand('taskkill /F /IM node.exe /T');
     if (nodeResult.error) {
       console.log('ℹ️  Nenhum processo Node encontrado');
     }
     
     // 3. Finalizar processos PostgreSQL
     console.log('🔴 Finalizando processos PostgreSQL...');
-    const pgResult = await execCommand('taskkill /F /IM postgres.exe /T 2>nul');
+    const pgResult = await execCommand('taskkill /F /IM postgres.exe /T');
     if (pgResult.error) {
       console.log('ℹ️  Nenhum processo PostgreSQL encontrado');
     }

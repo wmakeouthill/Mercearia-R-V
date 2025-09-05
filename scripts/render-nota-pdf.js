@@ -20,55 +20,63 @@ const path = require('path');
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
         '--disable-web-security',
-        '--disable-features=VizDisplayCompositor',
-        '--font-render-hinting=none',
-        '--disable-font-subpixel-positioning'
+        '--disable-features=VizDisplayCompositor'
       ] 
     });
     
     const page = await browser.newPage();
     
-    // Otimizar viewport para menor resolução
+    // Viewport maior para melhor renderização de emojis
     await page.setViewport({ 
-      width: 800, 
-      height: 600,
-      deviceScaleFactor: 1 // Reduzir de 2 para 1 para menor resolução
+      width: 1200, 
+      height: 800,
+      deviceScaleFactor: 1
     });
     
-    await page.setContent(html, { waitUntil: 'domcontentloaded' }); // Mais rápido que networkidle0
+    await page.setContent(html, { waitUntil: 'networkidle0' }); // Aguardar tudo carregar
+
+    // Debug: verificar se emojis estão presentes no DOM
+    const emojiCheck = await page.evaluate(() => {
+      const paymentText = document.querySelector('tfoot td')?.textContent || '';
+      return {
+        hasEmojis: /💳|📱|💵/.test(paymentText),
+        paymentText: paymentText.substring(0, 100)
+      };
+    });
+    console.log('Emoji check:', emojiCheck);
 
     // Aguardar o conteúdo ser totalmente carregado, incluindo imagens
     await page.waitForTimeout(1500);
     
-    // Medir o tamanho real do conteúdo
+        // Medir as dimensões EXATAS do conteúdo da nota (.invoice) 
     const contentDimensions = await page.evaluate(() => {
       const invoice = document.querySelector('.invoice');
       if (invoice) {
         const rect = invoice.getBoundingClientRect();
+        // Usar dimensões exatas do elemento + margem mínima
         return {
-          width: Math.ceil(rect.width + 32), // padding extra
-          height: Math.ceil(rect.height + 32) // padding extra
+          width: Math.ceil(rect.width + 4), // margem mínima de 2px cada lado
+          height: Math.ceil(rect.height + 4) // margem mínima de 2px cada lado
         };
       }
       return { width: 400, height: 600 };
     });
 
-    // Usar tamanho customizado baseado no conteúdo para eliminar espaço em branco
+    // PDF com tamanho EXATO do conteúdo
     await page.pdf({ 
       path: outPath, 
       width: `${contentDimensions.width}px`,
       height: `${contentDimensions.height}px`,
       margin: {
-        top: '5mm',
-        bottom: '5mm', 
-        left: '5mm',
-        right: '5mm'
+        top: '1px',
+        bottom: '1px', 
+        left: '1px',
+        right: '1px'
       },
       printBackground: true,
       preferCSSPageSize: false,
-      // Configurações para reduzir tamanho do arquivo
       displayHeaderFooter: false,
-      scale: 0.85 // Escala otimizada
+      scale: 1.0 // Escala 1:1 para precisão máxima
     });
     await browser.close();
     process.exit(0);

@@ -417,20 +417,21 @@ public class NotaController {
         // Improved CSS for better appearance and wider layout
         html.append(
                 "body{font-family:'Segoe UI Emoji','Apple Color Emoji','Noto Color Emoji',Arial,sans-serif;font-size:11px;color:#222;margin:0;padding:0;background:#fff}");
-        html.append(".invoice{width:120mm;margin:0 auto;padding:8px;background:#fff;color:#222;border:1px solid #ddd}");
+        html.append(
+                ".invoice{width:120mm;margin:0;padding:8px;background:#fff;color:#222;border:1px solid #ddd;box-sizing:border-box}");
         html.append(
                 ".store{font-size:16px;font-weight:700;text-align:center;margin:8px 0;padding:8px;background:#f8f9fa;border-radius:6px;border:1px solid #e9ecef}");
         html.append(".meta{font-size:10px;color:#555;text-align:center;margin:6px 0}");
         html.append(
                 "table{width:100%;border-collapse:collapse;margin-top:8px;font-size:10px;border:1px solid #dee2e6}");
         html.append(
-                "th{padding:8px 6px;background:#f8f9fa;font-weight:700;border-bottom:2px solid #dee2e6;color:#495057}");
+                "th{padding:8px 6px;background:#f8f9fa;font-weight:700;border-bottom:1px solid #dee2e6;color:#495057}");
         html.append("td{padding:6px;border-bottom:1px solid #e9ecef}");
-        html.append("tbody tr:last-child td{border-bottom:1px solid #dee2e6}");
+        html.append("tbody tr:last-child td{border-bottom:none}");
         html.append("td.prod{display:flex;align-items:center;min-height:32px}");
         html.append(".prod-name{flex:1;overflow-wrap:break-word;font-weight:500}");
         html.append("td.qty,td.price,td.total{text-align:center;white-space:nowrap;font-weight:500}");
-        html.append("tfoot td{padding:10px 6px;font-weight:700;border-top:2px solid #dee2e6;background:#f8f9fa}");
+        html.append("tfoot td{padding:10px 6px;font-weight:700;border-top:1px solid #dee2e6;background:#f8f9fa}");
         html.append(".small{font-size:10px;color:#666;text-align:center;margin:6px 0;padding:4px}");
         html.append("</style></head><body>");
 
@@ -466,7 +467,7 @@ public class NotaController {
         html.append(
                 "<colgroup><col style=\"width:auto\"/><col style=\"width:10mm\"/><col style=\"width:21mm\"/><col style=\"width:21mm\"/></colgroup>\n");
         html.append(
-                "<thead><tr><th style=\"text-align:left;padding:6px 4px;border-bottom:1px solid #ddd\">Produto</th><th style=\"text-align:center;padding:6px 4px;border-bottom:1px solid #ddd\">Qtd</th><th style=\"text-align:center;padding:6px 4px;border-bottom:1px solid #ddd\">Preço</th><th style=\"text-align:center;padding:6px 4px;border-bottom:1px solid #ddd\">Total</th></tr></thead>\n");
+                "<thead><tr><th style=\"text-align:left;padding:6px 4px;border-bottom:1px solid #dee2e6\">Produto</th><th style=\"text-align:center;padding:6px 4px;border-bottom:1px solid #dee2e6\">Qtd</th><th style=\"text-align:center;padding:6px 4px;border-bottom:1px solid #dee2e6\">Preço</th><th style=\"text-align:center;padding:6px 4px;border-bottom:1px solid #dee2e6\">Total</th></tr></thead>\n");
         html.append("<tbody>\n");
         venda.getItens().forEach(it -> {
             html.append("<tr>");
