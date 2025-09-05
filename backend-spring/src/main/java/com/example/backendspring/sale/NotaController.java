@@ -316,12 +316,10 @@ public class NotaController {
                 return ""; // Skip large logos
             }
 
-            // Comprimir imagem se for muito grande
-            byte[] compressedBytes = compressImageIfNeeded(logoBytes, 30000); // Max 30KB para logo
-
-            log.debug("Logo loaded successfully from: {} (original: {}KB, compressed: {}KB)",
-                    logoPath.toAbsolutePath(), logoBytes.length / 1024, compressedBytes.length / 1024);
-            return "data:image/png;base64," + Base64.getEncoder().encodeToString(compressedBytes);
+            // Logo da empresa não precisa ser comprimido - manter qualidade original
+            log.debug("Logo loaded successfully from: {} (size: {}KB)",
+                    logoPath.toAbsolutePath(), logoBytes.length / 1024);
+            return "data:image/png;base64," + Base64.getEncoder().encodeToString(logoBytes);
         } catch (Exception e) {
             log.warn("Failed to load logo: {}", e.getMessage());
             return "";
@@ -343,8 +341,8 @@ public class NotaController {
                 return imageBytes; // Não conseguiu ler a imagem
             }
 
-            // Redimensionar para tamanho pequeno (adequado para PDF)
-            int newWidth = Math.min(originalImage.getWidth(), 64); // Max 64px width
+            // Redimensionar para tamanho bem pequeno (adequado para coluna da tabela)
+            int newWidth = Math.min(originalImage.getWidth(), 48); // Max 48px width - menor ainda
             int newHeight = (int) ((double) newWidth / originalImage.getWidth() * originalImage.getHeight());
 
             java.awt.image.BufferedImage resizedImage = new java.awt.image.BufferedImage(newWidth, newHeight,
@@ -363,7 +361,7 @@ public class NotaController {
 
             javax.imageio.ImageWriteParam writeParam = writer.getDefaultWriteParam();
             writeParam.setCompressionMode(javax.imageio.ImageWriteParam.MODE_EXPLICIT);
-            writeParam.setCompressionQuality(0.6f); // 60% quality
+            writeParam.setCompressionQuality(0.5f); // 50% quality - mais compressão para produtos
 
             writer.write(null, new javax.imageio.IIOImage(resizedImage, null, null), writeParam);
             writer.dispose();
@@ -450,8 +448,9 @@ public class NotaController {
                 return ""; // Skip large images
             }
 
-            // Comprimir imagem de produto se necessário
-            byte[] compressedBytes = compressImageIfNeeded(imageBytes, 20000); // Max 20KB para produtos
+            // Comprimir imagem de produto para tamanho muito pequeno (adequado para coluna
+            // da tabela)
+            byte[] compressedBytes = compressImageIfNeeded(imageBytes, 15000); // Max 15KB para produtos - ainda menor
 
             // Se houve compressão, usar JPEG; senão usar extensão original
             String mimeType = (compressedBytes.length < imageBytes.length) ? "jpeg"
