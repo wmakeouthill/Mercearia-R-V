@@ -26,6 +26,13 @@ function loadCleanupModule() {
 app.commandLine.appendSwitch('ignore-certificate-errors');
 app.commandLine.appendSwitch('allow-insecure-localhost', 'true');
 app.commandLine.appendSwitch('disable-gpu');
+// Switches para preservar localStorage em aplicações empacotadas
+app.commandLine.appendSwitch('disable-features', 'VizDisplayCompositor');
+app.commandLine.appendSwitch('disable-background-timer-throttling');
+app.commandLine.appendSwitch('disable-renderer-backgrounding');
+app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
+// Garantir que localStorage funcione corretamente
+app.commandLine.appendSwitch('enable-localStorage');
 
 let mainWindow: BrowserWindow | null = null;
 let backendProcess: childProcess.ChildProcess | null = null;
@@ -46,27 +53,38 @@ let backendStderrStream: fs.WriteStream | null = null;
 // Temporariamente habilitado para debugging em builds empacotados
 const DISABLE_FILE_LOGS = false;
 
-// Retry silencioso para garantir que a janela navegue para o frontend servido pelo backend
+// Retry menos agressivo para garantir que a janela navegue para o frontend servido pelo backend
 let frontendRetryTimer: NodeJS.Timeout | null = null;
+let frontendRetryAttempts = 0;
+const MAX_FRONTEND_RETRY_ATTEMPTS = 10; // Limitar tentativas para evitar redirecionamentos infinitos
 function startFrontendRetryLoop(): void {
     if (frontendRetryTimer) return;
+    frontendRetryAttempts = 0;
     frontendRetryTimer = setInterval(async () => {
         try {
+            frontendRetryAttempts++;
+            if (frontendRetryAttempts > MAX_FRONTEND_RETRY_ATTEMPTS) {
+                console.log('🛑 Máximo de tentativas de retry atingido, parando...');
+                stopFrontendRetryLoop();
+                return;
+            }
             if (!mainWindow || mainWindow.isDestroyed()) return;
             const currentUrl = mainWindow.webContents.getURL() || '';
             const targetBase = `http://${backendHost}:${currentBackendPort}/app/`;
             if (currentUrl.startsWith(targetBase)) {
+                console.log('✅ Frontend carregado corretamente, parando retry loop');
+                stopFrontendRetryLoop();
                 return; // já estamos na URL correta
             }
             const status = await testBackendConnection();
             if (status === 'healthy') {
-                console.log('🔁 Retry: backend saudável; navegando para', targetBase);
+                console.log(`🔁 Retry ${frontendRetryAttempts}/${MAX_FRONTEND_RETRY_ATTEMPTS}: backend saudável; navegando para`, targetBase);
                 await mainWindow.loadURL(targetBase);
             }
         } catch (e) {
             // manter silencioso; próximo tick tenta novamente
         }
-    }, 1500);
+    }, 3000); // Aumentado para 3 segundos para ser menos agressivo
 }
 function stopFrontendRetryLoop(): void {
     if (frontendRetryTimer) {
@@ -463,47 +481,40 @@ function appendLogLine(line: string): void {
 
 // CONFIGURAÇÃO: Aguardar tudo estar pronto antes de mostrar? (APENAS EM PRODUÇÃO)
 // Em desenvolvimento sempre mostra imediatamente independente desta configuração
-// Forçar comportamento: não aguardar tudo para evitar janela invisível em builds empacotados
-const WAIT_FOR_EVERYTHING_READY = false; // true = aguarda / false = mostra imediatamente
-// ⚠️ Se preferir aguardar backend+frontend antes de mostrar, altere para true
+// Corrigido: aguardar tudo estar pronto para evitar redirecionamentos desnecessários e piscar
+const WAIT_FOR_EVERYTHING_READY = true; // true = aguarda / false = mostra imediatamente
+// ✅ Aguardar backend+frontend antes de mostrar para melhor experiência do usuário
 
 function createWindow(): void {
     mainWindow = new BrowserWindow({
         width: 1200,
         height: 800,
-        webPreferences: {
-            nodeIntegration: false,
-            contextIsolation: true,
-            preload: path.join(__dirname, 'preload.js'),
-            webSecurity: false, // Desabilitar em produção para permitir conexões com localhost
-            allowRunningInsecureContent: false,
-            spellcheck: false, // Desabilitar spellcheck para performance
-            enableWebSQL: false,
-            // Adicionar permissões específicas para conexões locais
-            additionalArguments: [
-                '--disable-web-security',
-                '--disable-features=VizDisplayCompositor',
-                '--disable-background-timer-throttling',
-                '--disable-renderer-backgrounding',
-                '--disable-backgrounding-occluded-windows',
-                '--no-sandbox'
-            ]
-        },
-        icon: path.join(__dirname, '../icon/icon.ico'),
-        title: 'Sistema de Gestão de Estoque',
-        show: false, // Sempre começar oculto, gerenciar manualmente
+        show: false, // Sempre começar oculto, gerenciar manualmente para evitar piscar
         center: true,
         resizable: true,
         minimizable: true,
         maximizable: true,
         autoHideMenuBar: false,
-        backgroundColor: '#ffffff', // Fundo branco enquanto carrega
-        // Melhorar suavidade de abertura
+        backgroundColor: '#ffffff', // Fundo branco enquanto carrega para evitar flash
         titleBarStyle: 'default',
-        opacity: 0.0 // Começar invisível para fade-in suave
+        opacity: 0.0, // Começar invisível para fade-in suave
+        icon: path.join(__dirname, '../icon/icon.ico'),
+        title: 'Sistema de Gestão de Estoque',
+        webPreferences: {
+            nodeIntegration: false,
+            contextIsolation: true,
+            preload: path.join(__dirname, 'preload.js'),
+            webSecurity: false, // Temporariamente desabilitar para debug - pode estar causando problemas com localStorage
+            allowRunningInsecureContent: false,
+            spellcheck: false, // Desabilitar spellcheck para performance
+            enableWebSQL: false,
+            // Configurações específicas para localStorage
+            partition: 'persist:main', // Garantir persistência
+            enablePreferredSizeMode: false
+        }
     });
 
-    // Configurar CSP para permitir conexões com o backend local
+    // Configurar CSP para permitir conexões com o backend local preservando localStorage
     mainWindow.webContents.session.webRequest.onHeadersReceived((details: OnHeadersReceivedListenerDetails, callback: (response: HeadersReceivedResponse) => void) => {
         const ip = backendHost;
         const httpHosts = `http://localhost:* http://127.0.0.1:* http://${ip}:*`;
@@ -515,7 +526,9 @@ function createWindow(): void {
             "script-src 'self' 'unsafe-inline' 'unsafe-eval'; " +
             "style-src 'self' 'unsafe-inline'; " +
             "img-src 'self' data: blob: " + httpHosts + '; ' +
-            "font-src 'self' data:;"
+            "media-src 'self' data: blob: " + httpHosts + '; ' +
+            "font-src 'self' data: blob: " + httpHosts + '; ' +
+            "worker-src 'self' blob:;"
         );
         callback({
             responseHeaders: {
@@ -556,6 +569,7 @@ function createWindow(): void {
     // Carregar splash imediatamente para mostrar UI enquanto backend inicializa
     function loadSplash(): void {
         try {
+            console.log('🎬 Carregando splash screen...');
             const splashPaths = [
                 // when packaged, resources are under process.resourcesPath
                 process.resourcesPath ? path.join(process.resourcesPath, 'assets', 'splash.html') : '',
@@ -564,40 +578,82 @@ function createWindow(): void {
             ];
             const splashPath = splashPaths.find(p => p && fs.existsSync(p));
             if (splashPath) {
-                mainWindow?.loadFile(splashPath).catch(() => { /* ignore */ });
-                // ensure window visible and opaque for splash
-                try { mainWindow?.setOpacity(1.0); mainWindow?.show(); mainWindow?.focus(); } catch { }
+                console.log('📁 Carregando splash de arquivo:', splashPath);
+                mainWindow?.loadFile(splashPath).then(() => {
+                    // Garantir que splash seja visível
+                    try {
+                        mainWindow?.setOpacity(1.0);
+                        mainWindow?.show();
+                        mainWindow?.focus();
+                        console.log('✅ Splash carregado e visível');
+                    } catch (e) {
+                        console.warn('⚠️ Erro ao mostrar splash:', e);
+                    }
+                }).catch((e) => {
+                    console.warn('⚠️ Erro ao carregar arquivo splash:', e);
+                    loadInlineSplash();
+                });
             } else {
                 console.warn('⚠️ splash.html not found, using inline fallback splash');
-                // Fallback inline splash so the window is visible even if the file wasn't packaged
-                const inline = `
-                    <html>
-                        <head>
-                            <meta charset="utf-8" />
-                            <title>Carregando...</title>
-                            <style>body{display:flex;align-items:center;justify-content:center;height:100vh;margin:0;font-family:Arial,sans-serif;background:#fff} .box{text-align:center} .spinner{width:48px;height:48px;border-radius:50%;border:6px solid #eee;border-top-color:#3f51b5;animation:spin 1s linear infinite;margin:0 auto} @keyframes spin{to{transform:rotate(360deg)}}</style>
-                        </head>
-                        <body>
-                            <div class="box">
-                                <div class="spinner"></div>
-                                <h1>Carregando aplicativo...</h1>
-                                <p>Aguardando inicialização do backend e frontend.</p>
-                            </div>
-                        </body>
-                    </html>
-                `;
-                try {
-                    mainWindow?.loadURL(`data:text/html,${encodeURIComponent(inline)}`);
-                    // garantir visibilidade do splash (sem esperar pelo carregamento completo)
-                    try { mainWindow?.setOpacity(1.0); } catch { }
-                    mainWindow?.show();
-                    mainWindow?.focus();
-                } catch (e) {
-                    console.warn('⚠️ Falha ao carregar splash inline:', (e as Error)?.message || e);
-                }
+                loadInlineSplash();
             }
         } catch (e) {
             console.warn('⚠️ Failed to load splash:', (e as Error)?.message || e);
+            loadInlineSplash();
+        }
+    }
+
+    function loadInlineSplash(): void {
+        // Fallback inline splash so the window is visible even if the file wasn't packaged
+        const inline = `
+            <html>
+                <head>
+                    <meta charset="utf-8" />
+                    <title>Carregando...</title>
+                    <style>
+                        body{display:flex;align-items:center;justify-content:center;height:100vh;margin:0;font-family:Arial,sans-serif;background:#fff} 
+                        .box{text-align:center} 
+                        .spinner{width:48px;height:48px;border-radius:50%;border:6px solid #eee;border-top-color:#3f51b5;animation:spin 1s linear infinite;margin:0 auto} 
+                        @keyframes spin{to{transform:rotate(360deg)}}
+                        .status{margin-top:20px;color:#666;font-size:14px}
+                    </style>
+                </head>
+                <body>
+                    <div class="box">
+                        <div class="spinner"></div>
+                        <h1>Mercearia R&V</h1>
+                        <p>Inicializando sistema...</p>
+                        <div class="status" id="status">Aguardando backend iniciar...</div>
+                    </div>
+                    <script>
+                        // Listener para atualizações de status
+                        window.electronAPI && window.electronAPI.onSplashStatus && window.electronAPI.onSplashStatus((event, data) => {
+                            const statusEl = document.getElementById('status');
+                            if (statusEl && data.message) {
+                                statusEl.textContent = data.message + (data.percent ? ' (' + data.percent + '%)' : '');
+                            }
+                        });
+                    </script>
+                </body>
+            </html>
+        `;
+        try {
+            console.log('📄 Carregando splash inline...');
+            mainWindow?.loadURL(`data:text/html,${encodeURIComponent(inline)}`).then(() => {
+                // garantir visibilidade do splash
+                try {
+                    mainWindow?.setOpacity(1.0);
+                    mainWindow?.show();
+                    mainWindow?.focus();
+                    console.log('✅ Splash inline carregado e visível');
+                } catch (e) {
+                    console.warn('⚠️ Erro ao mostrar splash inline:', e);
+                }
+            }).catch((e) => {
+                console.warn('⚠️ Falha ao carregar splash inline:', e);
+            });
+        } catch (e) {
+            console.warn('⚠️ Falha crítica no splash:', (e as Error)?.message || e);
         }
     }
 
@@ -700,12 +756,15 @@ function createWindow(): void {
         // Desabilitar GPU em dev para evitar erros de GPU process
         app.commandLine.appendSwitch('disable-gpu');
     } else {
-        // Em produção: mostrar splash imediatamente, depois aguardar backend e carregar frontend
+        // Em produção: mostrar splash primeiro e aguardar backend estar pronto
+        console.log('🎬 Carregando splash e aguardando backend...');
         loadSplash();
+
         if (WAIT_FOR_EVERYTHING_READY) {
             console.log('⏳ Aguardando backend estar pronto antes de carregar frontend...');
             waitForBackendThenLoadFrontend();
         } else {
+            // Modo legado: carregar frontend imediatamente
             console.log('🌐 Carregando frontend imediatamente...');
             loadProductionFrontend();
             startFrontendRetryLoop();
@@ -975,17 +1034,34 @@ function loadProductionFrontendHidden(): void {
 function showWhenReady(): void {
     if (mainWindow && !mainWindow.isDestroyed()) {
         console.log('✨ Aplicação exibida - tudo pronto!');
-        // Usar fade-in suave igual ao desenvolvimento
-        mainWindow.setOpacity(1.0);
-        mainWindow.show();
-        mainWindow.focus();
 
-        // Garantir que está visível
-        setTimeout(() => {
+        // Parar retry loop que pode estar rodando
+        stopFrontendRetryLoop();
+
+        // Fazer transição suave para mostrar a aplicação
+        mainWindow.setOpacity(0.0);
+        mainWindow.show();
+
+        // Fade-in suave
+        let opacity = 0.0;
+        const fadeInterval = setInterval(() => {
+            opacity += 0.1;
+            if (opacity >= 1.0) {
+                opacity = 1.0;
+                clearInterval(fadeInterval);
+            }
             if (mainWindow && !mainWindow.isDestroyed()) {
-                mainWindow.moveTop();
+                mainWindow.setOpacity(opacity);
             }
         }, 50);
+
+        // Focar na janela
+        setTimeout(() => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.focus();
+                mainWindow.moveTop();
+            }
+        }, 100);
     }
 }
 

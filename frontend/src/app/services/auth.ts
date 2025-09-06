@@ -3,6 +3,7 @@ import { BehaviorSubject, firstValueFrom } from 'rxjs';
 import { Router } from '@angular/router';
 import { Usuario, LoginRequest, LoginResponse } from '../models';
 import { logger } from '../utils/logger';
+import { SafeStorage } from '../utils/storage';
 import { environment } from '../../environments/environment';
 import { BackendDetectorService } from './backend-detector';
 
@@ -17,22 +18,56 @@ export class AuthService {
     private readonly router: Router,
     private readonly backendDetector: BackendDetectorService
   ) {
+    // Testar localStorage antes de carregar
+    this.testLocalStorage();
     this.loadUserFromStorage();
   }
 
+  private testLocalStorage(): void {
+    try {
+      const testKey = '__auth_test__';
+      const testValue = 'test_value_' + Date.now();
+
+      logger.info('AUTH_SERVICE', 'STORAGE_TEST', 'Testando localStorage...');
+
+      // Testar escrita
+      localStorage.setItem(testKey, testValue);
+
+      // Testar leitura
+      const retrieved = localStorage.getItem(testKey);
+
+      // Testar remoção
+      localStorage.removeItem(testKey);
+
+      if (retrieved === testValue) {
+        logger.info('AUTH_SERVICE', 'STORAGE_TEST', 'localStorage funcional');
+      } else {
+        logger.error('AUTH_SERVICE', 'STORAGE_TEST', 'localStorage não retornou valor correto', {
+          expected: testValue,
+          received: retrieved
+        });
+      }
+    } catch (error) {
+      logger.error('AUTH_SERVICE', 'STORAGE_TEST', 'Erro crítico no localStorage', error);
+    }
+  }
+
   private loadUserFromStorage(): void {
-    const token = localStorage.getItem('token');
-    const userStr = localStorage.getItem('user');
+    const token = SafeStorage.getItem('token');
+    const userStr = SafeStorage.getItem('user');
 
     if (token && userStr) {
       try {
         const user = JSON.parse(userStr);
         this.currentUserSubject.next(user);
+        logger.info('AUTH_SERVICE', 'LOAD_USER', 'Usuário carregado do storage', { username: user.username });
       } catch (error) {
-        const err = error instanceof Error ? error : new Error('Falha ao parsear usuário do localStorage');
-        logger.warn('AUTH_SERVICE', 'LOAD_USER', 'JSON inválido no localStorage', err);
+        const err = error instanceof Error ? error : new Error('Falha ao parsear usuário do storage');
+        logger.warn('AUTH_SERVICE', 'LOAD_USER', 'JSON inválido no storage', err);
         this.clearAuth();
       }
+    } else {
+      logger.info('AUTH_SERVICE', 'LOAD_USER', 'Nenhum usuário encontrado no storage');
     }
   }
 
@@ -80,8 +115,14 @@ export class AuthService {
             pode_controlar_caixa: data.user.pode_controlar_caixa
           };
 
-          localStorage.setItem('token', data.token);
-          localStorage.setItem('user', JSON.stringify(user));
+          const tokenSaved = SafeStorage.setItem('token', data.token);
+          const userSaved = SafeStorage.setItem('user', JSON.stringify(user));
+
+          if (!tokenSaved || !userSaved) {
+            logger.error('AUTH_SERVICE', 'LOGIN', 'Falha ao salvar dados de autenticação no storage');
+            throw new Error('Falha ao salvar dados de autenticação');
+          }
+
           this.currentUserSubject.next(user);
 
           logger.info('AUTH_SERVICE', 'LOGIN', 'Login realizado com sucesso', {
@@ -106,13 +147,14 @@ export class AuthService {
   }
 
   private clearAuth(): void {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
+    SafeStorage.removeItem('token');
+    SafeStorage.removeItem('user');
     this.currentUserSubject.next(null);
+    logger.info('AUTH_SERVICE', 'CLEAR_AUTH', 'Dados de autenticação removidos');
   }
 
   getToken(): string | null {
-    return localStorage.getItem('token');
+    return SafeStorage.getItem('token');
   }
 
   getUserRole(): string | null {
@@ -166,8 +208,9 @@ export class AuthService {
           pode_controlar_caixa: userData.pode_controlar_caixa
         };
 
-        localStorage.setItem('user', JSON.stringify(user));
+        SafeStorage.setItem('user', JSON.stringify(user));
         this.currentUserSubject.next(user);
+        logger.info('AUTH_SERVICE', 'RELOAD_USER', 'Usuário atualizado com sucesso');
       }
     } catch (error) {
       logger.error('AUTH_SERVICE', 'RELOAD_USER', 'Erro ao recarregar usuário', error);

@@ -1,3 +1,5 @@
+import { SafeStorage } from './storage';
+
 export interface LogEntry {
   timestamp: string;
   level: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' | 'API_REQUEST' | 'API_RESPONSE';
@@ -98,12 +100,12 @@ class Logger {
 
       // Verificar tamanho antes de salvar
       if (logsData.length > this.maxStorageSize) {
-        console.warn('⚠️ Logs muito grandes para localStorage, reduzindo...');
+        console.warn('⚠️ Logs muito grandes para storage, reduzindo...');
         // Manter apenas os 200 logs mais recentes se o tamanho for muito grande
         this.logs = this.logs.slice(-200);
-        localStorage.setItem('app_logs', JSON.stringify(this.logs));
+        SafeStorage.setItem('app_logs', JSON.stringify(this.logs));
       } else {
-        localStorage.setItem('app_logs', logsData);
+        SafeStorage.setItem('app_logs', logsData);
       }
     } catch (error) {
       console.error('Erro ao salvar logs:', error);
@@ -112,9 +114,9 @@ class Logger {
         console.warn('🧹 Quota excedida, limpando logs antigos...');
         this.logs = this.logs.slice(-100);
         try {
-          localStorage.setItem('app_logs', JSON.stringify(this.logs));
+          SafeStorage.setItem('app_logs', JSON.stringify(this.logs));
         } catch (e) {
-          console.error('Erro crítico no localStorage, limpando completamente', e);
+          console.error('Erro crítico no storage, limpando completamente', e);
           this.clearLogs();
         }
       }
@@ -123,10 +125,10 @@ class Logger {
 
   private loadFromStorage(): void {
     try {
-      const stored = localStorage.getItem('app_logs');
+      const stored = SafeStorage.getItem('app_logs');
       if (stored) {
         this.logs = JSON.parse(stored);
-        console.log(`📂 Carregados ${this.logs.length} logs do localStorage`);
+        console.log(`📂 Carregados ${this.logs.length} logs do storage`);
 
         // Verificar se há logs muito antigos na inicialização (7 dias)
         const cutoffTime = Date.now() - (7 * 24 * 60 * 60 * 1000); // 7 dias
@@ -290,7 +292,7 @@ class Logger {
   // Limpar logs
   clearLogs(): void {
     this.logs = [];
-    localStorage.removeItem('app_logs');
+    SafeStorage.removeItem('app_logs');
     console.log('🧹 Todos os logs foram limpos');
   }
 
