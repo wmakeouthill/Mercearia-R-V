@@ -442,22 +442,96 @@ public class NotaController {
             }
 
             byte[] imageBytes = Files.readAllBytes(imagePath);
-            // Para acelerar muito o preview, usar limite muito baixo
-            if (imageBytes.length > 20000) { // > 20KB apenas
-                log.debug("Product image for {} too large: {} bytes (limit: 20KB) - skipping for performance",
-                        productId, imageBytes.length);
-                return ""; // Skip large images completely for speed
+
+            // Estratégia inteligente para imagens:
+            // 1. <= 20KB: usar diretamente (mais rápido)
+            // 2. 20KB-100KB: compressão leve e rápida
+            // 3. > 100KB: pular (muito grandes)
+
+            if (imageBytes.length > 100000) { // > 100KB
+                log.debug("Product image for {} too large: {} bytes (limit: 100KB) - skipping", productId,
+                        imageBytes.length);
+                return ""; // Skip very large images
             }
 
-            // Usar imagem diretamente sem qualquer compressão (mais rápido)
-            String mimeType = foundExtension.equals("jpg") ? "jpeg" : foundExtension;
-            log.debug("Product image loaded directly (no processing): {} (size: {}KB)",
-                    imagePath.toAbsolutePath(), imageBytes.length / 1024);
-            return "data:image/" + mimeType + ";base64," + Base64.getEncoder().encodeToString(imageBytes);
+            if (imageBytes.length <= 20000) { // <= 20KB
+                // Usar diretamente sem processamento (mais rápido)
+                String mimeType = foundExtension.equals("jpg") ? "jpeg" : foundExtension;
+                log.debug("Product image loaded directly: {} (size: {}KB)", imagePath.toAbsolutePath(),
+                        imageBytes.length / 1024);
+                return "data:image/" + mimeType + ";base64," + Base64.getEncoder().encodeToString(imageBytes);
+            }
+
+            // Imagens médias (20-100KB): compressão leve e rápida
+            byte[] compressedBytes = quickImageCompress(imageBytes);
+            log.debug("Product image compressed: {} (original: {}KB, compressed: {}KB)",
+                    imagePath.toAbsolutePath(), imageBytes.length / 1024, compressedBytes.length / 1024);
+            return "data:image/jpeg;base64," + Base64.getEncoder().encodeToString(compressedBytes);
         } catch (Exception e) {
             log.debug("Failed to load product image for {}: {}", productId, e.getMessage());
             return "";
         }
+    }
+
+    // Compressão rápida e leve para imagens médias (otimizada para velocidade)
+    private byte[] quickImageCompress(byte[] imageBytes) {
+        try {
+            ByteArrayInputStream bais = new ByteArrayInputStream(imageBytes);
+            java.awt.image.BufferedImage originalImage = javax.imageio.ImageIO.read(bais);
+
+            if (originalImage == null) {
+                return imageBytes; // Se não conseguir ler, retorna original
+            }
+
+            // Redimensionar apenas se for muito grande (para acelerar)
+            int maxSize = 48; // tamanho máximo para tabela
+            int width = originalImage.getWidth();
+            int height = originalImage.getHeight();
+
+            if (width <= maxSize && height <= maxSize) {
+                // Já é pequena, apenas comprime qualidade
+                return compressQuality(originalImage, 0.8f);
+            }
+
+            // Redimensionar mantendo proporção
+            double ratio = Math.min((double) maxSize / width, (double) maxSize / height);
+            int newWidth = (int) (width * ratio);
+            int newHeight = (int) (height * ratio);
+
+            java.awt.image.BufferedImage resizedImage = new java.awt.image.BufferedImage(
+                    newWidth, newHeight, java.awt.image.BufferedImage.TYPE_INT_RGB);
+            java.awt.Graphics2D g2d = resizedImage.createGraphics();
+
+            // Configuração rápida (menos qualidade, mais velocidade)
+            g2d.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION,
+                    java.awt.RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+            g2d.drawImage(originalImage, 0, 0, newWidth, newHeight, null);
+            g2d.dispose();
+
+            return compressQuality(resizedImage, 0.8f); // 80% qualidade para ser rápido
+
+        } catch (Exception e) {
+            log.debug("Quick compression failed: {}", e.getMessage());
+            return imageBytes; // Se falhar, retorna original
+        }
+    }
+
+    // Método auxiliar para compressão de qualidade
+    private byte[] compressQuality(java.awt.image.BufferedImage image, float quality) throws Exception {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        javax.imageio.ImageWriter writer = javax.imageio.ImageIO.getImageWritersByFormatName("jpg").next();
+        javax.imageio.stream.ImageOutputStream ios = javax.imageio.ImageIO.createImageOutputStream(baos);
+        writer.setOutput(ios);
+
+        javax.imageio.ImageWriteParam writeParam = writer.getDefaultWriteParam();
+        writeParam.setCompressionMode(javax.imageio.ImageWriteParam.MODE_EXPLICIT);
+        writeParam.setCompressionQuality(quality);
+
+        writer.write(null, new javax.imageio.IIOImage(image, null, null), writeParam);
+        writer.dispose();
+        ios.close();
+
+        return baos.toByteArray();
     }
 
     // Método simplificado de redimensionamento para acelerar o processo
@@ -636,19 +710,19 @@ public class NotaController {
                     psb.append(", ");
                 String metodo = p.getMetodo() == null ? "" : p.getMetodo();
                 String label;
-                // Use entidades HTML para emojis - mais compatível com PDF
+                // Tentativa robusta: usar símbolos textuais que funcionam em PDF
                 switch (metodo) {
                     case "cartao_credito":
-                        label = "&#128179; Créd"; // 💳 como entidade HTML
+                        label = "🟦 Créd"; // Usar símbolo geométrico que renderiza melhor
                         break;
                     case "cartao_debito":
-                        label = "&#128179; Déb"; // 💳 como entidade HTML
+                        label = "🟦 Déb"; // Usar símbolo geométrico que renderiza melhor
                         break;
                     case "pix":
-                        label = "&#128241; Pix"; // 📱 como entidade HTML
+                        label = "📞 Pix"; // Telefone antigo que renderiza melhor que celular
                         break;
                     case "dinheiro":
-                        label = "&#128181; Dinheiro"; // 💵 como entidade HTML
+                        label = "💰 Dinheiro"; // Saco de dinheiro que renderiza melhor
                         break;
                     default:
                         label = metodo;

@@ -20,7 +20,9 @@ const path = require('path');
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
         '--force-color-emoji',
-        '--enable-font-antialiasing'
+        '--enable-font-antialiasing',
+        '--disable-font-subpixel-positioning',
+        '--enable-oop-rasterization'
       ] 
     });
     
@@ -36,39 +38,58 @@ const path = require('path');
     // Injetar CSS adicional para garantir renderização de emojis
     await page.addStyleTag({
       content: `
-        /* Configuração simples e direta para emojis */
+        /* Importar fontes de emoji explicitamente */
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&display=swap');
+        
+        /* Configuração robusta para emojis */
         * {
-          font-family: "Segoe UI", "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", Arial, sans-serif !important;
+          font-family: "Segoe UI", "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", "EmojiOne", Arial, sans-serif !important;
         }
         
         /* Força renderização específica para área de pagamento */
         tfoot td {
-          font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", "Segoe UI", Arial !important;
+          font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", "EmojiOne", "Segoe UI", Arial !important;
           font-size: 11px !important;
+          line-height: 1.2;
+          text-rendering: optimizeLegibility;
+          -webkit-font-feature-settings: "liga", "kern";
+          font-feature-settings: "liga", "kern";
+        }
+        
+        /* Forçar suporte a caracteres Unicode */
+        body {
+          unicode-bidi: embed;
+          direction: ltr;
         }
       `
     });
     
     await page.setContent(html, { waitUntil: 'domcontentloaded' });
 
-    // Debug simples: verificar se emojis estão presentes
+    // Debug melhorado: verificar emojis e entidades
     const emojiCheck = await page.evaluate(() => {
       const paymentCell = document.querySelector('tfoot td');
       if (!paymentCell) return { error: 'Payment cell not found' };
       
       const paymentText = paymentCell.textContent || '';
+      const paymentHTML = paymentCell.innerHTML || '';
+      
+      // Verificar vários tipos de emoji/símbolos
       return {
         paymentText: paymentText.substring(0, 100),
-        hasCardEmoji: paymentText.includes('💳'),
-        hasPhoneEmoji: paymentText.includes('📱'),
-        hasMoneyEmoji: paymentText.includes('💵'),
-        length: paymentText.length
+        paymentHTML: paymentHTML.substring(0, 100),
+        hasGeometricEmoji: paymentText.includes('🟦') || paymentText.includes('�') || paymentText.includes('💰'),
+        hasClassicEmoji: paymentText.includes('�') || paymentText.includes('📱') || paymentText.includes('💵'),
+        hasAnySymbol: /[\u{1F000}-\u{1F9FF}]/u.test(paymentText),
+        length: paymentText.length,
+        cellExists: !!paymentCell
       };
     });
-    console.log('Emoji check:', JSON.stringify(emojiCheck, null, 2));
+    console.log('=== EMOJI DEBUG COMPLETO ===');
+    console.log(JSON.stringify(emojiCheck, null, 2));
 
-    // Aguardar um pouco para fonts carregarem
-    await page.waitForTimeout(500);
+    // Aguardar um pouco mais para fonts e emojis carregarem
+    await page.waitForTimeout(1000);
     
     // Medir as dimensões do conteúdo da nota
     const contentDimensions = await page.evaluate(() => {
