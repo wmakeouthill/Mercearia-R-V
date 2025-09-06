@@ -38,28 +38,27 @@ const path = require('path');
     // Injetar CSS adicional para garantir renderização de emojis
     await page.addStyleTag({
       content: `
-        /* Importar fontes de emoji explicitamente */
-        @import url('https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&display=swap');
-        
-        /* Configuração robusta para emojis */
+        /* Forçar fonte local de emoji do Windows */
         * {
-          font-family: "Segoe UI", "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", "EmojiOne", Arial, sans-serif !important;
+          font-family: "Segoe UI Emoji", "Segoe UI", "Apple Color Emoji", Arial, sans-serif !important;
         }
-        
-        /* Força renderização específica para área de pagamento */
-        tfoot td {
-          font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", "EmojiOne", "Segoe UI", Arial !important;
-          font-size: 11px !important;
-          line-height: 1.2;
+        /* Comprovante e dados: menos espaçamento entre linhas */
+        .meta, .small, .dados-cliente, .dados-data, .bloco-comprovante {
+          font-size: 10px;
+          color: #555;
+          text-align: center;
+          margin: 2px 0 2px 0;
+          line-height: 1.25;
+          padding: 0;
+          width: 100%;
+          display: block;
+        }
+        tfoot td, .payment-info {
+          font-family: "Segoe UI Emoji", "Segoe UI", "Apple Color Emoji", Arial, sans-serif !important;
+          font-size: 12px !important;
+          line-height: 1.1;
           text-rendering: optimizeLegibility;
-          -webkit-font-feature-settings: "liga", "kern";
-          font-feature-settings: "liga", "kern";
-        }
-        
-        /* Forçar suporte a caracteres Unicode */
-        body {
-          unicode-bidi: embed;
-          direction: ltr;
+          font-variant-emoji: emoji;
         }
       `
     });

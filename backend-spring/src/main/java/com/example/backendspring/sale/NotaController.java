@@ -473,9 +473,14 @@ public class NotaController {
         }
     }
 
-    // Compressão rápida e leve para imagens médias (otimizada para velocidade)
+    // Compressão ULTRA leve - só processa se realmente necessário
     private byte[] quickImageCompress(byte[] imageBytes) {
         try {
+            // Se o arquivo já é pequeno (menos de 15KB), nem comprime
+            if (imageBytes.length < 15000) {
+                return imageBytes; // Pula tudo - mais rápido
+            }
+
             ByteArrayInputStream bais = new ByteArrayInputStream(imageBytes);
             java.awt.image.BufferedImage originalImage = javax.imageio.ImageIO.read(bais);
 
@@ -483,32 +488,36 @@ public class NotaController {
                 return imageBytes; // Se não conseguir ler, retorna original
             }
 
-            // Redimensionar apenas se for muito grande (para acelerar)
-            int maxSize = 48; // tamanho máximo para tabela
+            // Tamanho ainda menor para acelerar muito mais
+            int maxSize = 28; // menor ainda (era 32)
             int width = originalImage.getWidth();
             int height = originalImage.getHeight();
 
+            // Se já é pequena dimensão, só comprime qualidade levemente
             if (width <= maxSize && height <= maxSize) {
-                // Já é pequena, apenas comprime qualidade
-                return compressQuality(originalImage, 0.8f);
+                return compressQuality(originalImage, 0.95f); // Compressão mínima
             }
 
-            // Redimensionar mantendo proporção
+            // Redimensionar com algoritmo mais rápido
             double ratio = Math.min((double) maxSize / width, (double) maxSize / height);
-            int newWidth = (int) (width * ratio);
-            int newHeight = (int) (height * ratio);
+            int newWidth = Math.max(1, (int) (width * ratio));
+            int newHeight = Math.max(1, (int) (height * ratio));
 
             java.awt.image.BufferedImage resizedImage = new java.awt.image.BufferedImage(
                     newWidth, newHeight, java.awt.image.BufferedImage.TYPE_INT_RGB);
             java.awt.Graphics2D g2d = resizedImage.createGraphics();
 
-            // Configuração rápida (menos qualidade, mais velocidade)
+            // Configuração ULTRA rápida
             g2d.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION,
-                    java.awt.RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+                    java.awt.RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR); // Mais rápido
+            g2d.setRenderingHint(java.awt.RenderingHints.KEY_RENDERING,
+                    java.awt.RenderingHints.VALUE_RENDER_SPEED); // Prioriza velocidade
+            g2d.setRenderingHint(java.awt.RenderingHints.KEY_ALPHA_INTERPOLATION,
+                    java.awt.RenderingHints.VALUE_ALPHA_INTERPOLATION_SPEED); // Alpha rápido
             g2d.drawImage(originalImage, 0, 0, newWidth, newHeight, null);
             g2d.dispose();
 
-            return compressQuality(resizedImage, 0.8f); // 80% qualidade para ser rápido
+            return compressQuality(resizedImage, 0.95f); // 95% qualidade (quase sem compressão)
 
         } catch (Exception e) {
             log.debug("Quick compression failed: {}", e.getMessage());
@@ -586,7 +595,7 @@ public class NotaController {
     private String buildHtmlForVenda(SaleOrder venda) {
         StringBuilder html = new StringBuilder();
         html.append("<!DOCTYPE html>");
-        html.append("<html><head><meta charset=\"utf-8\" />");
+        html.append("<html><head><meta charset=\"UTF-8\" />");
         html.append("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />");
         html.append("<style>");
         // estimate page height based on number of items so PDF is cropped to content
@@ -601,8 +610,8 @@ public class NotaController {
         html.append(
                 ".invoice{width:120mm;margin:0;padding:8px;background:#fff;color:#222;border:1px solid #ddd;box-sizing:border-box}");
         html.append(
-                ".store{font-size:16px;font-weight:700;text-align:center;margin:4px 0 2px 0;padding:8px;background:#f8f9fa;border-radius:6px;border:1px solid #e9ecef;display:flex;align-items:center;justify-content:center;min-height:40px}");
-        html.append(".meta{font-size:10px;color:#555;text-align:center;margin:1px 0}");
+                ".store{font-size:16px;font-weight:700;text-align:center;margin:2px 0 0px 0;padding:8px;background:#f8f9fa;border-radius:6px;border:1px solid #e9ecef;display:flex;align-items:center;justify-content:center;min-height:40px}");
+        html.append(".meta{font-size:10px;color:#555;text-align:center;margin:0px 0}");
         html.append(".small{font-size:10px;color:#666;text-align:center;margin:0;padding:0}");
         html.append(
                 "table{width:100%;border-collapse:collapse;margin-top:8px;font-size:10px;border:1px solid #dee2e6}");
@@ -631,13 +640,15 @@ public class NotaController {
             html.append("🏪 MERCEARIA R-V"); // Voltar ao emoji direto
         }
         html.append(CLOSE_DIV);
-        html.append("<div class=\"meta\">Comprovante de Pedido</div>\n");
-
         DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-        // Mostrar somente o nome do cliente no comprovante (email/telefone removidos)
+        html.append(
+                "<div class=\"bloco-comprovante\" style='margin:0 auto;padding:0;line-height:1.35;text-align:center;max-width:320px;'>");
+        html.append("<div style='margin:4px 0;'>Comprovante de Pedido</div>");
         if (venda.getCustomerName() != null)
-            html.append("<div class=\"small\">Cliente: ").append(escapeHtml(venda.getCustomerName())).append(CLOSE_DIV);
-        html.append("<div class=\"small\">Data: ").append(venda.getDataVenda().format(fmt)).append(CLOSE_DIV);
+            html.append("<div style='margin:4px 0;'>Cliente: ").append(escapeHtml(venda.getCustomerName()))
+                    .append("</div>");
+        html.append("<div style='margin:4px 0;'>Data: ").append(venda.getDataVenda().format(fmt)).append("</div>");
+        html.append("</div>\n");
 
         // let columns size by content; reserve fixed mm widths for numeric columns
         // let CSS control font-size; avoid inline font-size to prevent conflicts
@@ -710,19 +721,19 @@ public class NotaController {
                     psb.append(", ");
                 String metodo = p.getMetodo() == null ? "" : p.getMetodo();
                 String label;
-                // Tentativa robusta: usar símbolos textuais que funcionam em PDF
+                // Usar emojis reais compatíveis com Segoe UI Emoji
                 switch (metodo) {
                     case "cartao_credito":
-                        label = "🟦 Créd"; // Usar símbolo geométrico que renderiza melhor
+                        label = "💳 Créd"; // Emoji de cartão
                         break;
                     case "cartao_debito":
-                        label = "🟦 Déb"; // Usar símbolo geométrico que renderiza melhor
+                        label = "💳 Déb"; // Emoji de cartão
                         break;
                     case "pix":
-                        label = "📞 Pix"; // Telefone antigo que renderiza melhor que celular
+                        label = "📱 Pix"; // Emoji de celular
                         break;
                     case "dinheiro":
-                        label = "💰 Dinheiro"; // Saco de dinheiro que renderiza melhor
+                        label = "💵 Dinheiro"; // Emoji de dinheiro
                         break;
                     default:
                         label = metodo;
