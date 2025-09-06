@@ -625,6 +625,10 @@ public class NotaController {
         html.append("tfoot td{padding:10px 6px;font-weight:700;border-top:1px solid #dee2e6;background:#f8f9fa}");
         html.append(".small{font-size:10px;color:#666;text-align:center;margin:6px 0;padding:4px}");
         html.append("</style></head><body>");
+        html.append("<style>");
+        html.append(
+                "body, * { font-family: 'Segoe UI Emoji', 'Segoe UI', 'Apple Color Emoji', Arial, sans-serif !important; }");
+        html.append("</style></head><body>");
 
         html.append("<div class=\"invoice\">\n");
 

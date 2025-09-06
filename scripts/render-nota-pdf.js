@@ -38,11 +38,15 @@ const path = require('path');
     // Injetar CSS adicional para garantir renderização de emojis
     await page.addStyleTag({
       content: `
-        /* Forçar fonte local de emoji do Windows */
-        * {
-          font-family: "Segoe UI Emoji", "Segoe UI", "Apple Color Emoji", Arial, sans-serif !important;
+        @font-face {
+          font-family: 'Noto Color Emoji';
+          src: url('file:///C:/Mercearia R-V/electron/assets/fonts/NotoColorEmoji.ttf') format('truetype');
+          font-weight: normal;
+          font-style: normal;
         }
-        /* Comprovante e dados: menos espaçamento entre linhas */
+        * {
+          font-family: 'Noto Color Emoji', 'Segoe UI Emoji', 'Segoe UI', 'Apple Color Emoji', Arial, sans-serif !important;
+        }
         .meta, .small, .dados-cliente, .dados-data, .bloco-comprovante {
           font-size: 10px;
           color: #555;
@@ -54,7 +58,7 @@ const path = require('path');
           display: block;
         }
         tfoot td, .payment-info {
-          font-family: "Segoe UI Emoji", "Segoe UI", "Apple Color Emoji", Arial, sans-serif !important;
+          font-family: 'Noto Color Emoji', 'Segoe UI Emoji', 'Segoe UI', 'Apple Color Emoji', Arial, sans-serif !important;
           font-size: 12px !important;
           line-height: 1.1;
           text-rendering: optimizeLegibility;
