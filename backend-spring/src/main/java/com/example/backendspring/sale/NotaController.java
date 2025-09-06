@@ -442,28 +442,18 @@ public class NotaController {
             }
 
             byte[] imageBytes = Files.readAllBytes(imagePath);
-            // Limite muito menor para acelerar - pular imagens grandes
-            if (imageBytes.length > 50000) { // > 50KB apenas
-                log.debug("Product image for {} too large: {} bytes (limit: 50KB) - skipping for performance",
+            // Para acelerar muito o preview, usar limite muito baixo
+            if (imageBytes.length > 20000) { // > 20KB apenas
+                log.debug("Product image for {} too large: {} bytes (limit: 20KB) - skipping for performance",
                         productId, imageBytes.length);
                 return ""; // Skip large images completely for speed
             }
 
-            // Se a imagem já é pequena, usar diretamente sem compressão (mais rápido)
-            if (imageBytes.length <= 10000) { // <= 10KB
-                String mimeType = foundExtension.equals("jpg") ? "jpeg" : foundExtension;
-                log.debug("Product image loaded directly (no compression): {} (size: {}KB)",
-                        imagePath.toAbsolutePath(), imageBytes.length / 1024);
-                return "data:image/" + mimeType + ";base64," + Base64.getEncoder().encodeToString(imageBytes);
-            }
-
-            // Para imagens médias (10-50KB), usar compressão simples
-            byte[] compressedBytes = simpleImageResize(imageBytes, 32); // 32px max width
-
-            String mimeType = "jpeg"; // sempre JPEG após compressão
-            log.debug("Product image loaded with simple compression: {} (original: {}KB, compressed: {}KB)",
-                    imagePath.toAbsolutePath(), imageBytes.length / 1024, compressedBytes.length / 1024);
-            return "data:image/" + mimeType + ";base64," + Base64.getEncoder().encodeToString(compressedBytes);
+            // Usar imagem diretamente sem qualquer compressão (mais rápido)
+            String mimeType = foundExtension.equals("jpg") ? "jpeg" : foundExtension;
+            log.debug("Product image loaded directly (no processing): {} (size: {}KB)",
+                    imagePath.toAbsolutePath(), imageBytes.length / 1024);
+            return "data:image/" + mimeType + ";base64," + Base64.getEncoder().encodeToString(imageBytes);
         } catch (Exception e) {
             log.debug("Failed to load product image for {}: {}", productId, e.getMessage());
             return "";
@@ -538,8 +528,8 @@ public class NotaController {
                 ".invoice{width:120mm;margin:0;padding:8px;background:#fff;color:#222;border:1px solid #ddd;box-sizing:border-box}");
         html.append(
                 ".store{font-size:16px;font-weight:700;text-align:center;margin:4px 0 2px 0;padding:8px;background:#f8f9fa;border-radius:6px;border:1px solid #e9ecef;display:flex;align-items:center;justify-content:center;min-height:40px}");
-        html.append(".meta{font-size:10px;color:#555;text-align:center;margin:2px 0 1px 0}");
-        html.append(".small{font-size:10px;color:#666;text-align:center;margin:1px 0;padding:1px}");
+        html.append(".meta{font-size:10px;color:#555;text-align:center;margin:1px 0}");
+        html.append(".small{font-size:10px;color:#666;text-align:center;margin:0;padding:0}");
         html.append(
                 "table{width:100%;border-collapse:collapse;margin-top:8px;font-size:10px;border:1px solid #dee2e6}");
         html.append(
@@ -646,19 +636,19 @@ public class NotaController {
                     psb.append(", ");
                 String metodo = p.getMetodo() == null ? "" : p.getMetodo();
                 String label;
-                // Use símbolos que funcionam melhor em PDF - emoji direto sem colchetes
+                // Use entidades HTML para emojis - mais compatível com PDF
                 switch (metodo) {
                     case "cartao_credito":
-                        label = "💳 Créd";
+                        label = "&#128179; Créd"; // 💳 como entidade HTML
                         break;
                     case "cartao_debito":
-                        label = "💳 Déb";
+                        label = "&#128179; Déb"; // 💳 como entidade HTML
                         break;
                     case "pix":
-                        label = "📱 Pix";
+                        label = "&#128241; Pix"; // 📱 como entidade HTML
                         break;
                     case "dinheiro":
-                        label = "💵 Dinheiro";
+                        label = "&#128181; Dinheiro"; // 💵 como entidade HTML
                         break;
                     default:
                         label = metodo;
