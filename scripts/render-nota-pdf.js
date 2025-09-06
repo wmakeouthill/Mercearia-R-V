@@ -48,18 +48,26 @@ const path = require('path');
     await page.addStyleTag({
       content: `
         @import url('https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&display=swap');
+        
+        /* Força o uso de fonts que suportam emojis */
         * {
-          font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', 'Twemoji Mozilla', system-ui, -apple-system, sans-serif !important;
+          font-family: 'Segoe UI', 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', 'Twemoji Mozilla', system-ui, -apple-system, sans-serif !important;
         }
-        .emoji {
-          font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji' !important;
-          font-size: 14px !important;
-          font-feature-settings: "liga" 1, "clig" 1, "calt" 1;
+        
+        /* Força renderização de emojis especificamente na célula de pagamento */
+        tfoot td {
+          font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', 'Segoe UI', Arial, sans-serif !important;
+          -webkit-font-feature-settings: "liga", "kern";
+          font-feature-settings: "liga", "kern";
+          font-variant-emoji: emoji;
         }
-        /* Forçar renderização de emojis */
+        
+        /* Força suporte completo a emojis */
         body {
           -webkit-font-feature-settings: "liga", "kern";
           font-feature-settings: "liga", "kern";
+          font-variant-emoji: emoji;
+          text-rendering: optimizeLegibility;
         }
       `
     });

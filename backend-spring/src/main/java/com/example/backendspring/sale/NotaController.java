@@ -442,25 +442,80 @@ public class NotaController {
             }
 
             byte[] imageBytes = Files.readAllBytes(imagePath);
-            // Limite de 300KB para imagens de produtos
-            if (imageBytes.length > 300000) { // > 300KB
-                log.debug("Product image for {} too large: {} bytes (limit: 300KB)", productId, imageBytes.length);
-                return ""; // Skip large images
+            // Limite muito menor para acelerar - pular imagens grandes
+            if (imageBytes.length > 50000) { // > 50KB apenas
+                log.debug("Product image for {} too large: {} bytes (limit: 50KB) - skipping for performance",
+                        productId, imageBytes.length);
+                return ""; // Skip large images completely for speed
             }
 
-            // Comprimir imagem de produto para tamanho muito pequeno (adequado para coluna
-            // da tabela)
-            byte[] compressedBytes = compressImageIfNeeded(imageBytes, 15000); // Max 15KB para produtos - ainda menor
+            // Se a imagem já é pequena, usar diretamente sem compressão (mais rápido)
+            if (imageBytes.length <= 10000) { // <= 10KB
+                String mimeType = foundExtension.equals("jpg") ? "jpeg" : foundExtension;
+                log.debug("Product image loaded directly (no compression): {} (size: {}KB)",
+                        imagePath.toAbsolutePath(), imageBytes.length / 1024);
+                return "data:image/" + mimeType + ";base64," + Base64.getEncoder().encodeToString(imageBytes);
+            }
 
-            // Se houve compressão, usar JPEG; senão usar extensão original
-            String mimeType = (compressedBytes.length < imageBytes.length) ? "jpeg"
-                    : (foundExtension.equals("jpg") ? "jpeg" : foundExtension);
-            log.debug("Product image loaded successfully from: {} (original: {}KB, compressed: {}KB)",
+            // Para imagens médias (10-50KB), usar compressão simples
+            byte[] compressedBytes = simpleImageResize(imageBytes, 32); // 32px max width
+
+            String mimeType = "jpeg"; // sempre JPEG após compressão
+            log.debug("Product image loaded with simple compression: {} (original: {}KB, compressed: {}KB)",
                     imagePath.toAbsolutePath(), imageBytes.length / 1024, compressedBytes.length / 1024);
             return "data:image/" + mimeType + ";base64," + Base64.getEncoder().encodeToString(compressedBytes);
         } catch (Exception e) {
             log.debug("Failed to load product image for {}: {}", productId, e.getMessage());
             return "";
+        }
+    }
+
+    // Método simplificado de redimensionamento para acelerar o processo
+    private byte[] simpleImageResize(byte[] imageBytes, int maxWidth) {
+        try {
+            ByteArrayInputStream bais = new ByteArrayInputStream(imageBytes);
+            java.awt.image.BufferedImage originalImage = javax.imageio.ImageIO.read(bais);
+
+            if (originalImage == null) {
+                return imageBytes;
+            }
+
+            // Se já é pequena, retorna original
+            if (originalImage.getWidth() <= maxWidth) {
+                return imageBytes;
+            }
+
+            // Redimensionar apenas
+            int newWidth = maxWidth;
+            int newHeight = (int) ((double) newWidth / originalImage.getWidth() * originalImage.getHeight());
+
+            java.awt.image.BufferedImage resizedImage = new java.awt.image.BufferedImage(newWidth, newHeight,
+                    java.awt.image.BufferedImage.TYPE_INT_RGB);
+            java.awt.Graphics2D g2d = resizedImage.createGraphics();
+            g2d.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION,
+                    java.awt.RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+            g2d.drawImage(originalImage, 0, 0, newWidth, newHeight, null);
+            g2d.dispose();
+
+            // JPEG com qualidade média (mais rápido que compressão pesada)
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            javax.imageio.ImageWriter writer = javax.imageio.ImageIO.getImageWritersByFormatName("jpg").next();
+            javax.imageio.stream.ImageOutputStream ios = javax.imageio.ImageIO.createImageOutputStream(baos);
+            writer.setOutput(ios);
+
+            javax.imageio.ImageWriteParam writeParam = writer.getDefaultWriteParam();
+            writeParam.setCompressionMode(javax.imageio.ImageWriteParam.MODE_EXPLICIT);
+            writeParam.setCompressionQuality(0.7f); // 70% quality - mais rápido que 50%
+
+            writer.write(null, new javax.imageio.IIOImage(resizedImage, null, null), writeParam);
+            writer.dispose();
+            ios.close();
+
+            return baos.toByteArray();
+
+        } catch (Exception e) {
+            log.debug("Failed to resize image: {}", e.getMessage());
+            return imageBytes;
         }
     }
 
@@ -482,9 +537,9 @@ public class NotaController {
         html.append(
                 ".invoice{width:120mm;margin:0;padding:8px;background:#fff;color:#222;border:1px solid #ddd;box-sizing:border-box}");
         html.append(
-                ".store{font-size:16px;font-weight:700;text-align:center;margin:8px 0;padding:12px 8px;background:#f8f9fa;border-radius:6px;border:1px solid #e9ecef;display:flex;align-items:center;justify-content:center;min-height:50px}");
-        html.append(".meta{font-size:10px;color:#555;text-align:center;margin:3px 0}");
-        html.append(".small{font-size:10px;color:#666;text-align:center;margin:2px 0;padding:1px}");
+                ".store{font-size:16px;font-weight:700;text-align:center;margin:4px 0 2px 0;padding:8px;background:#f8f9fa;border-radius:6px;border:1px solid #e9ecef;display:flex;align-items:center;justify-content:center;min-height:40px}");
+        html.append(".meta{font-size:10px;color:#555;text-align:center;margin:2px 0 1px 0}");
+        html.append(".small{font-size:10px;color:#666;text-align:center;margin:1px 0;padding:1px}");
         html.append(
                 "table{width:100%;border-collapse:collapse;margin-top:8px;font-size:10px;border:1px solid #dee2e6}");
         html.append(
@@ -591,19 +646,19 @@ public class NotaController {
                     psb.append(", ");
                 String metodo = p.getMetodo() == null ? "" : p.getMetodo();
                 String label;
-                // Use símbolos que funcionam melhor em PDF
+                // Use símbolos que funcionam melhor em PDF - emoji direto sem colchetes
                 switch (metodo) {
                     case "cartao_credito":
-                        label = "[💳] Créd"; // Colocar entre colchetes pode ajudar
+                        label = "💳 Créd";
                         break;
                     case "cartao_debito":
-                        label = "[💳] Déb"; // Colocar entre colchetes pode ajudar
+                        label = "💳 Déb";
                         break;
                     case "pix":
-                        label = "[📱] Pix"; // Colocar entre colchetes pode ajudar
+                        label = "📱 Pix";
                         break;
                     case "dinheiro":
-                        label = "[💵] Dinheiro"; // Colocar entre colchetes pode ajudar
+                        label = "💵 Dinheiro";
                         break;
                     default:
                         label = metodo;
