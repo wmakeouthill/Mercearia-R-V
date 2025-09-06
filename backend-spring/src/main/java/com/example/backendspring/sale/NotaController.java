@@ -606,7 +606,7 @@ public class NotaController {
         // so we avoid forced pagination via @page CSS.
         // Improved CSS for better appearance and wider layout
         html.append(
-                "body{font-family:'Segoe UI','Segoe UI Emoji','Apple Color Emoji','Noto Color Emoji',Arial,sans-serif;font-size:11px;color:#222;margin:0;padding:0;background:#fff}");
+                "body{font-family:'Roboto Mono','Consolas','Courier New',monospace,Arial,sans-serif;font-size:11px;color:#222;margin:0;padding:0;background:#fff}");
         html.append(
                 ".invoice{width:120mm;margin:0;padding:8px;background:#fff;color:#222;border:1px solid #ddd;box-sizing:border-box}");
         html.append(
@@ -627,7 +627,7 @@ public class NotaController {
         html.append("</style></head><body>");
         html.append("<style>");
         html.append(
-                "body, * { font-family: 'Segoe UI Emoji', 'Segoe UI', 'Apple Color Emoji', Arial, sans-serif !important; }");
+                "body, * { font-family: 'Roboto Mono','Consolas','Courier New',monospace,Arial,sans-serif !important; }");
         html.append("</style></head><body>");
 
         html.append("<div class=\"invoice\">\n");
@@ -724,28 +724,40 @@ public class NotaController {
                 if (!psb.isEmpty())
                     psb.append(", ");
                 String metodo = p.getMetodo() == null ? "" : p.getMetodo();
-                String label;
-                // Usar emojis reais compatíveis com Segoe UI Emoji
+                String svg = "";
                 switch (metodo) {
                     case "cartao_credito":
-                        label = "💳 Créd"; // Emoji de cartão
-                        break;
                     case "cartao_debito":
-                        label = "💳 Déb"; // Emoji de cartão
+                        svg = "<svg width='16' height='16' viewBox='0 0 24 24' style='vertical-align:middle;margin-right:2px'><rect x='2' y='6' width='20' height='12' rx='2' fill='#4A90E2'/><rect x='2' y='10' width='20' height='2' fill='#fff'/></svg>";
                         break;
                     case "pix":
-                        label = "📱 Pix"; // Emoji de celular
+                        svg = "<svg width='16' height='16' viewBox='0 0 24 24' style='vertical-align:middle;margin-right:2px'><circle cx='12' cy='12' r='10' fill='#43C6AC'/><text x='12' y='16' text-anchor='middle' font-size='10' fill='#fff' font-family='Arial'>PIX</text></svg>";
                         break;
                     case "dinheiro":
-                        label = "💵 Dinheiro"; // Emoji de dinheiro
+                        svg = "<svg width='16' height='16' viewBox='0 0 24 24' style='vertical-align:middle;margin-right:2px'><rect x='2' y='6' width='20' height='12' rx='2' fill='#7ED957'/><text x='12' y='16' text-anchor='middle' font-size='10' fill='#fff' font-family='Arial'>$</text></svg>";
+                        break;
+                    default:
+                        svg = "";
+                }
+                String label = "";
+                switch (metodo) {
+                    case "cartao_credito":
+                        label = "Créd";
+                        break;
+                    case "cartao_debito":
+                        label = "Déb";
+                        break;
+                    case "pix":
+                        label = "Pix";
+                        break;
+                    case "dinheiro":
+                        label = "Dinheiro";
                         break;
                     default:
                         label = metodo;
                 }
-                // normalize spaces in label and remove trailing/leading spaces to avoid
-                // extra gap before ':'
                 String cleanLabel = label == null ? "" : label.replaceAll("\\s+", " ").trim();
-                psb.append(cleanLabel);
+                psb.append(svg).append(cleanLabel);
                 psb.append(": R$&#160;").append(String.format("%.2f", p.getValor()));
             }
             return psb.toString();
