@@ -34,6 +34,14 @@ public class NotaController {
     private static final String CLOSE_DIV = "</div>";
     private static final String CLOSE_TD = "</td>";
 
+    // File path constants
+    private static final String UPLOADS_DIR = "uploads";
+    private static final String BACKEND_SPRING_DIR = "backend-spring";
+    private static final String PRODUTOS_DIR = "produtos";
+    private static final String LOGO_FILENAME = "logo.png";
+    private static final String PADRAO_FILENAME = "padrao.png";
+    private static final String RESOURCES_DIR = "resources";
+
     private final SaleOrderRepository saleOrderRepository;
     private final com.example.backendspring.client.ClientRepository clientRepository;
     private EmailService emailService; // optional, injected via constructor
@@ -158,7 +166,10 @@ public class NotaController {
                     .body(Map.of(ERROR_KEY, "Error generating PDF", "details", e.getMessage()));
         }
 
-        // send email
+        return sendEmailWithPdf(req, id, pdfBytes, venda);
+    }
+
+    private ResponseEntity<Object> sendEmailWithPdf(SendEmailRequest req, Long id, byte[] pdfBytes, SaleOrder venda) {
         try {
             String to = req.getTo();
             String subject = req.getSubject() != null ? req.getSubject() : "Comprovante Pedido #" + id;
@@ -170,68 +181,103 @@ public class NotaController {
 
             // After successful send, persist or link client based on saleOrder contact
             // fields
-            try {
-                com.example.backendspring.client.Client cliente = null;
-                String email = venda.getCustomerEmail();
-                String phone = venda.getCustomerPhone();
-                if (email != null && !email.isBlank()) {
-                    try {
-                        cliente = clientRepository.findByEmailIgnoreCase(email.trim().toLowerCase()).orElse(null);
-                    } catch (Exception ex) {
-                        cliente = clientRepository.findByEmail(email).orElse(null);
-                    }
-                }
-                if (cliente == null && phone != null && !phone.isBlank()) {
-                    cliente = clientRepository.findByTelefone(phone).orElse(null);
-                }
-                if (cliente != null) {
-                    if (venda.getCustomerName() != null && !venda.getCustomerName().isBlank()
-                            && (cliente.getNome() == null || cliente.getNome().isBlank()
-                                    || cliente.getNome().equalsIgnoreCase("Cliente"))) {
-                        cliente.setNome(venda.getCustomerName().trim());
-                        clientRepository.save(cliente);
-                    }
-                } else {
-                    // create new client only if we have identifying info
-                    String baseName = null;
-                    if (venda.getCustomerName() != null && !venda.getCustomerName().isBlank()) {
-                        baseName = venda.getCustomerName().trim();
-                    } else if (email != null && email.contains("@")) {
-                        baseName = email.split("@")[0];
-                    } else if (phone != null && !phone.isBlank()) {
-                        baseName = phone.trim();
-                    }
-                    if (baseName != null) {
-                        // reuse CheckoutController's helper if possible; otherwise simple unique suffix
-                        String uniqueName = baseName;
-                        int s = 1;
-                        while (clientRepository.existsByNomeIgnoreCase(uniqueName)) {
-                            s++;
-                            uniqueName = baseName + " (" + s + ")";
-                        }
-                        cliente = com.example.backendspring.client.Client.builder()
-                                .nome(uniqueName)
-                                .email(email)
-                                .telefone(phone)
-                                .createdAt(java.time.OffsetDateTime.now())
-                                .build();
-                        clientRepository.save(cliente);
-                    }
-                }
-                // associate sale order with client if not already linked
-                if (cliente != null && venda.getCliente() == null) {
-                    venda.setCliente(cliente);
-                    saleOrderRepository.save(venda);
-                }
-            } catch (Exception e) {
-                log.warn("Failed to create/link client after send-email: {}", e.getMessage());
-            }
+            linkOrCreateClientFromSaleOrder(venda);
 
             return ResponseEntity.ok(Map.of("message", "Email enviado"));
         } catch (Exception e) {
             return ResponseEntity.status(500)
                     .body(Map.of(ERROR_KEY, "Falha ao enviar email", "details", e.getMessage()));
         }
+    }
+
+    private void linkOrCreateClientFromSaleOrder(SaleOrder venda) {
+        try {
+            com.example.backendspring.client.Client cliente = findExistingClient(venda);
+
+            if (cliente != null) {
+                updateClientNameIfNeeded(cliente, venda);
+            } else {
+                cliente = createNewClientIfPossible(venda);
+            }
+
+            // associate sale order with client if not already linked
+            if (cliente != null && venda.getCliente() == null) {
+                venda.setCliente(cliente);
+                saleOrderRepository.save(venda);
+            }
+        } catch (Exception e) {
+            log.warn("Failed to create/link client after send-email: {}", e.getMessage());
+        }
+    }
+
+    private com.example.backendspring.client.Client findExistingClient(SaleOrder venda) {
+        com.example.backendspring.client.Client cliente = null;
+        String email = venda.getCustomerEmail();
+        String phone = venda.getCustomerPhone();
+
+        if (email != null && !email.isBlank()) {
+            try {
+                cliente = clientRepository.findByEmailIgnoreCase(email.trim().toLowerCase()).orElse(null);
+            } catch (Exception ex) {
+                cliente = clientRepository.findByEmail(email).orElse(null);
+            }
+        }
+
+        if (cliente == null && phone != null && !phone.isBlank()) {
+            cliente = clientRepository.findByTelefone(phone).orElse(null);
+        }
+
+        return cliente;
+    }
+
+    private void updateClientNameIfNeeded(com.example.backendspring.client.Client cliente, SaleOrder venda) {
+        if (venda.getCustomerName() != null && !venda.getCustomerName().isBlank()
+                && (cliente.getNome() == null || cliente.getNome().isBlank()
+                        || cliente.getNome().equalsIgnoreCase("Cliente"))) {
+            cliente.setNome(venda.getCustomerName().trim());
+            clientRepository.save(cliente);
+        }
+    }
+
+    private com.example.backendspring.client.Client createNewClientIfPossible(SaleOrder venda) {
+        String baseName = determineBaseName(venda);
+        if (baseName == null) {
+            return null;
+        }
+
+        String uniqueName = generateUniqueName(baseName);
+        com.example.backendspring.client.Client cliente = com.example.backendspring.client.Client.builder()
+                .nome(uniqueName)
+                .email(venda.getCustomerEmail())
+                .telefone(venda.getCustomerPhone())
+                .createdAt(java.time.OffsetDateTime.now())
+                .build();
+
+        return clientRepository.save(cliente);
+    }
+
+    private String determineBaseName(SaleOrder venda) {
+        String email = venda.getCustomerEmail();
+        String phone = venda.getCustomerPhone();
+
+        if (venda.getCustomerName() != null && !venda.getCustomerName().isBlank()) {
+            return venda.getCustomerName().trim();
+        } else if (email != null && email.contains("@")) {
+            return email.split("@")[0];
+        } else if (phone != null && !phone.isBlank()) {
+            return phone.trim();
+        }
+        return null;
+    }
+
+    private String generateUniqueName(String baseName) {
+        String uniqueName = baseName;
+        int s = 1;
+        while (clientRepository.existsByNomeIgnoreCase(uniqueName)) {
+            s++;
+            uniqueName = baseName + " (" + s + ")";
+        }
+        return uniqueName;
     }
 
     public static class SendEmailRequest {
@@ -276,19 +322,19 @@ public class NotaController {
         try {
             // Try multiple possible locations for the logo - incluindo produção
             Path[] logoPaths = {
-                    Paths.get("uploads", "logo.png"), // Desenvolvimento - cwd é backend-spring
-                    Paths.get("backend-spring", "uploads", "logo.png"), // Build local
-                    Paths.get("..", "uploads", "logo.png"), // Relativo ao parent
-                    Paths.get(System.getProperty("user.dir"), "uploads", "logo.png"), // Absoluto dev
+                    Paths.get(UPLOADS_DIR, LOGO_FILENAME), // Desenvolvimento - cwd é backend-spring
+                    Paths.get(BACKEND_SPRING_DIR, UPLOADS_DIR, LOGO_FILENAME), // Build local
+                    Paths.get("..", UPLOADS_DIR, LOGO_FILENAME), // Relativo ao parent
+                    Paths.get(System.getProperty(USER_DIR_PROPERTY), UPLOADS_DIR, LOGO_FILENAME), // Absoluto dev
                     // Caminhos para produção (executável standalone)
-                    Paths.get("resources", "backend-spring", "uploads", "logo.png"), // Produção
-                    Paths.get("..", "resources", "backend-spring", "uploads", "logo.png"), // Produção relativo
-                    Paths.get(".", "backend-spring", "uploads", "logo.png"), // Dentro do app
+                    Paths.get(RESOURCES_DIR, BACKEND_SPRING_DIR, UPLOADS_DIR, LOGO_FILENAME), // Produção
+                    Paths.get("..", RESOURCES_DIR, BACKEND_SPRING_DIR, UPLOADS_DIR, LOGO_FILENAME), // Produção relativo
+                    Paths.get(".", BACKEND_SPRING_DIR, UPLOADS_DIR, LOGO_FILENAME), // Dentro do app
                     // Caminho do electron em produção
-                    Paths.get("app.asar.unpacked", "backend-spring", "uploads", "logo.png"),
+                    Paths.get("app.asar.unpacked", BACKEND_SPRING_DIR, UPLOADS_DIR, LOGO_FILENAME),
                     // Caminho padrão para imagem
-                    Paths.get("uploads", "padrao.png"),
-                    Paths.get("backend-spring", "uploads", "produtos", "padrao.png")
+                    Paths.get(UPLOADS_DIR, PADRAO_FILENAME),
+                    Paths.get(BACKEND_SPRING_DIR, UPLOADS_DIR, PRODUTOS_DIR, PADRAO_FILENAME)
             };
 
             Path logoPath = null;
@@ -330,68 +376,77 @@ public class NotaController {
     private String getProductImageDataUri(Long productId) {
         if (productId == null)
             return "";
+
+        Path imagePath = findProductImage(productId);
+        if (imagePath == null) {
+            return "";
+        }
+
+        return processImageToDataUri(imagePath);
+    }
+
+    private Path findProductImage(Long productId) {
+        String[] extensions = { "png", "jpg", "jpeg", "webp", "gif" };
+        Path[] basePaths = createImageBasePaths();
+
+        // First, try to find the product-specific image
+        Path imagePath = findSpecificProductImage(productId, extensions, basePaths);
+
+        // If no product-specific image found, try default image
+        if (imagePath == null) {
+            imagePath = findDefaultProductImage(extensions, basePaths, productId);
+        }
+
+        return imagePath;
+    }
+
+    private Path[] createImageBasePaths() {
+        return new Path[] {
+                Paths.get(UPLOADS_DIR), // Desenvolvimento - cwd é backend-spring
+                Paths.get(BACKEND_SPRING_DIR, UPLOADS_DIR), // Build local
+                Paths.get("..", UPLOADS_DIR), // Relativo parent
+                Paths.get(System.getProperty(USER_DIR_PROPERTY), UPLOADS_DIR), // Absoluto dev
+                // Caminhos para produção (executável standalone)
+                Paths.get(RESOURCES_DIR, BACKEND_SPRING_DIR, UPLOADS_DIR), // Produção
+                Paths.get("..", RESOURCES_DIR, BACKEND_SPRING_DIR, UPLOADS_DIR), // Produção relativo
+                Paths.get(".", BACKEND_SPRING_DIR, UPLOADS_DIR), // Dentro do app
+                // Caminho do electron em produção
+                Paths.get("app.asar.unpacked", BACKEND_SPRING_DIR, UPLOADS_DIR)
+        };
+    }
+
+    private Path findSpecificProductImage(Long productId, String[] extensions, Path[] basePaths) {
+        for (Path basePath : basePaths) {
+            for (String ext : extensions) {
+                Path testPath = basePath.resolve(PRODUTOS_DIR).resolve("produto_" + productId + "." + ext);
+                if (Files.exists(testPath)) {
+                    return testPath;
+                }
+            }
+        }
+        return null;
+    }
+
+    private Path findDefaultProductImage(String[] extensions, Path[] basePaths, Long productId) {
+        log.debug("Produto {} sem imagem específica, tentando imagem padrão...", productId);
+        for (Path basePath : basePaths) {
+            for (String ext : extensions) {
+                Path testPath = basePath.resolve(PRODUTOS_DIR).resolve(PADRAO_FILENAME.replace(".png", "." + ext));
+                if (Files.exists(testPath)) {
+                    log.debug("Usando imagem padrão: {}", testPath.toAbsolutePath());
+                    return testPath;
+                }
+            }
+        }
+
+        log.debug("No product image found for product {} in any of the expected paths", productId);
+        return null;
+    }
+
+    private String processImageToDataUri(Path imagePath) {
         try {
-            // Try different image extensions
-            String[] extensions = { "png", "jpg", "jpeg", "webp", "gif" };
-            Path imagePath = null;
-            String foundExtension = "png";
-
-            // Try multiple possible base paths for uploads - incluindo produção
-            String[] basePaths = {
-                    "uploads", // Desenvolvimento - cwd é backend-spring
-                    "backend-spring/uploads", // Build local
-                    "../uploads", // Relativo parent
-                    System.getProperty("user.dir") + "/uploads", // Absoluto dev
-                    // Caminhos para produção (executável standalone)
-                    "resources/backend-spring/uploads", // Produção
-                    "../resources/backend-spring/uploads", // Produção relativo
-                    "./backend-spring/uploads", // Dentro do app
-                    // Caminho do electron em produção
-                    "app.asar.unpacked/backend-spring/uploads"
-            };
-
-            // First, try to find the product-specific image
-            for (String basePath : basePaths) {
-                for (String ext : extensions) {
-                    Path testPath = Paths.get(basePath, "produtos", "produto_" + productId + "." + ext);
-                    if (Files.exists(testPath)) {
-                        imagePath = testPath;
-                        foundExtension = ext;
-                        break;
-                    }
-                }
-                if (imagePath != null)
-                    break;
-            }
-
-            // If no product-specific image found, try default image
-            if (imagePath == null) {
-                log.debug("Produto {} sem imagem específica, tentando imagem padrão...", productId);
-                for (String basePath : basePaths) {
-                    for (String ext : extensions) {
-                        Path testPath = Paths.get(basePath, "produtos", "padrao." + ext);
-                        if (Files.exists(testPath)) {
-                            imagePath = testPath;
-                            foundExtension = ext;
-                            log.debug("Usando imagem padrão: {}", testPath.toAbsolutePath());
-                            break;
-                        }
-                    }
-                    if (imagePath != null)
-                        break;
-                }
-
-                if (imagePath == null) {
-                    log.debug("No product image found for product {} in any of the expected paths", productId);
-                    // Lista os caminhos testados para debug
-                    for (String basePath : basePaths) {
-                        log.debug("Tested base path: {}/produtos/", basePath);
-                    }
-                    return "";
-                }
-            }
-
             byte[] imageBytes = Files.readAllBytes(imagePath);
+            String extension = getFileExtension(imagePath);
 
             // Estratégia inteligente para imagens:
             // 1. <= 20KB: usar diretamente (mais rápido)
@@ -399,14 +454,13 @@ public class NotaController {
             // 3. > 100KB: pular (muito grandes)
 
             if (imageBytes.length > 100000) { // > 100KB
-                log.debug("Product image for {} too large: {} bytes (limit: 100KB) - skipping", productId,
-                        imageBytes.length);
+                log.debug("Product image too large: {} bytes (limit: 100KB) - skipping", imageBytes.length);
                 return ""; // Skip very large images
             }
 
             if (imageBytes.length <= 20000) { // <= 20KB
                 // Usar diretamente sem processamento (mais rápido)
-                String mimeType = foundExtension.equals("jpg") ? "jpeg" : foundExtension;
+                String mimeType = extension.equals("jpg") ? "jpeg" : extension;
                 log.debug("Product image loaded directly: {} (size: {}KB)", imagePath.toAbsolutePath(),
                         imageBytes.length / 1024);
                 return "data:image/" + mimeType + ";base64," + Base64.getEncoder().encodeToString(imageBytes);
@@ -418,9 +472,15 @@ public class NotaController {
                     imagePath.toAbsolutePath(), imageBytes.length / 1024, compressedBytes.length / 1024);
             return "data:image/jpeg;base64," + Base64.getEncoder().encodeToString(compressedBytes);
         } catch (Exception e) {
-            log.debug("Failed to load product image for {}: {}", productId, e.getMessage());
+            log.debug("Failed to load product image: {}", e.getMessage());
             return "";
         }
+    }
+
+    private String getFileExtension(Path imagePath) {
+        String fileName = imagePath.getFileName().toString();
+        int lastDot = fileName.lastIndexOf('.');
+        return lastDot > 0 ? fileName.substring(lastDot + 1).toLowerCase() : "png";
     }
 
     // Compressão ULTRA leve - só processa se realmente necessário
@@ -469,14 +529,14 @@ public class NotaController {
 
             return compressQuality(resizedImage, 0.95f); // 95% qualidade (quase sem compressão)
 
-        } catch (Exception e) {
+        } catch (java.io.IOException e) {
             log.debug("Quick compression failed: {}", e.getMessage());
             return imageBytes; // Se falhar, retorna original
         }
     }
 
     // Método auxiliar para compressão de qualidade
-    private byte[] compressQuality(java.awt.image.BufferedImage image, float quality) throws Exception {
+    private byte[] compressQuality(java.awt.image.BufferedImage image, float quality) throws java.io.IOException {
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         javax.imageio.ImageWriter writer = javax.imageio.ImageIO.getImageWritersByFormatName("jpg").next();
         javax.imageio.stream.ImageOutputStream ios = javax.imageio.ImageIO.createImageOutputStream(baos);
@@ -551,8 +611,8 @@ public class NotaController {
         html.append("<div style='margin:4px 0;'>Comprovante de Pedido</div>");
         if (venda.getCustomerName() != null)
             html.append("<div style='margin:4px 0;'>Cliente: ").append(escapeHtml(venda.getCustomerName()))
-                    .append("</div>");
-        html.append("<div style='margin:4px 0;'>Data: ").append(venda.getDataVenda().format(fmt)).append("</div>");
+                    .append(CLOSE_DIV);
+        html.append("<div style='margin:4px 0;'>Data: ").append(venda.getDataVenda().format(fmt)).append(CLOSE_DIV);
         html.append("</div>\n");
 
         // let columns size by content; reserve fixed mm widths for numeric columns
@@ -625,38 +685,8 @@ public class NotaController {
                 if (!psb.isEmpty())
                     psb.append(", ");
                 String metodo = p.getMetodo() == null ? "" : p.getMetodo();
-                String svg = "";
-                switch (metodo) {
-                    case "cartao_credito":
-                    case "cartao_debito":
-                        svg = "<svg width='16' height='16' viewBox='0 0 24 24' style='vertical-align:middle;margin-right:2px'><rect x='2' y='6' width='20' height='12' rx='2' fill='#4A90E2'/><rect x='2' y='10' width='20' height='2' fill='#fff'/></svg>";
-                        break;
-                    case "pix":
-                        svg = "<svg width='16' height='16' viewBox='0 0 24 24' style='vertical-align:middle;margin-right:2px'><circle cx='12' cy='12' r='10' fill='#43C6AC'/><text x='12' y='16' text-anchor='middle' font-size='10' fill='#fff' font-family='Arial'>PIX</text></svg>";
-                        break;
-                    case "dinheiro":
-                        svg = "<svg width='16' height='16' viewBox='0 0 24 24' style='vertical-align:middle;margin-right:2px'><rect x='2' y='6' width='20' height='12' rx='2' fill='#7ED957'/><text x='12' y='16' text-anchor='middle' font-size='10' fill='#fff' font-family='Arial'>$</text></svg>";
-                        break;
-                    default:
-                        svg = "";
-                }
-                String label = "";
-                switch (metodo) {
-                    case "cartao_credito":
-                        label = "Créd";
-                        break;
-                    case "cartao_debito":
-                        label = "Déb";
-                        break;
-                    case "pix":
-                        label = "Pix";
-                        break;
-                    case "dinheiro":
-                        label = "Dinheiro";
-                        break;
-                    default:
-                        label = metodo;
-                }
+                String svg = getPaymentSvg(metodo);
+                String label = getPaymentLabel(metodo);
                 String cleanLabel = label == null ? "" : label.replaceAll("\\s+", " ").trim();
                 psb.append(svg).append(cleanLabel);
                 psb.append(": R$&#160;").append(String.format("%.2f", p.getValor()));
@@ -692,6 +722,34 @@ public class NotaController {
             throw new IllegalStateException("Failed to render PDF with Puppeteer", ie);
         } catch (Exception e) {
             throw new IllegalStateException("Failed to render PDF with Puppeteer", e);
+        }
+    }
+
+    private String getPaymentSvg(String metodo) {
+        switch (metodo) {
+            case "cartao_credito", "cartao_debito":
+                return "<svg width='16' height='16' viewBox='0 0 24 24' style='vertical-align:middle;margin-right:2px'><rect x='2' y='6' width='20' height='12' rx='2' fill='#4A90E2'/><rect x='2' y='10' width='20' height='2' fill='#fff'/></svg>";
+            case "pix":
+                return "<svg width='16' height='16' viewBox='0 0 24 24' style='vertical-align:middle;margin-right:2px'><circle cx='12' cy='12' r='10' fill='#43C6AC'/><text x='12' y='16' text-anchor='middle' font-size='10' fill='#fff' font-family='Arial'>PIX</text></svg>";
+            case "dinheiro":
+                return "<svg width='16' height='16' viewBox='0 0 24 24' style='vertical-align:middle;margin-right:2px'><rect x='2' y='6' width='20' height='12' rx='2' fill='#7ED957'/><text x='12' y='16' text-anchor='middle' font-size='10' fill='#fff' font-family='Arial'>$</text></svg>";
+            default:
+                return "";
+        }
+    }
+
+    private String getPaymentLabel(String metodo) {
+        switch (metodo) {
+            case "cartao_credito":
+                return "Créd";
+            case "cartao_debito":
+                return "Déb";
+            case "pix":
+                return "Pix";
+            case "dinheiro":
+                return "Dinheiro";
+            default:
+                return metodo;
         }
     }
 
