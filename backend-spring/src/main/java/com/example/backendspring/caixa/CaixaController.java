@@ -1327,6 +1327,11 @@ public class CaixaController {
         java.util.Set<String> entradaCashKeys = buildDayEntradaCashKeys(lista);
         sums.sumVendas = calculateDayVendasSum(lista, entradaCashKeys);
 
+        // Log detalhado para debug de duplicação
+        log.info("DIA_SUMS_DEBUG: Entradas totais: {}, Retiradas: {}, Vendas (após dedup): {}",
+                sums.sumEntradas, sums.sumRetiradas, sums.sumVendas);
+        log.info("DIA_SUMS_DEBUG: Chaves de entrada em dinheiro encontradas: {}", entradaCashKeys.size());
+
         return sums;
     }
 
@@ -1348,8 +1353,9 @@ public class CaixaController {
                     String caixaId = m.get(KEY_CAIXA_STATUS_ID).toString();
                     double valor = ((Number) m.get(KEY_VALOR)).doubleValue();
                     String key = caixaId + "|" + String.format("%.2f", valor);
-                    log.debug("DEDUP_DAY: Criando chave entrada em dinheiro - caixa_id: {}, valor: {}, key: {}",
-                            caixaId, valor, key);
+                    log.info(
+                            "DEDUP_DAY: Criando chave entrada em dinheiro - caixa_id: {}, valor: {}, key: {}, descricao: '{}'",
+                            caixaId, valor, key, m.get(KEY_DESCRICAO));
                     return key;
                 })
                 .collect(java.util.stream.Collectors.toSet());
@@ -1370,14 +1376,22 @@ public class CaixaController {
             Object valorObj = m.get(KEY_VALOR);
             double val = valorObj == null ? 0.0 : ((Number) valorObj).doubleValue();
 
+            log.info("DEDUP_DAY: Analisando venda - id: {}, metodo: {}, caixa_id: {}, valor: {}",
+                    m.get("id"), metodo, caixaId, val);
+
             // Para vendas em dinheiro, verificar se já existe uma entrada correspondente no
             // caixa
             if (VALOR_DINHEIRO.equals(metodo) && caixaId != null) {
                 String key = caixaId.toString() + "|" + String.format("%.2f", val);
                 if (entradaCashKeys.contains(key)) {
-                    log.debug("DEDUP_DAY: Excluindo venda em dinheiro duplicada - caixa_id: {}, valor: {}", caixaId,
-                            val);
+                    log.info(
+                            "DEDUP_DAY: Excluindo venda em dinheiro duplicada - caixa_id: {}, valor: {}, venda_id: {}",
+                            caixaId, val, m.get("id"));
                     return 0.0; // skip duplicate - dinheiro já contado como entrada
+                } else {
+                    log.info(
+                            "DEDUP_DAY: Venda em dinheiro SEM entrada correspondente - caixa_id: {}, valor: {}, key: {}",
+                            caixaId, val, key);
                 }
             }
             return val;
@@ -1674,13 +1688,13 @@ public class CaixaController {
             java.util.List<java.util.Map<String, Object>> items,
             org.springframework.data.domain.Page<CaixaStatus> pg,
             int pageNum, int pageSize) {
-        java.util.Map<String, Object> body = new java.util.LinkedHashMap<>();
-        body.put(KEY_ITEMS, items);
-        body.put(KEY_TOTAL, pg.getTotalElements());
-        body.put(KEY_HAS_NEXT, pg.hasNext());
-        body.put(KEY_PAGE, pageNum);
-        body.put(KEY_SIZE, pageSize);
-        return body;
+        java.util.Map<String, Object> response = new java.util.LinkedHashMap<>();
+        response.put(KEY_ITEMS, items);
+        response.put(KEY_TOTAL, pg.getTotalElements());
+        response.put(KEY_HAS_NEXT, pg.hasNext());
+        response.put(KEY_PAGE, pageNum);
+        response.put(KEY_SIZE, pageSize);
+        return response;
     }
 
     private static class SessionMetrics {
@@ -1793,6 +1807,7 @@ public class CaixaController {
             for (var m : movs) {
                 java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
                 row.put("id", m.getId());
+                row.put(KEY_CAIXA_STATUS_ID, m.getCaixaStatus() != null ? m.getCaixaStatus().getId() : null);
                 row.put("tipo", m.getTipo());
                 row.put(KEY_VALOR, m.getValor());
                 row.put(KEY_DESCRICAO, m.getDescricao());
@@ -1818,6 +1833,7 @@ public class CaixaController {
                     row.put(KEY_VALOR, pg.getValor());
                     row.put(KEY_METODO_PAGAMENTO, pg.getMetodo());
                     row.put(KEY_DATA_MOVIMENTO, vo.getDataVenda());
+                    row.put(KEY_CAIXA_STATUS_ID, vo.getCaixaStatus() != null ? vo.getCaixaStatus().getId() : null);
                     byId.put(compositeId, row);
                 }
             }
