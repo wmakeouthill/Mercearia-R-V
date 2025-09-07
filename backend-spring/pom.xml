@@ -18,6 +18,10 @@
         <lombok.version>1.18.36</lombok.version>
         <!-- Ensure deterministic resource filtering across platforms -->
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <!-- VS Code compatibility -->
+        <maven.compiler.source>21</maven.compiler.source>
+        <maven.compiler.target>21</maven.compiler.target>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
     </properties>
 
     <dependencyManagement>
@@ -227,7 +231,7 @@
         
         <pluginManagement>
             <plugins>
-                <!-- Eclipse M2E plugin configuration -->
+                <!-- Eclipse M2E plugin configuration for VS Code compatibility -->
                 <plugin>
                     <groupId>org.eclipse.m2e</groupId>
                     <artifactId>lifecycle-mapping</artifactId>
@@ -247,12 +251,19 @@
                                     <action>
                                         <execute>
                                             <runOnIncremental>false</runOnIncremental>
+                                            <runOnConfiguration>true</runOnConfiguration>
                                         </execute>
                                     </action>
                                 </pluginExecution>
                             </pluginExecutions>
                         </lifecycleMappingMetadata>
                     </configuration>
+                </plugin>
+                <!-- VS Code Java extension compatibility -->
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>3.11.0</version>
                 </plugin>
             </plugins>
         </pluginManagement>

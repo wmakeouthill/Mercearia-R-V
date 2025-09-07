@@ -1127,7 +1127,8 @@ public class CaixaController {
             TimestampRange range = calculateDayTimestampRange(dia);
 
             java.util.List<java.util.Map<String, Object>> lista = fetchDayMovimentacoes(range);
-            lista = deduplicateAndSortMovimentacoes(lista);
+            // Para o modo "dia", apenas ordenar por data sem deduplicação
+            lista = sortByDataMovimentoDesc(lista);
 
             return buildDayMovimentacoesResponse(lista);
         } catch (Exception e) {
@@ -1155,12 +1156,15 @@ public class CaixaController {
 
     private java.util.List<java.util.Map<String, Object>> fetchDayMovimentacoes(TimestampRange range) {
         java.util.List<java.util.Map<String, Object>> lista = new java.util.ArrayList<>();
+        log.info("fetchDayMovimentacoes: Iniciando busca para periodo {} a {}", range.fromTs, range.toTs);
 
         // Fetch movimentações
         fetchDayMovimentacoesFromDb(lista, range);
+        log.info("fetchDayMovimentacoes: Após movimentações, lista tem {} itens", lista.size());
 
         // Fetch sale orders
         fetchDaySaleOrdersFromDb(lista, range);
+        log.info("fetchDayMovimentacoes: Após vendas, lista tem {} itens", lista.size());
 
         return lista;
     }
@@ -1211,13 +1215,18 @@ public class CaixaController {
     }
 
     private void fetchDaySaleOrdersFromDb(java.util.List<java.util.Map<String, Object>> lista, TimestampRange range) {
+        log.info("fetchDaySaleOrdersFromDb: Buscando vendas para o periodo {} a {}", range.fromTs, range.toTs);
         safeExecute(() -> {
             var orders = saleOrderRepository.findByPeriodoTimestampsRaw(range.fromTs, range.toTs);
+            log.info("fetchDaySaleOrdersFromDb: Encontradas {} vendas", orders.size());
             for (var vo : orders) {
-                lista.addAll(buildDaySaleOrderRows(vo));
+                var rows = buildDaySaleOrderRows(vo);
+                log.debug("fetchDaySaleOrdersFromDb: Venda ID {} gerou {} linhas", vo.getId(), rows.size());
+                lista.addAll(rows);
             }
+            log.info("fetchDaySaleOrdersFromDb: Total de {} itens adicionados à lista", lista.size());
         }, () -> {
-            log.warn("listarMovimentacoes/dia: orders query failed");
+            log.warn("listarMovimentacoes/dia: orders query failed, usando fallback");
             lista.addAll(buildSaleOrderRows(range.fromTs.toLocalDate(), null, null));
         });
     }
@@ -1271,28 +1280,6 @@ public class CaixaController {
         addSaleDetailsToRow(row, vo, pg);
     }
 
-    private java.util.List<java.util.Map<String, Object>> deduplicateAndSortMovimentacoes(
-            java.util.List<java.util.Map<String, Object>> lista) {
-        java.util.Map<Object, java.util.Map<String, Object>> byId = new java.util.LinkedHashMap<>();
-
-        for (var m : lista) {
-            Object idObj = buildSimpleDeduplicationKey(m);
-            byId.computeIfAbsent(idObj, k -> m);
-        }
-
-        lista = new java.util.ArrayList<>(byId.values());
-        return sortByDataMovimentoDesc(lista);
-    }
-
-    private Object buildSimpleDeduplicationKey(java.util.Map<String, Object> m) {
-        Object idObj = m.get("id");
-        if (idObj == null) {
-            idObj = (m.get(KEY_DATA_MOVIMENTO) == null ? java.util.UUID.randomUUID().toString()
-                    : m.get(KEY_DATA_MOVIMENTO).toString() + "|" + m.get(KEY_DESCRICAO));
-        }
-        return idObj;
-    }
-
     private ResponseEntity<java.util.Map<String, Object>> buildDayMovimentacoesResponse(
             java.util.List<java.util.Map<String, Object>> lista) {
 
@@ -1309,6 +1296,17 @@ public class CaixaController {
         body.put(KEY_SUM_VENDAS, sums.sumVendas);
 
         addDayEntradasBreakdown(body, lista);
+
+        // Log detalhado do que está sendo retornado
+        log.info("buildDayMovimentacoesResponse: Retornando {} itens", lista.size());
+        log.info("buildDayMovimentacoesResponse: Detalhes dos itens:");
+        for (int i = 0; i < lista.size(); i++) {
+            var item = lista.get(i);
+            log.info("  Item {}: id={}, tipo={}, descricao={}", i + 1,
+                    item.get("id"), item.get("tipo"),
+                    item.get(KEY_DESCRICAO) != null ? item.get(KEY_DESCRICAO).toString().substring(0,
+                            Math.min(50, item.get(KEY_DESCRICAO).toString().length())) : "null");
+        }
 
         return ResponseEntity.ok(body);
     }
@@ -1554,7 +1552,7 @@ public class CaixaController {
             // Build response items
             var items = buildSessionResponseItems(pg.getContent(), metrics);
 
-            return ResponseEntity.ok(buildPaginatedResponse(items, pg, pageNum, pageSize));
+            return ResponseEntity.ok(buildStatusPaginatedResponse(items, pg, pageNum, pageSize));
         } catch (Exception e) {
             return ResponseEntity.status(500).body(java.util.Map.of(KEY_ITEMS, java.util.List.of(), KEY_TOTAL, 0,
                     KEY_HAS_NEXT, false, KEY_PAGE, 1, KEY_SIZE, 20));
@@ -1672,7 +1670,7 @@ public class CaixaController {
         }
     }
 
-    private java.util.Map<String, Object> buildPaginatedResponse(
+    private java.util.Map<String, Object> buildStatusPaginatedResponse(
             java.util.List<java.util.Map<String, Object>> items,
             org.springframework.data.domain.Page<CaixaStatus> pg,
             int pageNum, int pageSize) {
