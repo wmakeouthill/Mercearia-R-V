@@ -81,8 +81,8 @@ function startFrontendRetryLoop(): void {
                 console.log(`🔁 Retry ${frontendRetryAttempts}/${MAX_FRONTEND_RETRY_ATTEMPTS}: backend saudável; navegando para`, targetBase);
                 await mainWindow.loadURL(targetBase);
             }
-        } catch (e) {
-            // manter silencioso; próximo tick tenta novamente
+        } catch (e: unknown) {
+            console.warn('Frontend retry failed, will try again:', e instanceof Error ? e.message : 'Unknown error');
         }
     }, 3000); // Aumentado para 3 segundos para ser menos agressivo
 }
@@ -200,6 +200,13 @@ function resolveJavaExecutable(): string | null {
     const embeddedJdkWin = path.join(baseResources, 'jdk', 'win', 'bin', 'java.exe');
     const embeddedJdkUnix = path.join(baseResources, 'jdk', 'bin', 'java');
 
+    console.log('🔍 [DEBUG] Resolving Java executable...');
+    console.log('  - baseResources:', baseResources);
+    console.log('  - process.resourcesPath:', process.resourcesPath);
+    console.log('  - __dirname:', __dirname);
+    console.log('  - embeddedJdkWin:', embeddedJdkWin);
+    console.log('  - embeddedJdkWin exists:', fs.existsSync(embeddedJdkWin));
+
     const findNestedJava = (dir: string, exeName: string) => {
         try {
             if (!fs.existsSync(dir)) return null;
@@ -230,6 +237,7 @@ function resolveJavaExecutable(): string | null {
 
     // Then try JRE (search nested layout too)
     if (process.platform === 'win32') {
+        console.log('🔍 [DEBUG] Tentando JRE embarcado em:', embeddedJreWinDir);
         const jreCandidate = findNestedJava(embeddedJreWinDir, 'java.exe');
         if (jreCandidate) {
             console.log('✅ Usando Java embarcado (JRE) ->', jreCandidate);
@@ -242,9 +250,19 @@ function resolveJavaExecutable(): string | null {
             return jreCandidate;
         }
     }
+
+    console.log('🔍 [DEBUG] Tentando Java do sistema...');
+
+    // Adicionar flag para forçar uso apenas do Java embarcado (para debugging)
+    const FORCE_EMBEDDED_JAVA_ONLY = process.env.FORCE_EMBEDDED_JAVA_ONLY === 'true';
+    if (FORCE_EMBEDDED_JAVA_ONLY) {
+        console.error('❌ FORCE_EMBEDDED_JAVA_ONLY=true: Java embarcado não encontrado, não usando fallback do sistema');
+        return null;
+    }
+
     const check = childProcess.spawnSync('java', ['-version'], { stdio: 'pipe' });
     if (check.status === 0) {
-        console.log('✅ Java do sistema disponível');
+        console.log('⚠️ FALLBACK: Usando Java do sistema - isso pode mascarar problemas do Java embarcado!');
         return 'java';
     }
     console.error('❌ Java não encontrado (nem embarcado, nem no sistema).');
@@ -1294,9 +1312,10 @@ async function preparePgData(): Promise<{ userDataDir: string; userPgDir: string
     // fallback to userData; installer must ensure resources/backend-spring/pg is writable.
     try {
         fs.accessSync(embeddedPgDir, fs.constants.W_OK);
-    } catch (e) {
+    } catch (e: unknown) {
         console.error('❌ Embedded PG data directory exists but is not writable:', embeddedPgDir);
-        throw new Error(`Embedded Postgres data directory exists but is not writable: ${embeddedPgDir}`);
+        const errorMessage = e instanceof Error ? e.message : 'Unknown access error';
+        throw new Error(`Embedded Postgres data directory exists but is not writable: ${embeddedPgDir}. Error: ${errorMessage}`);
     }
 
     console.log('✅ Using embedded Postgres data directory at', embeddedPgDir);
@@ -1320,13 +1339,41 @@ function buildEnvForBackend(userDataDir: string, userPgDir: string): NodeJS.Proc
     } as NodeJS.ProcessEnv;
 }
 
+// Helper function to get platform directory name
+function getPlatformDirectoryName(): string {
+    const platform = process.platform;
+    if (platform === 'win32') return 'win';
+    if (platform === 'darwin') return 'mac';
+    return 'linux';
+}
+
+// Helper function to get executable names with platform extensions
+function getExecutableNames(): { dump: string; restore: string } {
+    const isWindows = process.platform === 'win32';
+    return {
+        dump: isWindows ? 'pg_dump.exe' : 'pg_dump',
+        restore: isWindows ? 'pg_restore.exe' : 'pg_restore'
+    };
+}
+
+// Helper function to find binary in candidate directories
+function findBinaryInDirectories(candidateDirs: string[], exeName: string): string | null {
+    const platformDir = getPlatformDirectoryName();
+
+    for (const dir of candidateDirs) {
+        const fullPath = path.join(dir, platformDir, exeName);
+        if (fs.existsSync(fullPath)) {
+            return fullPath;
+        }
+    }
+    return null;
+}
+
 // Ajusta e injeta caminhos de pg_dump/pg_restore empacotados (ou do sistema em dev)
 function injectPgBinPaths(env: NodeJS.ProcessEnv, userDataDir?: string): NodeJS.ProcessEnv {
     try {
         const resourceBase = process.resourcesPath ? process.resourcesPath : path.join(__dirname, '../resources');
-        const platform = process.platform; // 'win32' | 'linux' | 'darwin'
-        const exeName = platform === 'win32' ? 'pg_dump.exe' : 'pg_dump';
-        const restoreExeName = platform === 'win32' ? 'pg_restore.exe' : 'pg_restore';
+        const { dump: exeName, restore: restoreExeName } = getExecutableNames();
 
         // Possible locations where pg binaries may be packaged. We support both
         // top-level `pg/...` and `backend-spring/pg/...` so you can put them next to the backend.
@@ -1336,16 +1383,8 @@ function injectPgBinPaths(env: NodeJS.ProcessEnv, userDataDir?: string): NodeJS.
             path.join(resourceBase, 'backend-spring', 'resources', 'pg')
         ];
 
-        let foundDump: string | null = null;
-        let foundRestore: string | null = null;
-        for (const d of candidateDirs) {
-            const dd = path.join(d, platform === 'win32' ? 'win' : platform === 'darwin' ? 'mac' : 'linux');
-            const tryDump = path.join(dd, exeName);
-            const tryRestore = path.join(dd, restoreExeName);
-            if (!foundDump && fs.existsSync(tryDump)) foundDump = tryDump;
-            if (!foundRestore && fs.existsSync(tryRestore)) foundRestore = tryRestore;
-            if (foundDump && foundRestore) break;
-        }
+        let foundDump = findBinaryInDirectories(candidateDirs, exeName);
+        let foundRestore = findBinaryInDirectories(candidateDirs, restoreExeName);
 
         // Se não encontrou binários empacotados, procurar por diretório direto (support older layout)
         if (!foundDump) {
@@ -1381,16 +1420,77 @@ function injectPgBinPaths(env: NodeJS.ProcessEnv, userDataDir?: string): NodeJS.
                 pgRestorePath: restorePath,
                 backupDir: backupDir,
                 enableDatabaseReset: true // Permitir reset em produção para ferramentas críticas
+            },
+            spring: {
+                profiles: {
+                    active: 'slow-pc' // Forçar perfil para PCs lentos
+                }
             }
         };
         env.SPRING_APPLICATION_JSON = JSON.stringify(springJson);
         console.log('🔧 Injetado SPRING_APPLICATION_JSON.app.pgDumpPath =', dumpPath);
         console.log('🔧 Injetado SPRING_APPLICATION_JSON.app.pgRestorePath =', restorePath);
         console.log('🔧 Injetado SPRING_APPLICATION_JSON.app.backupDir =', backupDir);
+        console.log('🔧 Ativado perfil slow-pc para melhor compatibilidade com PCs lentos');
     } catch (e) {
         console.warn('⚠️ Falha ao injetar caminhos de pg_dump/pg_restore:', (e as Error)?.message || e);
     }
     return env;
+}
+
+// Helper function for Java diagnostics
+function performJavaDiagnostics(): { jdkWinPath: string; jreWinPath: string } {
+    console.log('🔍 === DIAGNÓSTICO JAVA ===');
+
+    const baseResources = process.resourcesPath ? process.resourcesPath : path.join(__dirname, '../resources');
+    const jdkWinPath = path.join(baseResources, 'jdk', 'win', 'bin', 'java.exe');
+    const jreWinPath = path.join(baseResources, 'jre', 'win', 'bin', 'java.exe');
+
+    console.log('🔎 Verificando JDK embarcado:', jdkWinPath);
+    console.log('🔎 JDK existe:', fs.existsSync(jdkWinPath));
+
+    if (fs.existsSync(jdkWinPath)) {
+        try {
+            const stats = fs.statSync(jdkWinPath);
+            console.log('🔎 JDK tamanho:', stats.size, 'bytes');
+            console.log('🔎 JDK executável:', !!(stats.mode & parseInt('111', 8)));
+        } catch (e: unknown) {
+            console.log('🔎 Erro ao verificar JDK:', e instanceof Error ? e.message : 'Unknown error');
+        }
+    }
+
+    console.log('🔎 Verificando JRE embarcado:', jreWinPath);
+    console.log('🔎 JRE existe:', fs.existsSync(jreWinPath));
+
+    return { jdkWinPath, jreWinPath };
+}
+
+// Helper function to test system Java
+function testSystemJava(): void {
+    console.log('🔎 Testando Java do sistema...');
+    try {
+        const systemJavaTest = childProcess.spawnSync('java', ['-version'], {
+            stdio: 'pipe',
+            timeout: 5000,
+            windowsHide: true
+        });
+        console.log('🔎 Java sistema status:', systemJavaTest.status);
+        console.log('🔎 Java sistema stderr:', systemJavaTest.stderr?.toString().substring(0, 200));
+    } catch (e: unknown) {
+        console.log('🔎 Erro testando Java sistema:', e instanceof Error ? e.message : 'Unknown error');
+    }
+}
+
+// Helper function to determine Java executable
+function determineJavaExecutable(jdkWinPath: string): string | null {
+    if (process.platform === 'win32' && fs.existsSync(jdkWinPath)) {
+        console.log('✅ Usando JDK empacotado:', jdkWinPath);
+        return jdkWinPath;
+    } else {
+        const resolved = resolveJavaExecutable();
+        console.log('🔎 Java resolvido:', resolved);
+        return resolved;
+    }
 }
 
 async function launchBackendProcess(jarPath: string, userDataDir: string, env: NodeJS.ProcessEnv): Promise<void> {
@@ -1404,18 +1504,40 @@ async function launchBackendProcess(jarPath: string, userDataDir: string, env: N
     console.log('🔎 Debug paths: process.resourcesPath =', (process as any).resourcesPath);
     console.log('🔎 Debug paths: __dirname =', __dirname);
 
-    // Forçar uso explícito do JDK empacotado se disponível (evita detectar um JRE mais antigo como jre-1.8)
-    const explicitJdkPath = path.join(process.resourcesPath ? process.resourcesPath : path.join(__dirname, '../resources'), 'jdk', 'win', 'bin', 'java.exe');
-    let javaExecutable = null as string | null;
-    if (process.platform === 'win32' && fs.existsSync(explicitJdkPath)) {
-        javaExecutable = explicitJdkPath;
-        console.log('🔎 Forçando uso do JDK empacotado ->', javaExecutable);
-    } else {
-        // Resolver Java preferindo embarcado
-        javaExecutable = resolveJavaExecutable();
-        console.log('🔎 Debug paths: javaExecutable =', javaExecutable);
+    const { jdkWinPath } = performJavaDiagnostics();
+    testSystemJava();
+
+    const javaExecutable = determineJavaExecutable(jdkWinPath);
+
+    if (!javaExecutable) {
+        const errorMsg = 'Java não encontrado - nem embarcado nem no sistema';
+        console.error('❌', errorMsg);
+        throw new Error(errorMsg);
     }
-    if (!javaExecutable) throw new Error('Java não encontrado');
+
+    // TESTAR O EXECUTÁVEL JAVA ANTES DE USAR
+    console.log('🧪 Testando executável Java:', javaExecutable);
+    try {
+        const javaTest = childProcess.spawnSync(javaExecutable, ['-version'], {
+            stdio: 'pipe',
+            timeout: 10000,
+            windowsHide: true,
+            env: env
+        });
+
+        console.log('🧪 Java test exit code:', javaTest.status);
+        console.log('🧪 Java test stderr:', javaTest.stderr?.toString().substring(0, 300));
+        console.log('🧪 Java test stdout:', javaTest.stdout?.toString().substring(0, 300));
+
+        if (javaTest.status !== 0) {
+            throw new Error(`Java test failed with exit code: ${javaTest.status}`);
+        }
+
+        console.log('✅ Java executável testado com sucesso!');
+    } catch (testError) {
+        console.error('❌ Falha no teste do Java:', testError);
+        throw new Error(`Java executable test failed: ${testError.message}`);
+    }
 
     // Tentar fixar a 3000, com fallback somente se ocupada
     const primaryPort = 3000;
@@ -1463,26 +1585,50 @@ async function launchBackendProcess(jarPath: string, userDataDir: string, env: N
     env.APP_PACKAGED = 'true';
     env.LOG_FILE = path.join(getLogsDirectory(), 'backend.log');
 
-    backendProcess = childProcess.spawn(javaExecutable, args, {
-        stdio: 'pipe',
-        detached: false,
-        env: env,
-        cwd: workingDir,
-        windowsHide: true,
-        shell: false
-    });
+    console.log('🚀 Iniciando processo Java com:');
+    console.log('  - Executável:', javaExecutable);
+    console.log('  - Argumentos:', args.join(' '));
+    console.log('  - Working Dir:', workingDir);
+    console.log('  - Porta:', currentBackendPort);
+
+    try {
+        backendProcess = childProcess.spawn(javaExecutable, args, {
+            stdio: 'pipe',
+            detached: false,
+            env: env,
+            cwd: workingDir,
+            windowsHide: true,
+            shell: false
+        });
+
+        console.log('✅ Processo Java iniciado, PID:', backendProcess.pid);
+
+        // Log imediato de erros
+        backendProcess.on('error', (error) => {
+            console.error('❌ Erro no processo Java:', error);
+        });
+
+        backendProcess.on('exit', (code, signal) => {
+            console.log('🔚 Processo Java finalizado - Code:', code, 'Signal:', signal);
+        });
+
+    } catch (spawnError) {
+        console.error('❌ Falha ao criar processo Java:', spawnError);
+        throw spawnError;
+    }
+
     attachBackendListeners(backendProcess);
     startBackendHealthCheck();
 
     // Timeout para startup do backend. Em alguns ambientes (init do embedded PG)
-    // pode demorar mais que 30s, então aumentar para 60s para reduzir restarts prematuros
+    // pode demorar muito tempo em PCs lentos, então aumentar para 4 minutos
     backendStartupTimeout = setTimeout(() => {
         if (!isBackendReady) {
-            console.error('⚠️ Backend não respondeu após 60 segundos, pode haver um problema');
+            console.error('⚠️ Backend não respondeu após 4 minutos, pode haver um problema');
             // Tentar reiniciar
             restartBackend();
         }
-    }, 60000);
+    }, 240000); // 4 minutos para aguardar PostgreSQL em PCs muito lentos
 
     console.log('🔄 Backend startup iniciado, aguardando confirmação...');
 }
@@ -1512,6 +1658,13 @@ async function startBackend(): Promise<void> {
         console.log('🔁 Backend já está iniciando, ignorando start concorrente');
         return;
     }
+
+    // Verificar se já existe um processo backend rodando
+    if (backendProcess && !backendProcess.killed) {
+        console.log('🔁 Processo backend já existe e está ativo, ignorando start');
+        return;
+    }
+
     backendStarting = true;
 
     console.log('🚀 Iniciando backend Spring Boot embutido para produção...');
@@ -1552,7 +1705,7 @@ function startBackendHealthCheck(): void {
         clearInterval(backendHealthCheckInterval);
     }
 
-    // Verificar saúde do backend a cada 15 segundos (mais frequente)
+    // Verificar saúde do backend a cada 5 minutos (para aguardar PostgreSQL inicializar em PCs lentos)
     // Iniciar checagens somente após um pequeno atraso para deixar o backend/Pg estabilizarem
     backendHealthCheckInterval = setInterval(() => {
         // Só verificar se deveria estar rodando
@@ -1564,7 +1717,7 @@ function startBackendHealthCheck(): void {
                     sendSplashStatus('Backend não respondeu, reiniciando...', 20);
                     isBackendReady = false;
                     restartBackend();
-                } else if (!isHealthy && !isBackendReady && !backendProcess) {
+                } else if (!isHealthy && !isBackendReady && !backendProcess && !backendStarting) {
                     console.log('🔄 Backend deveria estar rodando mas não está, reiniciando...');
                     sendSplashStatus('Backend ausente, iniciando...', 20);
                     restartBackend();
@@ -1577,14 +1730,14 @@ function startBackendHealthCheck(): void {
                 }
             }).catch((error) => {
                 console.error('❌ Erro no health check:', error.message);
-                if (backendShouldBeRunning && (!backendProcess || isBackendReady)) {
+                if (backendShouldBeRunning && (!backendProcess || isBackendReady) && !backendStarting) {
                     isBackendReady = false;
                     sendSplashStatus('Erro no health check, reiniciando backend...', 15);
                     restartBackend();
                 }
             });
         }
-    }, 15000); // Verificar a cada 15 segundos
+    }, 300000); // Verificar a cada 5 minutos (300s) para aguardar PostgreSQL em PCs lentos
 }
 
 type BackendStatus = 'healthy' | 'unhealthy';
@@ -1599,7 +1752,7 @@ function testBackendConnection(): Promise<BackendStatus> {
             port: currentBackendPort,
             path: '/health',
             method: 'GET',
-            timeout: 5000
+            timeout: 45000 // 45 segundos para aguardar backend responder em PCs lentos
         };
 
         const req = http.request(options, (res: import('http').IncomingMessage) => {
@@ -1641,68 +1794,77 @@ function testBackendConnection(): Promise<BackendStatus> {
     });
 }
 
+// Helper function to kill postgres processes on Windows
+function killPostgresOnWindows(): void {
+    try {
+        const result = childProcess.spawnSync('taskkill', ['/IM', 'postgres.exe', '/F'], {
+            encoding: 'utf8'
+        });
+
+        if (result.stdout?.includes('SUCCESS')) {
+            console.log('✅ Processos PostgreSQL encerrados com sucesso');
+        } else if (result.stderr?.includes('No tasks')) {
+            console.log('ℹ️ Nenhum processo PostgreSQL encontrado');
+        } else {
+            console.log('⚠️ Resultado taskkill:', result.stdout || result.stderr);
+        }
+    } catch (e: unknown) {
+        console.warn('⚠️ Erro ao encerrar processos PostgreSQL:', e instanceof Error ? e.message : 'Unknown error');
+    }
+}
+
+// Helper function to wait and verify postgres processes are killed on Windows
+function verifyPostgresKilledOnWindows(): void {
+    // Aguardar um pouco para os processos encerrarem
+    try {
+        childProcess.spawnSync('ping', ['127.0.0.1', '-n', '2'], { timeout: 3000 });
+    } catch { /* ignore */ }
+
+    // Verificar se ainda restam processos postgres.exe
+    try {
+        const checkResult = childProcess.spawnSync('tasklist', ['/FI', 'IMAGENAME eq postgres.exe'], {
+            encoding: 'utf8'
+        });
+
+        if (checkResult.stdout?.includes('postgres.exe')) {
+            console.log('⚠️ Alguns processos PostgreSQL ainda estão rodando');
+            console.log('   Tentando força bruta adicional...');
+            // Segunda tentativa com /T para toda árvore de processos
+            childProcess.spawnSync('taskkill', ['/IM', 'postgres.exe', '/T', '/F']);
+        } else {
+            console.log('✅ Todos os processos PostgreSQL foram encerrados');
+        }
+    } catch (e: unknown) {
+        console.warn('⚠️ Erro na verificação final:', e instanceof Error ? e.message : 'Unknown error');
+    }
+}
+
+// Helper function to kill postgres processes on Unix-like systems
+function killPostgresOnUnix(): void {
+    try {
+        childProcess.spawnSync('pkill', ['-f', 'postgres']);
+        console.log('✅ Processos PostgreSQL encerrados (Unix)');
+    } catch (e: unknown) {
+        console.warn('⚠️ Erro ao encerrar processos PostgreSQL (Unix):', e instanceof Error ? e.message : 'Unknown error');
+    }
+}
+
 function killAllPostgresProcesses(): void {
     console.log('🗡️ Encerrando todos os processos PostgreSQL...');
 
     if (process.platform === 'win32') {
-        try {
-            // Usar taskkill para encerrar TODOS os processos postgres.exe
-            const result = childProcess.spawnSync('taskkill', ['/IM', 'postgres.exe', '/F'], {
-                encoding: 'utf8'
-            });
-
-            if (result.stdout && result.stdout.includes('SUCCESS')) {
-                console.log('✅ Processos PostgreSQL encerrados com sucesso');
-            } else if (result.stderr && result.stderr.includes('No tasks')) {
-                console.log('ℹ️ Nenhum processo PostgreSQL encontrado');
-            } else {
-                console.log('⚠️ Resultado taskkill:', result.stdout || result.stderr);
-            }
-        } catch (e) {
-            console.warn('⚠️ Erro ao encerrar processos PostgreSQL:', (e as Error)?.message || e);
-        }
-
-        // Aguardar um pouco para os processos encerrarem
-        try {
-            childProcess.spawnSync('ping', ['127.0.0.1', '-n', '2'], { timeout: 3000 });
-        } catch { /* ignore */ }
-
-        // Verificar se ainda restam processos postgres.exe
-        try {
-            const checkResult = childProcess.spawnSync('tasklist', ['/FI', 'IMAGENAME eq postgres.exe'], {
-                encoding: 'utf8'
-            });
-
-            if (checkResult.stdout && checkResult.stdout.includes('postgres.exe')) {
-                console.log('⚠️ Alguns processos PostgreSQL ainda estão rodando');
-                console.log('   Tentando força bruta adicional...');
-
-                // Segunda tentativa com /T para toda árvore de processos
-                childProcess.spawnSync('taskkill', ['/IM', 'postgres.exe', '/T', '/F']);
-            } else {
-                console.log('✅ Todos os processos PostgreSQL foram encerrados');
-            }
-        } catch (e) {
-            console.warn('⚠️ Erro na verificação final:', (e as Error)?.message || e);
-        }
+        killPostgresOnWindows();
+        verifyPostgresKilledOnWindows();
     } else {
-        // Em sistemas Unix-like (macOS/Linux)
-        try {
-            childProcess.spawnSync('pkill', ['-f', 'postgres']);
-            console.log('✅ Processos PostgreSQL encerrados (Unix)');
-        } catch (e) {
-            console.warn('⚠️ Erro ao encerrar processos PostgreSQL (Unix):', (e as Error)?.message || e);
-        }
+        killPostgresOnUnix();
     }
 }
 
-function stopBackend(): void {
-    console.log('🛑 Parando backend...');
-
-    // Marcar que backend não deveria estar mais rodando
+// Helper function to clean up backend state
+function cleanupBackendState(): void {
     backendShouldBeRunning = false;
+    isBackendReady = false;
 
-    // Limpar intervals
     if (backendHealthCheckInterval) {
         clearInterval(backendHealthCheckInterval);
         backendHealthCheckInterval = null;
@@ -1712,43 +1874,44 @@ function stopBackend(): void {
         clearTimeout(backendStartupTimeout);
         backendStartupTimeout = null;
     }
+}
 
-    isBackendReady = false;
+// Helper function to terminate backend process gracefully
+function terminateBackendProcess(): void {
+    if (!backendProcess) return;
 
-    // PRIMEIRO: Encerrar todos os processos PostgreSQL especificamente
-    killAllPostgresProcesses();
-
-    if (backendProcess) {
+    try {
+        // Tentar graceful shutdown primeiro
         try {
-            // Tentar graceful shutdown primeiro
-            // On Windows `SIGTERM` may not terminate child Java processes reliably,
-            // so use taskkill as a fallback to ensure the whole process tree is stopped.
+            backendProcess.kill('SIGTERM');
+        } catch { /* ignore */ }
+
+        // Windows-specific forceful termination
+        if (process.platform === 'win32' && backendProcess.pid) {
             try {
-                backendProcess.kill('SIGTERM');
-            } catch { /* ignore */ }
-            if (process.platform === 'win32' && backendProcess.pid) {
-                try {
-                    childProcess.spawnSync('taskkill', ['/PID', String(backendProcess.pid), '/T', '/F']);
-                } catch (e) {
-                    console.warn('⚠️ taskkill failed:', (e as Error)?.message || e);
-                }
+                childProcess.spawnSync('taskkill', ['/PID', String(backendProcess.pid), '/T', '/F']);
+            } catch (e: unknown) {
+                console.warn('⚠️ taskkill failed:', e instanceof Error ? e.message : 'Unknown error');
             }
-
-            // Force kill após 5 segundos se não parar
-            setTimeout(() => {
-                if (backendProcess && !backendProcess.killed) {
-                    console.log('🔨 Forçando parada do backend...');
-                    backendProcess.kill('SIGKILL');
-                }
-            }, 5000);
-
-            backendProcess = null;
-            console.log('✅ Backend parado');
-        } catch (error) {
-            console.error('❌ Erro ao parar backend:', error);
         }
+
+        // Force kill após 10 segundos se não parar (mais tempo para PCs lentos)
+        setTimeout(() => {
+            if (backendProcess && !backendProcess.killed) {
+                console.log('🔨 Forçando parada do backend...');
+                backendProcess.kill('SIGKILL');
+            }
+        }, 10000);
+
+        backendProcess = null;
+        console.log('✅ Backend parado');
+    } catch (error: unknown) {
+        console.error('❌ Erro ao parar backend:', error instanceof Error ? error.message : 'Unknown error');
     }
-    // Fechar streams de log
+}
+
+// Helper function to close log streams
+function closeLogStreams(): void {
     try {
         if (backendStdoutStream) {
             backendStdoutStream.end();
@@ -1758,7 +1921,18 @@ function stopBackend(): void {
             backendStderrStream.end();
             backendStderrStream = null;
         }
-    } catch { }
+    } catch (error: unknown) {
+        console.error('❌ Erro ao fechar streams de log:', error instanceof Error ? error.message : 'Unknown error');
+    }
+}
+
+function stopBackend(): void {
+    console.log('🛑 Parando backend...');
+
+    cleanupBackendState();
+    killAllPostgresProcesses();
+    terminateBackendProcess();
+    closeLogStreams();
 }
 
 async function clearCache(): Promise<void> {
@@ -1893,16 +2067,37 @@ function restartBackend(): void {
         return;
     }
 
+    // Evitar múltiplos restarts simultâneos
+    if (backendStarting) {
+        console.log('⏳ Backend já está iniciando, pulando restart simultâneo...');
+        return;
+    }
+
+    // Verificar se já existe um processo backend ativo
+    if (backendProcess && !backendProcess.killed) {
+        console.log('⏳ Processo backend ainda ativo, aguardando finalização antes de restart...');
+        return;
+    }
+
     backendRestartAttempts++;
     console.log(`🔄 Reiniciando backend (tentativa ${backendRestartAttempts}/${maxBackendRestartAttempts})...`);
 
     // Parar backend atual
     stopBackend();
 
-    // Aguardar um pouco antes de reiniciar (5s) para dar tempo de limpar processos e evitar loops rápidos
+    // Aguardar MUITO mais tempo em PCs lentos para dar tempo de limpar processos PostgreSQL
+    // Tempo progressivo mais conservador: 15s, 30s, 45s, 60s...
+    const waitTime = 15000 + (backendRestartAttempts * 15000);
+    console.log(`⏱️ Aguardando ${waitTime}ms antes de reiniciar (para limpeza completa de PostgreSQL)...`);
+
     setTimeout(() => {
-        startBackend();
-    }, 5000);
+        // Verificar novamente se não há outro backend iniciando antes de prosseguir
+        if (!backendStarting && (!backendProcess || backendProcess.killed)) {
+            startBackend();
+        } else {
+            console.log('⏳ Cancelando restart - outro backend já está iniciando ou ativo');
+        }
+    }, waitTime);
 }
 
 app.whenReady().then(() => {

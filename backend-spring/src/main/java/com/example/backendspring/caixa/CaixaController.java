@@ -53,26 +53,66 @@ public class CaixaController {
     private static final String LABEL_VENDA_MULTI_PREFIX = "Venda (multi) - total ";
     private static final String LABEL_DEVOLVIDO_SUFFIX = " (devolvido)";
 
+    // Additional constants for SonarQube compliance
+    private static final String KEY_ABERTO = "aberto";
+    private static final String KEY_ABERTO_POR = "aberto_por";
+    private static final String KEY_FECHADO_POR = "fechado_por";
+    private static final String KEY_DATA_ABERTURA = "data_abertura";
+    private static final String KEY_DATA_FECHAMENTO = "data_fechamento";
+    private static final String KEY_CAIXA_STATUS_ID = "caixa_status_id";
+    private static final String KEY_PAGAMENTO_VALOR = "pagamento_valor";
+    private static final String KEY_TOTAL_VENDA = "total_venda";
+    private static final String KEY_PRODUTO_NOME = "produto_nome";
+    private static final String KEY_SALDO_INICIAL = "saldo_inicial";
+    private static final String KEY_SALDO_ESPERADO = "saldo_esperado";
+    private static final String KEY_SALDO_CONTADO = "saldo_contado";
+    private static final String KEY_VARIACAO = "variacao";
+    private static final String KEY_TERMINAL_ID = "terminal_id";
+    private static final String KEY_CUMULATIVE_VARIACAO_BEFORE = "cumulative_variacao_before";
+    private static final String KEY_CUMULATIVE_VARIACAO_ALL = "cumulative_variacao_all";
+    private static final String KEY_DAY_VARIACAO_TOTAL = "day_variacao_total";
+    private static final String KEY_DAY_SALDO_INICIAL_TOTAL = "day_saldo_inicial_total";
+    private static final String KEY_SUM_ENTRADAS_AUTOMATICAS = "sum_entradas_automaticas";
+    private static final String KEY_SUM_ENTRADAS_MANUAIS = "sum_entradas_manuais";
+
+    private static final String VALOR_DINHEIRO = "dinheiro";
+    private static final String VALOR_ADMIN = "admin";
+    private static final String LOCALE_PT_BR = "pt-BR";
+    private static final String TIMEZONE_SAO_PAULO = "America/Sao_Paulo";
+    private static final String VALOR_CARTAO_CREDITO = "cartao_credito";
+    private static final String LABEL_CREDITO = "Crédito";
+    private static final String VALOR_CARTAO_DEBITO = "cartao_debito";
+    private static final String LABEL_DEBITO = "Débito";
+    private static final String VALOR_PIX = "pix";
+    private static final String LABEL_PIX = "PIX";
+    private static final String MSG_FALHA_LISTAR_DIA = "Falha ao listar por dia";
+    private static final String MSG_FALHA_LISTAR_MES = "Falha ao listar por mês";
+    private static final String MSG_FALHA_DIAGNOSTICAR = "Falha ao diagnosticar divergência";
+    private static final String LABEL_VENDA_TOTAL = "Venda - total ";
+
+    private static final String MSG_PERMISSAO_NEGADA = "Permissão negada";
+    private static final String MSG_SESSAO_NAO_ENCONTRADA = "Sessão não encontrada";
+
     @GetMapping("/status")
     @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public ResponseEntity<Map<String, Object>> status() {
         try {
             var opt = caixaStatusRepository.findTopByOrderByIdDesc();
             if (opt.isEmpty()) {
-                return ResponseEntity.ok(Map.of("id", 1, "aberto", false));
+                return ResponseEntity.ok(Map.of("id", 1, KEY_ABERTO, false));
             }
             var cs = opt.get();
             var abertoPor = cs.getAbertoPor();
             var fechadoPor = cs.getFechadoPor();
             Map<String, Object> body = new LinkedHashMap<>();
             body.put("id", cs.getId());
-            body.put("aberto", Boolean.TRUE.equals(cs.getAberto()));
+            body.put(KEY_ABERTO, Boolean.TRUE.equals(cs.getAberto()));
             body.put("horario_abertura_obrigatorio", cs.getHorarioAberturaObrigatorio());
             body.put("horario_fechamento_obrigatorio", cs.getHorarioFechamentoObrigatorio());
-            body.put("aberto_por", abertoPor != null ? abertoPor.getId() : null);
-            body.put("fechado_por", fechadoPor != null ? fechadoPor.getId() : null);
-            body.put("data_abertura", cs.getDataAbertura());
-            body.put("data_fechamento", cs.getDataFechamento());
+            body.put(KEY_ABERTO_POR, abertoPor != null ? abertoPor.getId() : null);
+            body.put(KEY_FECHADO_POR, fechadoPor != null ? fechadoPor.getId() : null);
+            body.put(KEY_DATA_ABERTURA, cs.getDataAbertura());
+            body.put(KEY_DATA_FECHAMENTO, cs.getDataFechamento());
             body.put("criado_em", cs.getCriadoEm());
             body.put("atualizado_em", cs.getAtualizadoEm());
             body.put("aberto_por_username", abertoPor != null ? abertoPor.getUsername() : null);
@@ -80,7 +120,7 @@ public class CaixaController {
             return ResponseEntity.ok(body);
         } catch (Exception e) {
             log.warn("/api/caixa/status: exception, returning fallback", e);
-            return ResponseEntity.ok(Map.of("id", 1, "aberto", false));
+            return ResponseEntity.status(200).body(Map.of("id", 1, KEY_ABERTO, false));
         }
     }
 
@@ -88,10 +128,10 @@ public class CaixaController {
         if (metodo == null)
             return "";
         return switch (metodo) {
-            case "dinheiro" -> "Dinheiro";
-            case "cartao_credito" -> "Crédito";
-            case "cartao_debito" -> "Débito";
-            case "pix" -> "PIX";
+            case VALOR_DINHEIRO -> "Dinheiro";
+            case VALOR_CARTAO_CREDITO -> LABEL_CREDITO;
+            case VALOR_CARTAO_DEBITO -> LABEL_DEBITO;
+            case VALOR_PIX -> LABEL_PIX;
             default -> metodo;
         };
     }
@@ -140,33 +180,7 @@ public class CaixaController {
             }
             // Debug: when client requests all, log repository counts for the requested
             // range
-            try {
-                if (Boolean.TRUE.equals(all)) {
-                    if (dia != null) {
-                        var movsDia = movimentacaoRepository.findByDia(dia);
-                        var ordersDia = saleOrderRepository.findByDia(dia);
-                        log.info("listarMovimentacoes[ALL]: dia={} movs={} orders={}", dia,
-                                (movsDia instanceof java.util.Collection ? ((java.util.Collection<?>) movsDia).size()
-                                        : -1),
-                                (ordersDia instanceof java.util.Collection
-                                        ? ((java.util.Collection<?>) ordersDia).size()
-                                        : -1));
-                    } else if (inicio != null && fim != null) {
-                        var movsPer = movimentacaoRepository.findByPeriodo(inicio, fim);
-                        var ordersPer = saleOrderRepository.findByPeriodo(inicio, fim);
-                        log.info("listarMovimentacoes[ALL]: periodo {}..{} movs={} orders={}", inicio, fim,
-                                (movsPer instanceof java.util.Collection ? ((java.util.Collection<?>) movsPer).size()
-                                        : -1),
-                                (ordersPer instanceof java.util.Collection
-                                        ? ((java.util.Collection<?>) ordersPer).size()
-                                        : -1));
-                    } else if (from != null || to != null) {
-                        log.info("listarMovimentacoes[ALL]: raw from/to params provided from={} to={}", from, to);
-                    }
-                }
-            } catch (Exception ex) {
-                log.warn("listarMovimentacoes[ALL]: debug counts failed", ex);
-            }
+            logRepositoryCountsForDebug(all, dia, inicio, fim, from, to);
             log.debug(
                     "listarMovimentacoes: request params data={} periodo_inicio={} periodo_fim={} from={} to={} all={} tipo={} metodo_pagamento={} hora_inicio={} hora_fim={} page={} size={}",
                     data, periodoInicio, periodoFim, from, to, all, tipo, metodoPagamento, horaInicio, horaFim, page,
@@ -176,65 +190,10 @@ public class CaixaController {
             var tIni = safeParseLocalTime(horaInicio);
             var tFim = safeParseLocalTime(horaFim);
 
-            // parse optional from/to ISO timestamps (UTC/offset-aware)
-            java.time.OffsetDateTime fromTs = null;
-            java.time.OffsetDateTime toTs = null;
-            try {
-                if (from != null && !from.isBlank())
-                    fromTs = java.time.OffsetDateTime.parse(from);
-            } catch (Exception ignored) {
-            }
-            try {
-                if (to != null && !to.isBlank())
-                    toTs = java.time.OffsetDateTime.parse(to);
-            } catch (Exception ignored) {
-            }
-
-            // If the client provided a date/period plus hora_inicio/hora_fim, build
-            // precise fromTs/toTs in America/Sao_Paulo to avoid timezone mismatches
-            try {
-                java.time.ZoneId sp = java.time.ZoneId.of("America/Sao_Paulo");
-                // If the user provided a single date with no explicit times, build a full-day
-                // timestamp range in America/Sao_Paulo and convert to OffsetDateTime so
-                // subsequent instant-based filtering is correct relative to UTC storage.
-                if (dia != null && (tIni == null && tFim == null)) {
-                    var zdtFrom = java.time.ZonedDateTime.of(dia, java.time.LocalTime.MIDNIGHT, sp);
-                    var zdtTo = java.time.ZonedDateTime.of(dia.plusDays(1), java.time.LocalTime.MIDNIGHT, sp)
-                            .minusNanos(1);
-                    fromTs = zdtFrom.toOffsetDateTime();
-                    toTs = zdtTo.toOffsetDateTime();
-                } else if (dia != null && (tIni != null || tFim != null)) {
-                    if (tIni != null) {
-                        var zdt = java.time.ZonedDateTime.of(dia, tIni, sp);
-                        fromTs = zdt.toOffsetDateTime();
-                    }
-                    if (tFim != null) {
-                        var zdt2 = java.time.ZonedDateTime.of(dia, tFim, sp);
-                        toTs = zdt2.toOffsetDateTime();
-                    }
-                } else if (inicio != null && fim != null && (tIni == null && tFim == null)) {
-                    var zdtFrom = java.time.ZonedDateTime.of(inicio, java.time.LocalTime.MIDNIGHT, sp);
-                    var zdtTo = java.time.ZonedDateTime.of(fim.plusDays(1), java.time.LocalTime.MIDNIGHT, sp)
-                            .minusNanos(1);
-                    fromTs = zdtFrom.toOffsetDateTime();
-                    toTs = zdtTo.toOffsetDateTime();
-                } else if (inicio != null && fim != null && (tIni != null || tFim != null)) {
-                    if (tIni != null) {
-                        var zdt = java.time.ZonedDateTime.of(inicio, tIni, sp);
-                        fromTs = zdt.toOffsetDateTime();
-                    }
-                    if (tFim != null) {
-                        var zdt2 = java.time.ZonedDateTime.of(fim, tFim, sp);
-                        toTs = zdt2.toOffsetDateTime();
-                    }
-                }
-
-                // Log computed OffsetDateTime bounds for debugging timezone issues
-                if (fromTs != null || toTs != null) {
-                    log.debug("listarMovimentacoes: computed fromTs={} toTs={}", fromTs, toTs);
-                }
-            } catch (Exception ignored) {
-            }
+            // Calculate timestamp bounds using extracted helper method
+            TimestampBounds bounds = calculateTimestampBounds(dia, inicio, fim, tIni, tFim, from, to);
+            java.time.OffsetDateTime fromTs = bounds.fromTs;
+            java.time.OffsetDateTime toTs = bounds.toTs;
 
             // If a timestamp range was provided, prefer database queries (timestamp-aware)
             // to avoid fetching all records and filtering in memory. This improves
@@ -249,19 +208,11 @@ public class CaixaController {
                     for (var m : movs) {
                         java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
                         row.put("id", m.getId());
-                        row.put("caixa_status_id", m.getCaixaStatus() != null ? m.getCaixaStatus().getId() : null);
+                        row.put(KEY_CAIXA_STATUS_ID, m.getCaixaStatus() != null ? m.getCaixaStatus().getId() : null);
                         row.put("tipo", m.getTipo());
                         row.put(KEY_VALOR, m.getValor());
                         row.put(KEY_DESCRICAO, m.getDescricao());
-                        String usuarioNome = null;
-                        try {
-                            if (m.getOperador() != null)
-                                usuarioNome = m.getOperador().getUsername();
-                        } catch (Exception ignored) {
-                        }
-                        if (usuarioNome == null && m.getUsuario() != null) {
-                            usuarioNome = m.getUsuario().getUsername();
-                        }
+                        String usuarioNome = extractUsuarioNome(m);
                         row.put(KEY_USUARIO, usuarioNome);
                         row.put(KEY_DATA_MOVIMENTO, m.getDataMovimento());
                         lista.add(row);
@@ -287,36 +238,38 @@ public class CaixaController {
                             row.put("id", vo.getId());
                             row.put("tipo", TIPO_VENDA);
                             row.put(KEY_VALOR, pg.getValor());
-                            row.put("pagamento_valor", pg.getValor());
-                            row.put("total_venda", vo.getTotalFinal());
+                            row.put(KEY_PAGAMENTO_VALOR, pg.getValor());
+                            row.put(KEY_TOTAL_VENDA, vo.getTotalFinal());
                             var nf = java.text.NumberFormat
-                                    .getCurrencyInstance(java.util.Locale.forLanguageTag("pt-BR"));
+                                    .getCurrencyInstance(java.util.Locale.forLanguageTag(LOCALE_PT_BR));
                             String totalFmt = nf.format(vo.getTotalFinal());
                             boolean multi = vo.getPagamentos().size() > 1;
                             if (multi) {
                                 String breakdown = vo.getPagamentos().stream()
                                         .map(p -> {
-                                            String labelPart = labelMetodoPagamento(p.getMetodo()) + " "
-                                                    + nf.format(p.getValor());
+                                            StringBuilder labelBuilder = new StringBuilder();
+                                            labelBuilder.append(labelMetodoPagamento(p.getMetodo()))
+                                                       .append(" ")
+                                                       .append(nf.format(p.getValor()));
                                             if (p.getValor() != null && p.getValor() < 0)
-                                                labelPart += LABEL_DEVOLVIDO_SUFFIX;
-                                            return labelPart;
+                                                labelBuilder.append(LABEL_DEVOLVIDO_SUFFIX);
+                                            return labelBuilder.toString();
                                         })
                                         .collect(java.util.stream.Collectors.joining(" | "));
                                 row.put(KEY_DESCRICAO, LABEL_VENDA_MULTI_PREFIX + totalFmt + " - " + breakdown);
                             } else {
-                                String single = "Venda - total " + totalFmt + " ("
+                                String single = LABEL_VENDA_TOTAL + totalFmt + " ("
                                         + labelMetodoPagamento(pg.getMetodo()) + " " + nf.format(pg.getValor()) + ")";
                                 if (pg.getValor() != null && pg.getValor() < 0)
                                     single += LABEL_DEVOLVIDO_SUFFIX;
                                 row.put(KEY_DESCRICAO, single);
                             }
-                            row.put("produto_nome",
+                            row.put(KEY_PRODUTO_NOME,
                                     vo.getItens().isEmpty() ? null : vo.getItens().get(0).getProduto().getNome());
                             row.put(KEY_METODO_PAGAMENTO, pg.getMetodo());
                             row.put(KEY_USUARIO, vo.getOperador() != null ? vo.getOperador().getUsername() : null);
                             row.put(KEY_DATA_MOVIMENTO, vo.getDataVenda());
-                            row.put("caixa_status_id",
+                            row.put(KEY_CAIXA_STATUS_ID,
                                     vo.getCaixaStatus() != null ? vo.getCaixaStatus().getId() : null);
                             lista.add(row);
                         }
@@ -340,11 +293,12 @@ public class CaixaController {
                         try {
                             if (TIPO_VENDA.equals(m.get("tipo"))) {
                                 Object metodo = m.get(KEY_METODO_PAGAMENTO);
-                                Object pgVal = m.get("pagamento_valor");
+                                Object pgVal = m.get(KEY_PAGAMENTO_VALOR);
                                 idObj = idObj.toString() + "|" + (metodo == null ? "" : metodo.toString()) + "|"
                                         + (pgVal == null ? "" : pgVal.toString());
                             }
                         } catch (Exception ignored) {
+                            // Silently ignore errors constructing composite ID for deduplication
                         }
                     }
                     if (!byId.containsKey(idObj))
@@ -365,6 +319,7 @@ public class CaixaController {
                     log.debug("listarMovimentacoes: after-db-instant-fetch count={} sampleInst={}", lista.size(),
                             sampleInst);
                 } catch (Exception ignored) {
+                    // Silently ignore debug logging errors
                 }
             } else {
                 // No timestamp range provided — fallback to original behavior: fetch by
@@ -385,7 +340,7 @@ public class CaixaController {
                             if (odt == null)
                                 return "null";
                             try {
-                                return odt.atZoneSameInstant(java.time.ZoneId.of("America/Sao_Paulo")).toLocalTime()
+                                return odt.atZoneSameInstant(java.time.ZoneId.of(TIMEZONE_SAO_PAULO)).toLocalTime()
                                         .toString();
                             } catch (Exception ex) {
                                 return odt.toLocalTime().toString();
@@ -397,6 +352,7 @@ public class CaixaController {
                     log.debug("listarMovimentacoes: pre-local-time-filter count={} sampleTimes={}", lista.size(),
                             sample);
                 } catch (Exception ignored) {
+                    // Silently ignore debug logging errors for time filtering
                 }
             }
 
@@ -422,17 +378,17 @@ public class CaixaController {
                 // and skip venda rows that match.
                 java.util.Set<String> entradaCashKeys = filtrada.stream()
                         .filter(m -> TIPO_ENTRADA.equals(m.get("tipo")))
-                        .filter(m -> m.get("caixa_status_id") != null && m.get(KEY_VALOR) != null)
-                        .map(m -> m.get("caixa_status_id").toString() + "|"
+                        .filter(m -> m.get(KEY_CAIXA_STATUS_ID) != null && m.get(KEY_VALOR) != null)
+                        .map(m -> m.get(KEY_CAIXA_STATUS_ID).toString() + "|"
                                 + Double.toString(((Number) m.get(KEY_VALOR)).doubleValue()))
                         .collect(java.util.stream.Collectors.toSet());
 
                 double sumVendasAgg = filtrada.stream().filter(m -> TIPO_VENDA.equals(m.get("tipo"))).mapToDouble(m -> {
                     try {
                         Object metodo = m.get(KEY_METODO_PAGAMENTO);
-                        Object caixaId = m.get("caixa_status_id");
+                        Object caixaId = m.get(KEY_CAIXA_STATUS_ID);
                         double val = ((Number) m.get(KEY_VALOR)).doubleValue();
-                        if ("dinheiro".equals(metodo) && caixaId != null) {
+                        if (VALOR_DINHEIRO.equals(metodo) && caixaId != null) {
                             String key = caixaId.toString() + "|" + Double.toString(val);
                             if (entradaCashKeys.contains(key)) {
                                 return 0.0; // skip duplicate
@@ -459,6 +415,7 @@ public class CaixaController {
                                     if (adj instanceof Number)
                                         return ((Number) adj).doubleValue();
                                 } catch (Exception ignored) {
+                                    // Silently ignore errors accessing adjusted_total field
                                 }
                                 try {
                                     return ((Number) m.get(KEY_VALOR)).doubleValue();
@@ -467,6 +424,7 @@ public class CaixaController {
                                 }
                             }).sum();
                 } catch (Exception ignored) {
+                    // Silently ignore aggregation calculation errors
                 }
                 // Detalhar entradas automáticas (geradas por vendas) vs manuais
                 double sumEntradasAuto = 0.0;
@@ -479,7 +437,7 @@ public class CaixaController {
                                     if (d == null)
                                         return false;
                                     String s = d.toString().toLowerCase();
-                                    return s.contains("venda");
+                                    return s.contains(TIPO_VENDA);
                                 } catch (Exception e) {
                                     return false;
                                 }
@@ -495,8 +453,8 @@ public class CaixaController {
                 aggsMap.put(KEY_SUM_RETIRADAS, sumRetiradasAgg);
                 aggsMap.put(KEY_SUM_VENDAS, sumVendasAgg);
                 aggsMap.put("sum_vendas_net", sumVendasNet);
-                aggsMap.put("sum_entradas_automaticas", sumEntradasAuto);
-                aggsMap.put("sum_entradas_manuais", sumEntradasManuais);
+                aggsMap.put(KEY_SUM_ENTRADAS_AUTOMATICAS, sumEntradasAuto);
+                aggsMap.put(KEY_SUM_ENTRADAS_MANUAIS, sumEntradasManuais);
                 aggsMap.put(KEY_TOTAL, filtrada.size());
                 return ResponseEntity.ok(aggsMap);
             }
@@ -533,7 +491,7 @@ public class CaixaController {
                                     if (d == null)
                                         return false;
                                     String s = d.toString().toLowerCase();
-                                    return s.contains("venda");
+                                    return s.contains(TIPO_VENDA);
                                 } catch (Exception e) {
                                     return false;
                                 }
@@ -546,8 +504,8 @@ public class CaixaController {
                 bodyAll.put(KEY_SUM_ENTRADAS, sumEntradasAll);
                 bodyAll.put(KEY_SUM_RETIRADAS, sumRetiradasAll);
                 bodyAll.put(KEY_SUM_VENDAS, sumVendasAll);
-                bodyAll.put("sum_entradas_automaticas", sumEntradasAutoAll);
-                bodyAll.put("sum_entradas_manuais", sumEntradasManuaisAll);
+                bodyAll.put(KEY_SUM_ENTRADAS_AUTOMATICAS, sumEntradasAutoAll);
+                bodyAll.put(KEY_SUM_ENTRADAS_MANUAIS, sumEntradasManuaisAll);
                 return ResponseEntity.ok(bodyAll);
             }
 
@@ -618,7 +576,7 @@ public class CaixaController {
             @RequestParam(value = "data") String data) {
         try {
             java.time.LocalDate dia = java.time.LocalDate.parse(data);
-            java.time.ZoneId sp = java.time.ZoneId.of("America/Sao_Paulo");
+            java.time.ZoneId sp = java.time.ZoneId.of(TIMEZONE_SAO_PAULO);
             var zdtFrom = java.time.ZonedDateTime.of(dia, java.time.LocalTime.MIDNIGHT, sp);
             var zdtTo = java.time.ZonedDateTime.of(dia.plusDays(1), java.time.LocalTime.MIDNIGHT, sp).minusNanos(1);
             java.time.OffsetDateTime fromTs = zdtFrom.toOffsetDateTime();
@@ -632,7 +590,7 @@ public class CaixaController {
                 for (var m : movs) {
                     java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
                     row.put("id", m.getId());
-                    row.put("caixa_status_id", m.getCaixaStatus() != null ? m.getCaixaStatus().getId() : null);
+                    row.put(KEY_CAIXA_STATUS_ID, m.getCaixaStatus() != null ? m.getCaixaStatus().getId() : null);
                     row.put("tipo", m.getTipo());
                     row.put(KEY_VALOR, m.getValor());
                     row.put(KEY_DESCRICAO, m.getDescricao());
@@ -664,9 +622,10 @@ public class CaixaController {
                         row.put("id", vo.getId());
                         row.put("tipo", TIPO_VENDA);
                         row.put(KEY_VALOR, pg.getValor());
-                        row.put("pagamento_valor", pg.getValor());
-                        row.put("total_venda", vo.getTotalFinal());
-                        var nf = java.text.NumberFormat.getCurrencyInstance(java.util.Locale.forLanguageTag("pt-BR"));
+                        row.put(KEY_PAGAMENTO_VALOR, pg.getValor());
+                        row.put(KEY_TOTAL_VENDA, vo.getTotalFinal());
+                        var nf = java.text.NumberFormat
+                                .getCurrencyInstance(java.util.Locale.forLanguageTag(LOCALE_PT_BR));
                         String totalFmt = nf.format(vo.getTotalFinal());
                         boolean multi = vo.getPagamentos().size() > 1;
                         if (multi) {
@@ -676,15 +635,15 @@ public class CaixaController {
                             row.put(KEY_DESCRICAO, LABEL_VENDA_MULTI_PREFIX + totalFmt + " - " + breakdown);
                         } else {
                             row.put(KEY_DESCRICAO,
-                                    "Venda - total " + totalFmt + " (" + labelMetodoPagamento(pg.getMetodo()) + " "
+                                    LABEL_VENDA_TOTAL + totalFmt + " (" + labelMetodoPagamento(pg.getMetodo()) + " "
                                             + nf.format(pg.getValor()) + ")");
                         }
-                        row.put("produto_nome",
+                        row.put(KEY_PRODUTO_NOME,
                                 vo.getItens().isEmpty() ? null : vo.getItens().get(0).getProduto().getNome());
                         row.put(KEY_METODO_PAGAMENTO, pg.getMetodo());
                         row.put(KEY_USUARIO, vo.getOperador() != null ? vo.getOperador().getUsername() : null);
                         row.put(KEY_DATA_MOVIMENTO, vo.getDataVenda());
-                        row.put("caixa_status_id", vo.getCaixaStatus() != null ? vo.getCaixaStatus().getId() : null);
+                        row.put(KEY_CAIXA_STATUS_ID, vo.getCaixaStatus() != null ? vo.getCaixaStatus().getId() : null);
                         lista.add(row);
                     }
                 }
@@ -726,17 +685,17 @@ public class CaixaController {
             // (caixa_status_id|valor)
             java.util.Set<String> entradaCashKeysAll = lista.stream()
                     .filter(m -> TIPO_ENTRADA.equals(m.get("tipo")))
-                    .filter(m -> m.get("caixa_status_id") != null && m.get(KEY_VALOR) != null)
-                    .map(m -> m.get("caixa_status_id").toString() + "|"
+                    .filter(m -> m.get(KEY_CAIXA_STATUS_ID) != null && m.get(KEY_VALOR) != null)
+                    .map(m -> m.get(KEY_CAIXA_STATUS_ID).toString() + "|"
                             + Double.toString(((Number) m.get(KEY_VALOR)).doubleValue()))
                     .collect(java.util.stream.Collectors.toSet());
 
             double sumVendasAll = lista.stream().filter(m -> TIPO_VENDA.equals(m.get("tipo"))).mapToDouble(m -> {
                 try {
                     Object metodo = m.get(KEY_METODO_PAGAMENTO);
-                    Object caixaId = m.get("caixa_status_id");
+                    Object caixaId = m.get(KEY_CAIXA_STATUS_ID);
                     double val = ((Number) (m.get(KEY_VALOR) == null ? 0 : m.get(KEY_VALOR))).doubleValue();
-                    if ("dinheiro".equals(metodo) && caixaId != null) {
+                    if (VALOR_DINHEIRO.equals(metodo) && caixaId != null) {
                         String key = caixaId.toString() + "|" + Double.toString(val);
                         if (entradaCashKeysAll.contains(key)) {
                             return 0.0; // skip duplicate
@@ -759,7 +718,7 @@ public class CaixaController {
                                 if (d == null)
                                     return false;
                                 String s = d.toString().toLowerCase();
-                                return s.contains("venda");
+                                return s.contains(TIPO_VENDA);
                             } catch (Exception e) {
                                 return false;
                             }
@@ -767,14 +726,14 @@ public class CaixaController {
                         .mapToDouble(m -> ((Number) (m.get(KEY_VALOR) == null ? 0 : m.get(KEY_VALOR))).doubleValue())
                         .sum();
                 double sumEntradasManuaisDia = Math.max(0.0, sumEntradasAll - sumEntradasAutoDia);
-                body.put("sum_entradas_automaticas", sumEntradasAutoDia);
-                body.put("sum_entradas_manuais", sumEntradasManuaisDia);
+                body.put(KEY_SUM_ENTRADAS_AUTOMATICAS, sumEntradasAutoDia);
+                body.put(KEY_SUM_ENTRADAS_MANUAIS, sumEntradasManuaisDia);
             } catch (Exception ignored) {
             }
             return ResponseEntity.ok(body);
         } catch (Exception e) {
             log.error("listarMovimentacoes/dia: exception", e);
-            return ResponseEntity.status(500).body(Map.of(KEY_ERROR, "Falha ao listar por dia"));
+            return ResponseEntity.status(500).body(Map.of(KEY_ERROR, MSG_FALHA_LISTAR_DIA));
         }
     }
 
@@ -796,21 +755,27 @@ public class CaixaController {
             // payments that are linked to caixa_status (avoids double-counting
             // differences between the LocalDate and timestamp branches).
             try {
-                java.time.ZoneId sp = java.time.ZoneId.of("America/Sao_Paulo");
-                var zdtFrom = java.time.ZonedDateTime.of(inicio, java.time.LocalTime.MIDNIGHT, sp);
-                var zdtTo = java.time.ZonedDateTime.of(fim.plusDays(1), java.time.LocalTime.MIDNIGHT, sp).minusNanos(1);
-                java.time.OffsetDateTime fromTs = zdtFrom.toOffsetDateTime();
-                java.time.OffsetDateTime toTs = zdtTo.toOffsetDateTime();
-                return listarMovimentacoes(null, null, null, fromTs.toString(), toTs.toString(), null, null, null, null,
-                        null, null, page == null ? 1 : page, size == null ? 20 : size);
+                // Use helper method to avoid self-invocation of @Transactional method
+                MovimentacoesQueryParams params = MovimentacoesQueryParams.builder()
+                        .periodoInicio(inicio.toString())
+                        .periodoFim(fim.toString())
+                        .page(page == null ? 1 : page)
+                        .size(size == null ? 20 : size)
+                        .build();
+                return getMovimentacoesDirectly(params);
             } catch (Exception ex) {
                 // Fallback to LocalDate path if timezone conversion fails
-                return listarMovimentacoes(null, inicio.toString(), fim.toString(), null, null, null, null, null, null,
-                        null, null, page == null ? 1 : page, size == null ? 20 : size);
+                MovimentacoesQueryParams fallbackParams = MovimentacoesQueryParams.builder()
+                        .periodoInicio(inicio.toString())
+                        .periodoFim(fim.toString())
+                        .page(page == null ? 1 : page)
+                        .size(size == null ? 20 : size)
+                        .build();
+                return getMovimentacoesDirectly(fallbackParams);
             }
         } catch (Exception e) {
             log.error("listarMovimentacoes/mes: exception", e);
-            return ResponseEntity.status(500).body(Map.of(KEY_ERROR, "Falha ao listar por mês"));
+            return ResponseEntity.status(500).body(Map.of(KEY_ERROR, MSG_FALHA_LISTAR_MES));
         }
     }
 
@@ -835,7 +800,7 @@ public class CaixaController {
             // (all=true)
             java.time.LocalDate inicio = java.time.LocalDate.parse(periodoInicio);
             java.time.LocalDate fim = java.time.LocalDate.parse(periodoFim);
-            java.time.ZoneId sp = java.time.ZoneId.of("America/Sao_Paulo");
+            java.time.ZoneId sp = java.time.ZoneId.of(TIMEZONE_SAO_PAULO);
             var zdtFrom = java.time.ZonedDateTime.of(inicio, java.time.LocalTime.MIDNIGHT, sp);
             var zdtTo = java.time.ZonedDateTime.of(fim.plusDays(1), java.time.LocalTime.MIDNIGHT, sp).minusNanos(1);
             java.time.OffsetDateTime fromTs = zdtFrom.toOffsetDateTime();
@@ -845,10 +810,20 @@ public class CaixaController {
                     fromTs.toString(), toTs.toString(), Boolean.TRUE, null, null, null, null, null, 1,
                     Integer.MAX_VALUE);
 
-            java.util.List<java.util.Map<String, Object>> localItems = (java.util.List<java.util.Map<String, Object>>) (localResp
-                    .getBody().getOrDefault(KEY_ITEMS, java.util.List.of()));
-            java.util.List<java.util.Map<String, Object>> tsItems = (java.util.List<java.util.Map<String, Object>>) (tsResp
-                    .getBody().getOrDefault(KEY_ITEMS, java.util.List.of()));
+            // Safe extraction with null checks
+            java.util.Map<String, Object> localBody = localResp.getBody();
+            java.util.Map<String, Object> tsBody = tsResp.getBody();
+
+            @SuppressWarnings("unchecked")
+            java.util.List<java.util.Map<String, Object>> localItems = localBody != null
+                    ? (java.util.List<java.util.Map<String, Object>>) localBody.getOrDefault(KEY_ITEMS,
+                            java.util.List.of())
+                    : java.util.List.of();
+            @SuppressWarnings("unchecked")
+            java.util.List<java.util.Map<String, Object>> tsItems = tsBody != null
+                    ? (java.util.List<java.util.Map<String, Object>>) tsBody.getOrDefault(KEY_ITEMS,
+                            java.util.List.of())
+                    : java.util.List.of();
 
             // Build dedupe key function consistent with listing code
             java.util.function.Function<java.util.Map<String, Object>, String> keyFn = m -> {
@@ -862,7 +837,7 @@ public class CaixaController {
                     } else {
                         if (TIPO_VENDA.equals(m.get("tipo"))) {
                             Object metodo = m.get(KEY_METODO_PAGAMENTO);
-                            Object pgVal = m.get("pagamento_valor");
+                            Object pgVal = m.get(KEY_PAGAMENTO_VALOR);
                             return idObj.toString() + "|" + (metodo == null ? "" : metodo.toString()) + "|"
                                     + (pgVal == null ? "" : pgVal.toString());
                         }
@@ -881,14 +856,14 @@ public class CaixaController {
                 mapTs.put(keyFn.apply(m), m);
 
             java.util.List<java.util.Map<String, Object>> inLocalNotInTs = new java.util.ArrayList<>();
-            for (var k : mapLocal.keySet())
-                if (!mapTs.containsKey(k))
-                    inLocalNotInTs.add(mapLocal.get(k));
+            for (var entry : mapLocal.entrySet())
+                if (!mapTs.containsKey(entry.getKey()))
+                    inLocalNotInTs.add(entry.getValue());
 
             java.util.List<java.util.Map<String, Object>> inTsNotInLocal = new java.util.ArrayList<>();
-            for (var k : mapTs.keySet())
-                if (!mapLocal.containsKey(k))
-                    inTsNotInLocal.add(mapTs.get(k));
+            for (var entry : mapTs.entrySet())
+                if (!mapLocal.containsKey(entry.getKey()))
+                    inTsNotInLocal.add(entry.getValue());
 
             java.util.Map<String, Object> resp = new java.util.LinkedHashMap<>();
             resp.put("local_count", mapLocal.size());
@@ -898,7 +873,7 @@ public class CaixaController {
             return ResponseEntity.ok(resp);
         } catch (Exception e) {
             log.error("diagnosticarDivergencia: exception", e);
-            return ResponseEntity.status(500).body(Map.of(KEY_ERROR, "Falha ao diagnosticar divergência"));
+            return ResponseEntity.status(500).body(Map.of(KEY_ERROR, MSG_FALHA_DIAGNOSTICAR));
         }
     }
 
@@ -929,7 +904,6 @@ public class CaixaController {
             }
             double cumulativeAll = running;
 
-            // precompute day aggregates: day -> {variacaoTotal, saldoInicialTotal}
             java.util.Map<java.time.LocalDate, Double> dayVariacaoMap = new java.util.HashMap<>();
             java.util.Map<java.time.LocalDate, Double> daySaldoInicialMap = new java.util.HashMap<>();
             for (var s : allSessoes) {
@@ -949,25 +923,25 @@ public class CaixaController {
             var items = pg.getContent().stream().map(cs -> {
                 java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
                 m.put("id", cs.getId());
-                m.put("aberto", Boolean.TRUE.equals(cs.getAberto()));
-                m.put("aberto_por", cs.getAbertoPor() != null ? cs.getAbertoPor().getUsername() : null);
-                m.put("fechado_por", cs.getFechadoPor() != null ? cs.getFechadoPor().getUsername() : null);
-                m.put("data_abertura", cs.getDataAbertura());
-                m.put("data_fechamento", cs.getDataFechamento());
-                m.put("saldo_inicial", cs.getSaldoInicial());
-                m.put("saldo_esperado", cs.getSaldoEsperado());
-                m.put("saldo_contado", cs.getSaldoContado());
-                m.put("variacao", cs.getVariacao());
-                m.put("terminal_id", cs.getTerminalId());
+                m.put(KEY_ABERTO, Boolean.TRUE.equals(cs.getAberto()));
+                m.put(KEY_ABERTO_POR, cs.getAbertoPor() != null ? cs.getAbertoPor().getUsername() : null);
+                m.put(KEY_FECHADO_POR, cs.getFechadoPor() != null ? cs.getFechadoPor().getUsername() : null);
+                m.put(KEY_DATA_ABERTURA, cs.getDataAbertura());
+                m.put(KEY_DATA_FECHAMENTO, cs.getDataFechamento());
+                m.put(KEY_SALDO_INICIAL, cs.getSaldoInicial());
+                m.put(KEY_SALDO_ESPERADO, cs.getSaldoEsperado());
+                m.put(KEY_SALDO_CONTADO, cs.getSaldoContado());
+                m.put(KEY_VARIACAO, cs.getVariacao());
+                m.put(KEY_TERMINAL_ID, cs.getTerminalId());
                 m.put("observacoes", cs.getObservacoesFechamento());
 
                 // cumulative metrics
                 if (cs.getId() != null) {
-                    m.put("cumulative_variacao_before", cumulativeBeforeMap.getOrDefault(cs.getId(), 0.0));
-                    m.put("cumulative_variacao_all", cumulativeAll);
+                    m.put(KEY_CUMULATIVE_VARIACAO_BEFORE, cumulativeBeforeMap.getOrDefault(cs.getId(), 0.0));
+                    m.put(KEY_CUMULATIVE_VARIACAO_ALL, cumulativeAll);
                 } else {
-                    m.put("cumulative_variacao_before", 0.0);
-                    m.put("cumulative_variacao_all", cumulativeAll);
+                    m.put(KEY_CUMULATIVE_VARIACAO_BEFORE, 0.0);
+                    m.put(KEY_CUMULATIVE_VARIACAO_ALL, cumulativeAll);
                 }
 
                 // day aggregates
@@ -977,25 +951,25 @@ public class CaixaController {
                 else if (cs.getDataFechamento() != null)
                     d = cs.getDataFechamento().toLocalDate();
                 if (d != null) {
-                    m.put("day_variacao_total", dayVariacaoMap.getOrDefault(d, 0.0));
-                    m.put("day_saldo_inicial_total", daySaldoInicialMap.getOrDefault(d, 0.0));
+                    m.put(KEY_DAY_VARIACAO_TOTAL, dayVariacaoMap.getOrDefault(d, 0.0));
+                    m.put(KEY_DAY_SALDO_INICIAL_TOTAL, daySaldoInicialMap.getOrDefault(d, 0.0));
                 } else {
-                    m.put("day_variacao_total", 0.0);
-                    m.put("day_saldo_inicial_total", 0.0);
+                    m.put(KEY_DAY_VARIACAO_TOTAL, 0.0);
+                    m.put(KEY_DAY_SALDO_INICIAL_TOTAL, 0.0);
                 }
 
                 return m;
             }).toList();
             java.util.Map<String, Object> body = new java.util.LinkedHashMap<>();
-            body.put("items", items);
-            body.put("total", pg.getTotalElements());
-            body.put("hasNext", pg.hasNext());
-            body.put("page", pageNum);
-            body.put("size", pageSize);
+            body.put(KEY_ITEMS, items);
+            body.put(KEY_TOTAL, pg.getTotalElements());
+            body.put(KEY_HAS_NEXT, pg.hasNext());
+            body.put(KEY_PAGE, pageNum);
+            body.put(KEY_SIZE, pageSize);
             return ResponseEntity.ok(body);
         } catch (Exception e) {
-            return ResponseEntity.status(500).body(java.util.Map.of("items", java.util.List.of(), "total", 0,
-                    "hasNext", false, "page", 1, "size", 20));
+            return ResponseEntity.status(500).body(java.util.Map.of(KEY_ITEMS, java.util.List.of(), KEY_TOTAL, 0,
+                    KEY_HAS_NEXT, false, KEY_PAGE, 1, KEY_SIZE, 20));
         }
     }
 
@@ -1011,10 +985,207 @@ public class CaixaController {
             @RequestParam(value = "metodo_pagamento", required = false) String metodoPagamento,
             @RequestParam(value = "hora_inicio", required = false) String horaInicio,
             @RequestParam(value = "hora_fim", required = false) String horaFim) {
-        // Delegate to existing listarMovimentacoes with aggs=true to reuse
-        // the same filtering logic and ensure identical results.
-        return listarMovimentacoes(data, periodoInicio, periodoFim, from, to, null, Boolean.TRUE, tipo, metodoPagamento,
-                horaInicio, horaFim, null, null);
+        // Direct implementation with aggs=true to avoid self-invocation
+        try {
+            MovimentacoesFilterParams params = MovimentacoesFilterParams.builder()
+                    .data(data)
+                    .periodoInicio(periodoInicio)
+                    .periodoFim(periodoFim)
+                    .from(from)
+                    .to(to)
+                    .tipo(tipo)
+                    .metodoPagamento(metodoPagamento)
+                    .horaInicio(horaInicio)
+                    .horaFim(horaFim)
+                    .build();
+            return getMovimentacoesSummaryData(params);
+        } catch (Exception e) {
+            log.error("movimentacoesSummary: exception", e);
+            return ResponseEntity.status(500).body(java.util.Map.of(
+                    KEY_ERROR, "Falha ao obter resumo de movimentações",
+                    KEY_SUM_ENTRADAS, 0.0,
+                    KEY_SUM_RETIRADAS, 0.0,
+                    KEY_SUM_VENDAS, 0.0,
+                    KEY_TOTAL, 0));
+        }
+    }
+
+    private ResponseEntity<java.util.Map<String, Object>> getMovimentacoesSummaryData(
+            MovimentacoesFilterParams params) {
+        java.time.LocalDate dia = null;
+        java.time.LocalDate inicio = null;
+        java.time.LocalDate fim = null;
+        if (params.data != null && !params.data.isBlank()) {
+            dia = java.time.LocalDate.parse(params.data);
+        } else if (params.periodoInicio != null && params.periodoFim != null) {
+            inicio = java.time.LocalDate.parse(params.periodoInicio);
+            fim = java.time.LocalDate.parse(params.periodoFim);
+        }
+
+        java.util.List<java.util.Map<String, Object>> lista = new java.util.ArrayList<>();
+        var tIni = safeParseLocalTime(params.horaInicio);
+        var tFim = safeParseLocalTime(params.horaFim);
+
+        TimestampBounds bounds = calculateTimestampBounds(dia, inicio, fim, tIni, tFim, params.from, params.to);
+        java.time.OffsetDateTime fromTs = bounds.fromTs;
+        java.time.OffsetDateTime toTs = bounds.toTs;
+
+        if (fromTs != null || toTs != null) {
+            // Use existing timestamp-based queries with deduplication
+            java.util.Map<Object, java.util.Map<String, Object>> byId = new java.util.LinkedHashMap<>();
+
+            // Add movimentacoes
+            try {
+                var movs = movimentacaoRepository.findByPeriodoTimestamps(fromTs, toTs);
+                for (var m : movs) {
+                    java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
+                    row.put("id", m.getId());
+                    row.put("tipo", m.getTipo());
+                    row.put(KEY_VALOR, m.getValor());
+                    row.put(KEY_DESCRICAO, m.getDescricao());
+                    row.put(KEY_DATA_MOVIMENTO, m.getDataMovimento());
+                    row.put(KEY_METODO_PAGAMENTO, null); // Manual movements don't have payment method
+                    byId.put(m.getId(), row);
+                }
+            } catch (Exception e) {
+                log.warn("getMovimentacoesSummaryData: movs query failed", e);
+            }
+
+            // Add sale orders
+            try {
+                var orders = saleOrderRepository.findByPeriodoTimestampsRaw(fromTs, toTs);
+                for (var vo : orders) {
+                    for (var pg : vo.getPagamentos()) {
+                        java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
+                        String compositeId = vo.getId() + "|" + pg.getMetodo() + "|" + pg.getValor();
+                        row.put("id", vo.getId());
+                        row.put("tipo", TIPO_VENDA);
+                        row.put(KEY_VALOR, pg.getValor());
+                        row.put(KEY_METODO_PAGAMENTO, pg.getMetodo());
+                        row.put(KEY_DATA_MOVIMENTO, vo.getDataVenda());
+                        byId.put(compositeId, row);
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("getMovimentacoesSummaryData: orders query failed", e);
+            }
+
+            lista = new java.util.ArrayList<>(byId.values());
+        } else {
+            lista.addAll(buildManualMovRows(dia, inicio, fim));
+            lista.addAll(buildSaleOrderRows(dia, inicio, fim));
+        }
+
+        var filtrada = applyFilters(lista, params.tipo, params.metodoPagamento, tIni, tFim);
+
+        double sumEntradasAgg = filtrada.stream()
+                .filter(m -> TIPO_ENTRADA.equals(m.get("tipo")))
+                .mapToDouble(m -> ((Number) m.get(KEY_VALOR)).doubleValue())
+                .sum();
+        double sumRetiradasAgg = filtrada.stream()
+                .filter(m -> TIPO_RETIRADA.equals(m.get("tipo")))
+                .mapToDouble(m -> ((Number) m.get(KEY_VALOR)).doubleValue())
+                .sum();
+        double sumVendasAgg = filtrada.stream()
+                .filter(m -> TIPO_VENDA.equals(m.get("tipo")))
+                .mapToDouble(m -> ((Number) m.get(KEY_VALOR)).doubleValue())
+                .sum();
+
+        java.util.Map<String, Object> aggsMap = new java.util.LinkedHashMap<>();
+        aggsMap.put(KEY_SUM_ENTRADAS, sumEntradasAgg);
+        aggsMap.put(KEY_SUM_RETIRADAS, sumRetiradasAgg);
+        aggsMap.put(KEY_SUM_VENDAS, sumVendasAgg);
+        aggsMap.put(KEY_TOTAL, filtrada.size());
+        return ResponseEntity.ok(aggsMap);
+    }
+
+    private static class MovimentacoesFilterParams {
+        final String data;
+        final String periodoInicio;
+        final String periodoFim;
+        final String from;
+        final String to;
+        final String tipo;
+        final String metodoPagamento;
+        final String horaInicio;
+        final String horaFim;
+
+        private MovimentacoesFilterParams(Builder builder) {
+            this.data = builder.data;
+            this.periodoInicio = builder.periodoInicio;
+            this.periodoFim = builder.periodoFim;
+            this.from = builder.from;
+            this.to = builder.to;
+            this.tipo = builder.tipo;
+            this.metodoPagamento = builder.metodoPagamento;
+            this.horaInicio = builder.horaInicio;
+            this.horaFim = builder.horaFim;
+        }
+
+        static Builder builder() {
+            return new Builder();
+        }
+
+        static class Builder {
+            String data;
+            String periodoInicio;
+            String periodoFim;
+            String from;
+            String to;
+            String tipo;
+            String metodoPagamento;
+            String horaInicio;
+            String horaFim;
+
+            Builder data(String data) {
+                this.data = data;
+                return this;
+            }
+
+            Builder periodoInicio(String periodoInicio) {
+                this.periodoInicio = periodoInicio;
+                return this;
+            }
+
+            Builder periodoFim(String periodoFim) {
+                this.periodoFim = periodoFim;
+                return this;
+            }
+
+            Builder from(String from) {
+                this.from = from;
+                return this;
+            }
+
+            Builder to(String to) {
+                this.to = to;
+                return this;
+            }
+
+            Builder tipo(String tipo) {
+                this.tipo = tipo;
+                return this;
+            }
+
+            Builder metodoPagamento(String metodoPagamento) {
+                this.metodoPagamento = metodoPagamento;
+                return this;
+            }
+
+            Builder horaInicio(String horaInicio) {
+                this.horaInicio = horaInicio;
+                return this;
+            }
+
+            Builder horaFim(String horaFim) {
+                this.horaFim = horaFim;
+                return this;
+            }
+
+            MovimentacoesFilterParams build() {
+                return new MovimentacoesFilterParams(this);
+            }
+        }
     }
 
     @DeleteMapping("/sessoes/{id}")
@@ -1025,14 +1196,14 @@ public class CaixaController {
         if (userId == null)
             return ResponseEntity.status(401).body(Map.of(KEY_ERROR, MSG_NAO_AUTENTICADO));
         var u = userRepository.findById(userId).orElse(null);
-        if (u == null || u.getRole() == null || !u.getRole().equals("admin")) {
-            return ResponseEntity.status(403).body(Map.of(KEY_ERROR, "Permissão negada"));
+        if (u == null || u.getRole() == null || !u.getRole().equals(VALOR_ADMIN)) {
+            return ResponseEntity.status(403).body(Map.of(KEY_ERROR, MSG_PERMISSAO_NEGADA));
         }
         try {
             // Use pessimistic lock to avoid concurrent modifications
             var opt = caixaStatusRepository.findByIdForUpdate(id);
             if (opt.isEmpty())
-                return ResponseEntity.status(404).body(Map.of(KEY_ERROR, "Sessão não encontrada"));
+                return ResponseEntity.status(404).body(Map.of(KEY_ERROR, MSG_SESSAO_NAO_ENCONTRADA));
             var sess = opt.get();
             // para segurança, não permitir exclusão de sessão aberta
             if (Boolean.TRUE.equals(sess.getAberto()))
@@ -1083,7 +1254,7 @@ public class CaixaController {
         return base.stream().map(m -> {
             java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
             row.put("id", m.getId());
-            row.put("caixa_status_id", m.getCaixaStatus() != null ? m.getCaixaStatus().getId() : null);
+            row.put(KEY_CAIXA_STATUS_ID, m.getCaixaStatus() != null ? m.getCaixaStatus().getId() : null);
             row.put("tipo", m.getTipo());
             row.put(KEY_VALOR, m.getValor());
             row.put(KEY_DESCRICAO, m.getDescricao());
@@ -1094,6 +1265,7 @@ public class CaixaController {
                 if (m.getOperador() != null)
                     usuarioNome = m.getOperador().getUsername();
             } catch (Exception ignored) {
+                // Silently ignore errors accessing operator username
             }
             if (usuarioNome == null && m.getUsuario() != null) {
                 usuarioNome = m.getUsuario().getUsername();
@@ -1102,26 +1274,6 @@ public class CaixaController {
             row.put(KEY_DATA_MOVIMENTO, m.getDataMovimento());
             return row;
         }).toList();
-    }
-
-    private java.util.List<java.util.Map<String, Object>> buildSimpleSaleRows(java.time.LocalDate dia,
-            java.time.LocalDate inicio, java.time.LocalDate fim) {
-        // Legacy simple sales removed: return empty list to keep API stable
-        return java.util.List.of();
-    }
-
-    private CaixaStatus findSessionForTimestamp(java.time.OffsetDateTime dt) {
-        if (dt == null)
-            return null;
-        return caixaStatusRepository.findAll().stream().filter(s -> {
-            if (s.getDataAbertura() == null)
-                return false;
-            boolean afterOpen = !s.getDataAbertura().isAfter(dt); // s.dataAbertura <= dt
-            boolean beforeClose = s.getDataFechamento() == null || !s.getDataFechamento().isBefore(dt); // dt <=
-                                                                                                        // dataFechamento
-                                                                                                        // or open
-            return afterOpen && beforeClose;
-        }).findFirst().orElse(null);
     }
 
     private java.util.List<java.util.Map<String, Object>> buildSaleOrderRows(java.time.LocalDate dia,
@@ -1144,9 +1296,9 @@ public class CaixaController {
             // Valor da linha: valor do pagamento (para refletir entrada por método)
             row.put(KEY_VALOR, pg.getValor());
             // Guardar o valor parcial do método e total da venda
-            row.put("pagamento_valor", pg.getValor());
-            row.put("total_venda", vo.getTotalFinal());
-            var nf = java.text.NumberFormat.getCurrencyInstance(java.util.Locale.forLanguageTag("pt-BR"));
+            row.put(KEY_PAGAMENTO_VALOR, pg.getValor());
+            row.put(KEY_TOTAL_VENDA, vo.getTotalFinal());
+            var nf = java.text.NumberFormat.getCurrencyInstance(java.util.Locale.forLanguageTag(LOCALE_PT_BR));
             String totalFmt = nf.format(vo.getTotalFinal());
             boolean multi = vo.getPagamentos().size() > 1;
             if (multi) {
@@ -1160,19 +1312,19 @@ public class CaixaController {
                         .collect(java.util.stream.Collectors.joining(" | "));
                 row.put(KEY_DESCRICAO, LABEL_VENDA_MULTI_PREFIX + totalFmt + " - " + breakdown);
             } else {
-                String single = "Venda - total " + totalFmt + " (" + labelMetodoPagamento(pg.getMetodo()) + " "
+                String single = LABEL_VENDA_TOTAL + totalFmt + " (" + labelMetodoPagamento(pg.getMetodo()) + " "
                         + nf.format(pg.getValor()) + ")";
                 if (pg.getValor() != null && pg.getValor() < 0)
                     single += LABEL_DEVOLVIDO_SUFFIX;
                 row.put(KEY_DESCRICAO, single);
             }
-            row.put("produto_nome",
+            row.put(KEY_PRODUTO_NOME,
                     vo.getItens().isEmpty() ? null : vo.getItens().get(0).getProduto().getNome());
             row.put(KEY_METODO_PAGAMENTO, pg.getMetodo());
             // operador da venda (se disponível)
             row.put(KEY_USUARIO, vo.getOperador() != null ? vo.getOperador().getUsername() : null);
             row.put(KEY_DATA_MOVIMENTO, vo.getDataVenda());
-            row.put("caixa_status_id", vo.getCaixaStatus() != null ? vo.getCaixaStatus().getId() : null);
+            row.put(KEY_CAIXA_STATUS_ID, vo.getCaixaStatus() != null ? vo.getCaixaStatus().getId() : null);
             return row;
         })).toList();
     }
@@ -1217,7 +1369,7 @@ public class CaixaController {
                     // convert stored timestamp to America/Sao_Paulo local time to match UI input
                     java.time.LocalTime time;
                     try {
-                        time = odt.atZoneSameInstant(java.time.ZoneId.of("America/Sao_Paulo")).toLocalTime();
+                        time = odt.atZoneSameInstant(java.time.ZoneId.of(TIMEZONE_SAO_PAULO)).toLocalTime();
                     } catch (Exception ex) {
                         time = odt.toLocalTime();
                     }
@@ -1265,7 +1417,7 @@ public class CaixaController {
             var statusAtual = caixaStatusRepository.findTopByOrderByIdDesc().orElse(null);
             if (statusAtual == null || !Boolean.TRUE.equals(statusAtual.getAberto())) {
                 var u = userRepository.findById(userId).orElse(null);
-                if (u == null || u.getRole() == null || !u.getRole().equals("admin")) {
+                if (u == null || u.getRole() == null || !u.getRole().equals(VALOR_ADMIN)) {
                     return ResponseEntity.status(403)
                             .body(Map.of(KEY_ERROR, "Caixa fechado. Operação restrita ao administrador."));
                 }
@@ -1307,7 +1459,7 @@ public class CaixaController {
         // apenas usuários que podem controlar caixa (operador) ou admin podem abrir
         var opener = userRepository.findById(userId).orElse(null);
         if (opener == null || (!Boolean.TRUE.equals(opener.getPodeControlarCaixa())
-                && (opener.getRole() == null || !opener.getRole().equals("admin")))) {
+                && (opener.getRole() == null || !opener.getRole().equals(VALOR_ADMIN)))) {
             return ResponseEntity.status(403).body(Map.of(KEY_ERROR, "Permissão negada para abrir o caixa"));
         }
 
@@ -1337,17 +1489,17 @@ public class CaixaController {
         status.setCriadoEm(agora);
 
         // Ler payload JSON e exigir saldo_inicial
-        if (payload == null || !payload.containsKey("saldo_inicial") || payload.get("saldo_inicial") == null) {
+        if (payload == null || !payload.containsKey(KEY_SALDO_INICIAL) || payload.get(KEY_SALDO_INICIAL) == null) {
             return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, "saldo_inicial é obrigatório ao abrir o caixa"));
         }
         try {
-            Object v = payload.get("saldo_inicial");
-            if (v instanceof Number)
-                status.setSaldoInicial(((Number) v).doubleValue());
+            Object v = payload.get(KEY_SALDO_INICIAL);
+            if (v instanceof Number number)
+                status.setSaldoInicial(number.doubleValue());
             else
                 status.setSaldoInicial(Double.parseDouble(v.toString()));
-            if (payload.containsKey("terminal_id") && payload.get("terminal_id") != null) {
-                status.setTerminalId(payload.get("terminal_id").toString());
+            if (payload.containsKey(KEY_TERMINAL_ID) && payload.get(KEY_TERMINAL_ID) != null) {
+                status.setTerminalId(payload.get(KEY_TERMINAL_ID).toString());
             }
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, "saldo_inicial inválido"));
@@ -1362,12 +1514,12 @@ public class CaixaController {
         // retornar status completo para o frontend atualizar de forma consistente
         java.util.Map<String, Object> resp = new java.util.LinkedHashMap<>();
         resp.put("id", status.getId());
-        resp.put("aberto", Boolean.TRUE.equals(status.getAberto()));
-        resp.put("data_abertura", status.getDataAbertura());
-        resp.put("aberto_por", status.getAbertoPor() != null ? status.getAbertoPor().getId() : null);
+        resp.put(KEY_ABERTO, Boolean.TRUE.equals(status.getAberto()));
+        resp.put(KEY_DATA_ABERTURA, status.getDataAbertura());
+        resp.put(KEY_ABERTO_POR, status.getAbertoPor() != null ? status.getAbertoPor().getId() : null);
         resp.put("aberto_por_username", status.getAbertoPor() != null ? status.getAbertoPor().getUsername() : null);
-        resp.put("saldo_inicial", status.getSaldoInicial());
-        resp.put("terminal_id", status.getTerminalId());
+        resp.put(KEY_SALDO_INICIAL, status.getSaldoInicial());
+        resp.put(KEY_TERMINAL_ID, status.getTerminalId());
         return ResponseEntity.ok(resp);
     }
 
@@ -1382,7 +1534,7 @@ public class CaixaController {
         // admin podem fechar
         var closer = userRepository.findById(userId).orElse(null);
         if (closer == null || (!Boolean.TRUE.equals(closer.getPodeControlarCaixa())
-                && (closer.getRole() == null || !closer.getRole().equals("admin")))) {
+                && (closer.getRole() == null || !closer.getRole().equals(VALOR_ADMIN)))) {
             return ResponseEntity.status(403).body(Map.of(KEY_ERROR, "Permissão negada para fechar o caixa"));
         }
 
@@ -1392,7 +1544,7 @@ public class CaixaController {
         if (body != null && body.getSessionId() != null) {
             status = caixaStatusRepository.findByIdForUpdate(body.getSessionId()).orElse(null);
             if (status == null) {
-                return ResponseEntity.status(404).body(Map.of(KEY_ERROR, "Sessão não encontrada"));
+                return ResponseEntity.status(404).body(Map.of(KEY_ERROR, MSG_SESSAO_NAO_ENCONTRADA));
             }
             if (!Boolean.TRUE.equals(status.getAberto())) {
                 return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, "Sessão já está fechada"));
@@ -1413,6 +1565,7 @@ public class CaixaController {
             double esperado = calculateExpectedForSession(sessionFinal);
             sessionFinal.setSaldoEsperado(esperado);
         } catch (Exception ignored) {
+            // Expected: Calculation errors should not interrupt session closure
         }
 
         // validar body com saldoContado
@@ -1434,13 +1587,12 @@ public class CaixaController {
         // calcular e persistir cumulativos: variação acumulada e déficit não reposto
         try {
             var all = caixaStatusRepository.findAll().stream()
+                    .filter(s -> s.getId() != null)
                     .sorted(java.util.Comparator.comparing(CaixaStatus::getId)).toList();
             double running = 0.0;
             double totalPos = 0.0;
             double totalNeg = 0.0;
             for (var s : all) {
-                if (s.getId() == null)
-                    continue;
                 if (s.getId().equals(sessionFinal.getId())) {
                     // include current session's variacao
                     running += (sessionFinal.getVariacao() == null ? 0.0 : sessionFinal.getVariacao());
@@ -1465,19 +1617,20 @@ public class CaixaController {
             double deficit = Math.max(0.0, totalNeg - totalPos);
             sessionFinal.setDeficitNaoRepostoAcumulada(deficit);
         } catch (Exception ignored) {
+            // Expected: Cumulative calculation errors should not interrupt session closure
         }
 
         caixaStatusRepository.save(sessionFinal);
         java.util.Map<String, Object> resp = new java.util.LinkedHashMap<>();
         resp.put("id", sessionFinal.getId());
-        resp.put("aberto", Boolean.TRUE.equals(sessionFinal.getAberto()));
-        resp.put("data_fechamento", sessionFinal.getDataFechamento());
-        resp.put("fechado_por", sessionFinal.getFechadoPor() != null ? sessionFinal.getFechadoPor().getId() : null);
+        resp.put(KEY_ABERTO, Boolean.TRUE.equals(sessionFinal.getAberto()));
+        resp.put(KEY_DATA_FECHAMENTO, sessionFinal.getDataFechamento());
+        resp.put(KEY_FECHADO_POR, sessionFinal.getFechadoPor() != null ? sessionFinal.getFechadoPor().getId() : null);
         resp.put("fechado_por_username",
                 sessionFinal.getFechadoPor() != null ? sessionFinal.getFechadoPor().getUsername() : null);
-        resp.put("saldo_esperado", sessionFinal.getSaldoEsperado());
-        resp.put("saldo_contado", sessionFinal.getSaldoContado());
-        resp.put("variacao", sessionFinal.getVariacao());
+        resp.put(KEY_SALDO_ESPERADO, sessionFinal.getSaldoEsperado());
+        resp.put(KEY_SALDO_CONTADO, sessionFinal.getSaldoContado());
+        resp.put(KEY_VARIACAO, sessionFinal.getVariacao());
         resp.put("observacoes", sessionFinal.getObservacoesFechamento());
         return ResponseEntity.ok(resp);
     }
@@ -1490,8 +1643,8 @@ public class CaixaController {
         if (userId == null)
             return ResponseEntity.status(401).body(Map.of(KEY_ERROR, MSG_NAO_AUTENTICADO));
         var u = userRepository.findById(userId).orElse(null);
-        if (u == null || u.getRole() == null || !u.getRole().equals("admin")) {
-            return ResponseEntity.status(403).body(Map.of(KEY_ERROR, "Permissão negada"));
+        if (u == null || u.getRole() == null || !u.getRole().equals(VALOR_ADMIN)) {
+            return ResponseEntity.status(403).body(Map.of(KEY_ERROR, MSG_PERMISSAO_NEGADA));
         }
         var statusOpt = caixaStatusRepository.findTopByOrderByIdDesc();
         var agora = OffsetDateTime.now();
@@ -1511,116 +1664,25 @@ public class CaixaController {
         try {
             var statusOpt = caixaStatusRepository.findById(sessionId);
             if (statusOpt.isEmpty()) {
-                return ResponseEntity.status(404).body(Map.of(KEY_ERROR, "Sessão não encontrada"));
+                return ResponseEntity.status(404).body(Map.of(KEY_ERROR, MSG_SESSAO_NAO_ENCONTRADA));
             }
             var status = statusOpt.get();
-            java.util.Map<String, Object> resp = new java.util.LinkedHashMap<>();
-            resp.put("id", status.getId());
-            resp.put("aberto", Boolean.TRUE.equals(status.getAberto()));
-            resp.put("data_abertura", status.getDataAbertura());
-            resp.put("data_fechamento", status.getDataFechamento());
-            resp.put("saldo_inicial", status.getSaldoInicial());
 
-            // Movimentações vinculadas à sessão
-            java.util.List<java.util.Map<String, Object>> movs = movimentacaoRepository.findAllOrderByData().stream()
-                    .filter(m -> m.getCaixaStatus() != null && status.getId().equals(m.getCaixaStatus().getId()))
-                    .map(m -> {
-                        java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
-                        row.put("id", m.getId());
-                        row.put("tipo", m.getTipo());
-                        row.put("valor", m.getValor());
-                        row.put("descricao", m.getDescricao());
-                        row.put("usuario", m.getUsuario() != null ? m.getUsuario().getUsername() : null);
-                        row.put("data_movimento", m.getDataMovimento());
-                        return row;
-                    }).toList();
+            java.util.Map<String, Object> resp = buildBasicSessionInfo(status);
+
+            // Add movimentações data
+            java.util.List<java.util.Map<String, Object>> movs = buildSessionMovimentacoes(status);
             resp.put("movimentacoes", movs);
 
-            // Vendas vinculadas à sessão (novo modelo)
-            var orders = saleOrderRepository.findAllOrderByData().stream()
-                    .filter(o -> o.getCaixaStatus() != null && status.getId().equals(o.getCaixaStatus().getId()))
-                    .toList();
-            java.util.List<java.util.Map<String, Object>> vendas = orders.stream().map(o -> {
-                java.util.Map<String, Object> r = new java.util.LinkedHashMap<>();
-                r.put("id", o.getId());
-                r.put("data_venda", o.getDataVenda());
-                r.put("total_final", o.getTotalFinal());
-                r.put("operador", o.getOperador() != null ? o.getOperador().getUsername() : null);
-                r.put("itens", o.getItens().stream().map(it -> {
-                    var im = new java.util.LinkedHashMap<String, Object>();
-                    im.put("produto_id", it.getProduto() != null ? it.getProduto().getId() : null);
-                    im.put("produto_nome", it.getProduto() != null ? it.getProduto().getNome() : null);
-                    im.put("quantidade", it.getQuantidade());
-                    im.put("preco_unitario", it.getPrecoUnitario());
-                    im.put("preco_total", it.getPrecoTotal());
-                    return im;
-                }).toList());
-                r.put("pagamentos", o.getPagamentos().stream().map(p -> {
-                    var pm = new java.util.LinkedHashMap<String, Object>();
-                    pm.put("metodo", p.getMetodo());
-                    pm.put("valor", p.getValor());
-                    return pm;
-                }).toList());
-                return r;
-            }).toList();
+            // Add vendas data
+            var orders = getSessionOrders(status);
+            java.util.List<java.util.Map<String, Object>> vendas = buildSessionVendas(orders);
             resp.put("vendas", vendas);
 
-            // Totais por método de pagamento
-            java.util.Map<String, Double> totalsByMetodo = new java.util.LinkedHashMap<>();
-            orders.stream().flatMap(o -> o.getPagamentos().stream()).forEach(p -> {
-                totalsByMetodo.putIfAbsent(p.getMetodo(), 0.0);
-                totalsByMetodo.put(p.getMetodo(),
-                        totalsByMetodo.get(p.getMetodo()) + (p.getValor() == null ? 0.0 : p.getValor()));
-            });
-            double totalEntradas = movs.stream().filter(m -> "entrada".equals(m.get("tipo")))
-                    .mapToDouble(m -> ((Number) m.get("valor")).doubleValue()).sum();
-            double totalRetiradas = movs.stream().filter(m -> "retirada".equals(m.get("tipo")))
-                    .mapToDouble(m -> ((Number) m.get("valor")).doubleValue()).sum();
-            resp.put("totals_by_metodo", totalsByMetodo);
-            resp.put("sum_entradas", totalEntradas);
-            resp.put("sum_retiradas", totalRetiradas);
-
-            // --- métricas históricas ---
-            try {
-                java.util.Map<String, Double> historicalMetrics = computeHistoricalMetrics(status);
-                resp.put("cumulative_variacao_before", historicalMetrics.get("cumulative_before"));
-                resp.put("total_variacoes_positivas_before", 0.0); // Not directly available from historical metrics
-                resp.put("total_variacoes_negativas_before", 0.0); // Not directly available from historical metrics
-                resp.put("deficit_nao_reposto_before", 0.0); // Not directly available from historical metrics
-
-                resp.put("cumulative_variacao_all", historicalMetrics.get("cumulative_all"));
-                resp.put("total_variacoes_positivas_all", 0.0); // Not directly available from historical metrics
-                resp.put("total_variacoes_negativas_all", 0.0); // Not directly available from historical metrics
-                resp.put("deficit_nao_reposto_all", 0.0); // Not directly available from historical metrics
-
-                // métricas do dia da sessão (somar todas as sessões do mesmo dia)
-                final java.time.LocalDate sessionDay = status.getDataAbertura() != null
-                        ? status.getDataAbertura().toLocalDate()
-                        : (status.getDataFechamento() != null ? status.getDataFechamento().toLocalDate() : null);
-                if (sessionDay != null) {
-                    double dayVariacao = caixaStatusRepository.findAll().stream()
-                            .filter(s -> (s.getDataAbertura() != null
-                                    && s.getDataAbertura().toLocalDate().equals(sessionDay))
-                                    || (s.getDataFechamento() != null
-                                            && s.getDataFechamento().toLocalDate().equals(sessionDay)))
-                            .mapToDouble(s -> s.getVariacao() == null ? 0.0 : s.getVariacao())
-                            .sum();
-                    double daySaldoInicial = caixaStatusRepository.findAll().stream()
-                            .filter(s -> (s.getDataAbertura() != null
-                                    && s.getDataAbertura().toLocalDate().equals(sessionDay))
-                                    || (s.getDataFechamento() != null
-                                            && s.getDataFechamento().toLocalDate().equals(sessionDay)))
-                            .mapToDouble(s -> s.getSaldoInicial() == null ? 0.0 : s.getSaldoInicial())
-                            .sum();
-                    resp.put("day_variacao_total", dayVariacao);
-                    resp.put("day_saldo_inicial_total", daySaldoInicial);
-                }
-            } catch (Exception ignored) {
-            }
-
-            resp.put("saldo_esperado", status.getSaldoEsperado());
-            resp.put("saldo_contado", status.getSaldoContado());
-            resp.put("variacao", status.getVariacao());
+            // Add totals and metrics
+            addSessionTotals(resp, movs, orders);
+            addHistoricalMetricsSafely(status, resp);
+            addFinalSessionData(resp, status);
 
             return ResponseEntity.ok(resp);
         } catch (Exception e) {
@@ -1628,23 +1690,220 @@ public class CaixaController {
         }
     }
 
+    private java.util.Map<String, Object> buildBasicSessionInfo(CaixaStatus status) {
+        java.util.Map<String, Object> resp = new java.util.LinkedHashMap<>();
+        resp.put("id", status.getId());
+        resp.put(KEY_ABERTO, Boolean.TRUE.equals(status.getAberto()));
+        resp.put(KEY_DATA_ABERTURA, status.getDataAbertura());
+        resp.put(KEY_DATA_FECHAMENTO, status.getDataFechamento());
+        resp.put(KEY_SALDO_INICIAL, status.getSaldoInicial());
+        return resp;
+    }
+
+    private java.util.List<java.util.Map<String, Object>> buildSessionMovimentacoes(CaixaStatus status) {
+        return movimentacaoRepository.findAllOrderByData().stream()
+                .filter(m -> m.getCaixaStatus() != null && status.getId().equals(m.getCaixaStatus().getId()))
+                .map(m -> {
+                    java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
+                    row.put("id", m.getId());
+                    row.put("tipo", m.getTipo());
+                    row.put(KEY_VALOR, m.getValor());
+                    row.put(KEY_DESCRICAO, m.getDescricao());
+                    row.put(KEY_USUARIO, m.getUsuario() != null ? m.getUsuario().getUsername() : null);
+                    row.put(KEY_DATA_MOVIMENTO, m.getDataMovimento());
+                    return row;
+                }).toList();
+    }
+
+    private java.util.List<com.example.backendspring.sale.SaleOrder> getSessionOrders(CaixaStatus status) {
+        return saleOrderRepository.findAllOrderByData().stream()
+                .filter(o -> o.getCaixaStatus() != null && status.getId().equals(o.getCaixaStatus().getId()))
+                .toList();
+    }
+
+    private java.util.List<java.util.Map<String, Object>> buildSessionVendas(
+            java.util.List<com.example.backendspring.sale.SaleOrder> orders) {
+        return orders.stream().map(o -> {
+            java.util.Map<String, Object> r = new java.util.LinkedHashMap<>();
+            r.put("id", o.getId());
+            r.put("data_venda", o.getDataVenda());
+            r.put("total_final", o.getTotalFinal());
+            r.put("operador", o.getOperador() != null ? o.getOperador().getUsername() : null);
+            r.put("itens", o.getItens().stream().map(it -> {
+                var im = new java.util.LinkedHashMap<String, Object>();
+                im.put("produto_id", it.getProduto() != null ? it.getProduto().getId() : null);
+                im.put(KEY_PRODUTO_NOME, it.getProduto() != null ? it.getProduto().getNome() : null);
+                im.put("quantidade", it.getQuantidade());
+                im.put("preco_unitario", it.getPrecoUnitario());
+                im.put("preco_total", it.getPrecoTotal());
+                return im;
+            }).toList());
+            r.put("pagamentos", o.getPagamentos().stream().map(p -> {
+                var pm = new java.util.LinkedHashMap<String, Object>();
+                pm.put("metodo", p.getMetodo());
+                pm.put(KEY_VALOR, p.getValor());
+                return pm;
+            }).toList());
+            return r;
+        }).toList();
+    }
+
+    private void addSessionTotals(java.util.Map<String, Object> resp,
+            java.util.List<java.util.Map<String, Object>> movs,
+            java.util.List<com.example.backendspring.sale.SaleOrder> orders) {
+        // Totals by payment method
+        java.util.Map<String, Double> totalsByMetodo = new java.util.LinkedHashMap<>();
+        orders.stream().flatMap(o -> o.getPagamentos().stream()).forEach(p -> {
+            totalsByMetodo.putIfAbsent(p.getMetodo(), 0.0);
+            totalsByMetodo.put(p.getMetodo(),
+                    totalsByMetodo.get(p.getMetodo()) + (p.getValor() == null ? 0.0 : p.getValor()));
+        });
+
+        double totalEntradas = movs.stream().filter(m -> TIPO_ENTRADA.equals(m.get("tipo")))
+                .mapToDouble(m -> ((Number) m.get(KEY_VALOR)).doubleValue()).sum();
+        double totalRetiradas = movs.stream().filter(m -> TIPO_RETIRADA.equals(m.get("tipo")))
+                .mapToDouble(m -> ((Number) m.get(KEY_VALOR)).doubleValue()).sum();
+
+        resp.put("totals_by_metodo", totalsByMetodo);
+        resp.put(KEY_SUM_ENTRADAS, totalEntradas);
+        resp.put(KEY_SUM_RETIRADAS, totalRetiradas);
+    }
+
+    private void addFinalSessionData(java.util.Map<String, Object> resp, CaixaStatus status) {
+        resp.put(KEY_SALDO_ESPERADO, status.getSaldoEsperado());
+        resp.put(KEY_SALDO_CONTADO, status.getSaldoContado());
+        resp.put(KEY_VARIACAO, status.getVariacao());
+    }
+
+    private void logRepositoryCountsForDebug(Boolean all, java.time.LocalDate dia, 
+                                           java.time.LocalDate inicio, java.time.LocalDate fim, 
+                                           String from, String to) {
+        try {
+            if (Boolean.TRUE.equals(all)) {
+                if (dia != null) {
+                    var movsDia = movimentacaoRepository.findByDia(dia);
+                    var ordersDia = saleOrderRepository.findByDia(dia);
+                    log.info("listarMovimentacoes[ALL]: dia={} movs={} orders={}", dia,
+                            (movsDia instanceof java.util.Collection ? ((java.util.Collection<?>) movsDia).size()
+                                    : -1),
+                            (ordersDia instanceof java.util.Collection
+                                    ? ((java.util.Collection<?>) ordersDia).size()
+                                    : -1));
+                } else if (inicio != null && fim != null) {
+                    var movsPer = movimentacaoRepository.findByPeriodo(inicio, fim);
+                    var ordersPer = saleOrderRepository.findByPeriodo(inicio, fim);
+                    log.info("listarMovimentacoes[ALL]: periodo {}..{} movs={} orders={}", inicio, fim,
+                            (movsPer instanceof java.util.Collection ? ((java.util.Collection<?>) movsPer).size()
+                                    : -1),
+                            (ordersPer instanceof java.util.Collection
+                                    ? ((java.util.Collection<?>) ordersPer).size()
+                                    : -1));
+                } else if (from != null || to != null) {
+                    log.info("listarMovimentacoes[ALL]: raw from/to params provided from={} to={}", from, to);
+                }
+            }
+        } catch (Exception ex) {
+            log.warn("listarMovimentacoes[ALL]: debug counts failed", ex);
+        }
+    }
+
+    private String extractUsuarioNome(CaixaMovimentacao m) {
+        try {
+            if (m.getOperador() != null)
+                return m.getOperador().getUsername();
+        } catch (Exception ignored) {
+            // Silently ignore errors accessing operator username
+        }
+        if (m.getUsuario() != null) {
+            return m.getUsuario().getUsername();
+        }
+        return null;
+    }
+
     /**
-     * Calcula o saldo esperado para uma sessão: saldo_inicial + (entradas -
-     * retiradas vinculadas)
-     * + pagamentos em dinheiro das vendas vinculadas.
+     * Calculates and adds historical metrics to the response map.
+     */
+    private void addHistoricalMetricsToResponse(CaixaStatus status, java.util.Map<String, Object> resp) {
+        java.util.Map<String, Double> historicalMetrics = computeHistoricalMetrics(status);
+        resp.put(KEY_CUMULATIVE_VARIACAO_BEFORE, historicalMetrics.get("cumulative_before"));
+        resp.put("total_variacoes_positivas_before", 0.0); // Not directly available from historical metrics
+        resp.put("total_variacoes_negativas_before", 0.0); // Not directly available from historical metrics
+        resp.put("deficit_nao_reposto_before", 0.0); // Not directly available from historical metrics
+
+        resp.put(KEY_CUMULATIVE_VARIACAO_ALL, historicalMetrics.get("cumulative_all"));
+        resp.put("total_variacoes_positivas_all", 0.0); // Not directly available from historical metrics
+        resp.put("total_variacoes_negativas_all", 0.0); // Not directly available from historical metrics
+        resp.put("deficit_nao_reposto_all", 0.0); // Not directly available from historical metrics
+
+        addDailySessionMetrics(status, resp);
+    }
+
+    /**
+     * Safely adds historical metrics to the response, catching any computation
+     * errors.
+     */
+    private void addHistoricalMetricsSafely(CaixaStatus status, java.util.Map<String, Object> resp) {
+        try {
+            addHistoricalMetricsToResponse(status, resp);
+        } catch (Exception ignored) {
+            // Expected: Historical metrics computation errors should not interrupt report
+            // generation
+        }
+    }
+
+    /**
+     * Calculates and adds daily session metrics to the response.
+     */
+    private void addDailySessionMetrics(CaixaStatus status, java.util.Map<String, Object> resp) {
+        final java.time.LocalDate sessionDay;
+        if (status.getDataAbertura() != null) {
+            sessionDay = status.getDataAbertura().toLocalDate();
+        } else if (status.getDataFechamento() != null) {
+            sessionDay = status.getDataFechamento().toLocalDate();
+        } else {
+            sessionDay = null;
+        }
+
+        if (sessionDay != null) {
+            double dayVariacao = caixaStatusRepository.findAll().stream()
+                    .filter(s -> isSessionOnDay(s, sessionDay))
+                    .mapToDouble(s -> s.getVariacao() == null ? 0.0 : s.getVariacao())
+                    .sum();
+            double daySaldoInicial = caixaStatusRepository.findAll().stream()
+                    .filter(s -> isSessionOnDay(s, sessionDay))
+                    .mapToDouble(s -> s.getSaldoInicial() == null ? 0.0 : s.getSaldoInicial())
+                    .sum();
+            resp.put(KEY_DAY_VARIACAO_TOTAL, dayVariacao);
+            resp.put(KEY_DAY_SALDO_INICIAL_TOTAL, daySaldoInicial);
+        }
+    }
+
+    /**
+     * Checks if a CaixaStatus session occurred on the specified day.
+     */
+    private boolean isSessionOnDay(CaixaStatus s, java.time.LocalDate sessionDay) {
+        return (s.getDataAbertura() != null && s.getDataAbertura().toLocalDate().equals(sessionDay))
+                || (s.getDataFechamento() != null && s.getDataFechamento().toLocalDate().equals(sessionDay));
+    }
+
+    /**
+     * Calculates the expected balance for a session.
      */
     private double calculateExpectedForSession(CaixaStatus sess) {
-        var agora = java.time.OffsetDateTime.now();
         final Long sessionId = sess.getId();
         double movimentacoesSessao = 0.0;
         try {
             movimentacoesSessao = movimentacaoRepository.findAllOrderByData().stream()
                     .filter(m -> m.getCaixaStatus() != null && sessionId != null
                             && sessionId.equals(m.getCaixaStatus().getId()))
-                    .mapToDouble(m -> TIPO_ENTRADA.equals(m.getTipo()) ? (m.getValor() == null ? 0.0 : m.getValor())
-                            : -(m.getValor() == null ? 0.0 : m.getValor()))
+                    .mapToDouble(m -> {
+                        double valor = m.getValor() == null ? 0.0 : m.getValor();
+                        return TIPO_ENTRADA.equals(m.getTipo()) ? valor : -valor;
+                    })
                     .sum();
         } catch (Exception ignored) {
+            // Expected: Database or processing errors should not interrupt session
+            // calculation
         }
 
         // Caixa saldo deve ser calculado a partir das movimentações registradas
@@ -1671,6 +1930,7 @@ public class CaixaController {
             m.put("cumulative_before", beforeSum);
             m.put("cumulative_all", allSum);
         } catch (Exception ignored) {
+            // Expected: Database or computation errors should return empty metrics
         }
         return m;
     }
@@ -1704,8 +1964,8 @@ public class CaixaController {
         if (userId == null)
             return ResponseEntity.status(401).body(Map.of(KEY_ERROR, MSG_NAO_AUTENTICADO));
         var u = userRepository.findById(userId).orElse(null);
-        if (u == null || u.getRole() == null || !u.getRole().equals("admin")) {
-            return ResponseEntity.status(403).body(Map.of(KEY_ERROR, "Permissão negada"));
+        if (u == null || u.getRole() == null || !u.getRole().equals(VALOR_ADMIN)) {
+            return ResponseEntity.status(403).body(Map.of(KEY_ERROR, MSG_PERMISSAO_NEGADA));
         }
         try {
             var movOpt = movimentacaoRepository.findById(id);
@@ -1730,13 +1990,13 @@ public class CaixaController {
         if (userId == null)
             return ResponseEntity.status(401).body(Map.of(KEY_ERROR, MSG_NAO_AUTENTICADO));
         var u = userRepository.findById(userId).orElse(null);
-        if (u == null || u.getRole() == null || !u.getRole().equals("admin")) {
-            return ResponseEntity.status(403).body(Map.of(KEY_ERROR, "Permissão negada"));
+        if (u == null || u.getRole() == null || !u.getRole().equals(VALOR_ADMIN)) {
+            return ResponseEntity.status(403).body(Map.of(KEY_ERROR, MSG_PERMISSAO_NEGADA));
         }
         try {
             var opt = caixaStatusRepository.findById(id);
             if (opt.isEmpty())
-                return ResponseEntity.status(404).body(Map.of(KEY_ERROR, "Sessão não encontrada"));
+                return ResponseEntity.status(404).body(Map.of(KEY_ERROR, MSG_SESSAO_NAO_ENCONTRADA));
             var sess = opt.get();
             if (Boolean.TRUE.equals(sess.getAberto()))
                 return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, "Não é possível excluir sessão aberta"));
@@ -1773,6 +2033,279 @@ public class CaixaController {
         } catch (Exception e) {
             log.error("forceDeleteSessao: exception deleting {}", id, e);
             return ResponseEntity.status(500).body(Map.of(KEY_ERROR, "Falha ao excluir sessão: " + e.getMessage()));
+        }
+    }
+
+    // Helper methods for reducing method complexity
+
+    /**
+     * Calculates timestamp bounds based on date parameters and time range.
+     * Returns TimestampBounds with fromTs and toTs properly configured.
+     */
+    private TimestampBounds calculateTimestampBounds(java.time.LocalDate dia,
+            java.time.LocalDate inicio,
+            java.time.LocalDate fim,
+            java.time.LocalTime tIni,
+            java.time.LocalTime tFim,
+            String from,
+            String to) {
+        java.time.OffsetDateTime fromTs = parseTimestampSafely(from);
+        java.time.OffsetDateTime toTs = parseTimestampSafely(to);
+
+        // If the client provided a date/period plus hora_inicio/hora_fim, build
+        // precise fromTs/toTs in America/Sao_Paulo to avoid timezone mismatches
+        try {
+            TimestampBounds bounds = calculateDateBasedBounds(dia, inicio, fim, tIni, tFim);
+            fromTs = bounds.fromTs != null ? bounds.fromTs : fromTs;
+            toTs = bounds.toTs != null ? bounds.toTs : toTs;
+
+            // Log computed OffsetDateTime bounds for debugging timezone issues
+            if (fromTs != null || toTs != null) {
+                log.debug("calculateTimestampBounds: computed fromTs={} toTs={}", fromTs, toTs);
+            }
+        } catch (Exception ignored) {
+            // Ignore timezone conversion errors
+        }
+
+        return new TimestampBounds(fromTs, toTs);
+    }
+
+    /**
+     * Calculates timestamp bounds based on date ranges and time constraints.
+     */
+    private TimestampBounds calculateDateBasedBounds(java.time.LocalDate dia,
+            java.time.LocalDate inicio,
+            java.time.LocalDate fim,
+            java.time.LocalTime tIni,
+            java.time.LocalTime tFim) {
+        java.time.ZoneId sp = java.time.ZoneId.of(TIMEZONE_SAO_PAULO);
+        java.time.OffsetDateTime fromTs = null;
+        java.time.OffsetDateTime toTs = null;
+
+        if (dia != null) {
+            TimestampBounds dayBounds = calculateSingleDayBounds(dia, tIni, tFim, sp);
+            fromTs = dayBounds.fromTs;
+            toTs = dayBounds.toTs;
+        } else if (inicio != null && fim != null) {
+            TimestampBounds rangeBounds = calculateDateRangeBounds(inicio, fim, tIni, tFim, sp);
+            fromTs = rangeBounds.fromTs;
+            toTs = rangeBounds.toTs;
+        }
+
+        return new TimestampBounds(fromTs, toTs);
+    }
+
+    /**
+     * Calculates bounds for a single day with optional time constraints.
+     */
+    private TimestampBounds calculateSingleDayBounds(java.time.LocalDate dia,
+            java.time.LocalTime tIni,
+            java.time.LocalTime tFim,
+            java.time.ZoneId sp) {
+        java.time.OffsetDateTime fromTs = null;
+        java.time.OffsetDateTime toTs = null;
+
+        if (tIni == null && tFim == null) {
+            var zdtFrom = java.time.ZonedDateTime.of(dia, java.time.LocalTime.MIDNIGHT, sp);
+            var zdtTo = java.time.ZonedDateTime.of(dia.plusDays(1), java.time.LocalTime.MIDNIGHT, sp).minusNanos(1);
+            fromTs = zdtFrom.toOffsetDateTime();
+            toTs = zdtTo.toOffsetDateTime();
+        } else {
+            if (tIni != null) {
+                var zdt = java.time.ZonedDateTime.of(dia, tIni, sp);
+                fromTs = zdt.toOffsetDateTime();
+            }
+            if (tFim != null) {
+                var zdt2 = java.time.ZonedDateTime.of(dia, tFim, sp);
+                toTs = zdt2.toOffsetDateTime();
+            }
+        }
+
+        return new TimestampBounds(fromTs, toTs);
+    }
+
+    /**
+     * Calculates bounds for a date range with optional time constraints.
+     */
+    private TimestampBounds calculateDateRangeBounds(java.time.LocalDate inicio,
+            java.time.LocalDate fim,
+            java.time.LocalTime tIni,
+            java.time.LocalTime tFim,
+            java.time.ZoneId sp) {
+        java.time.OffsetDateTime fromTs = null;
+        java.time.OffsetDateTime toTs = null;
+
+        if (tIni == null && tFim == null) {
+            var zdtFrom = java.time.ZonedDateTime.of(inicio, java.time.LocalTime.MIDNIGHT, sp);
+            var zdtTo = java.time.ZonedDateTime.of(fim.plusDays(1), java.time.LocalTime.MIDNIGHT, sp).minusNanos(1);
+            fromTs = zdtFrom.toOffsetDateTime();
+            toTs = zdtTo.toOffsetDateTime();
+        } else {
+            if (tIni != null) {
+                var zdt = java.time.ZonedDateTime.of(inicio, tIni, sp);
+                fromTs = zdt.toOffsetDateTime();
+            }
+            if (tFim != null) {
+                var zdt2 = java.time.ZonedDateTime.of(fim, tFim, sp);
+                toTs = zdt2.toOffsetDateTime();
+            }
+        }
+
+        return new TimestampBounds(fromTs, toTs);
+    }
+
+    /**
+     * Safely parses a timestamp string, returning null if parsing fails.
+     */
+    private java.time.OffsetDateTime parseTimestampSafely(String timestamp) {
+        if (timestamp == null || timestamp.isBlank()) {
+            return null;
+        }
+        try {
+            return java.time.OffsetDateTime.parse(timestamp);
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    /**
+     * Simple data class to hold timestamp bounds.
+     */
+    private static class TimestampBounds {
+        final java.time.OffsetDateTime fromTs;
+        final java.time.OffsetDateTime toTs;
+
+        TimestampBounds(java.time.OffsetDateTime fromTs, java.time.OffsetDateTime toTs) {
+            this.fromTs = fromTs;
+            this.toTs = toTs;
+        }
+    }
+
+    /**
+     * Helper method to call listarMovimentacoes logic without @Transactional
+     * annotation. This avoids self-invocation issues with Spring proxies.
+     */
+    private ResponseEntity<java.util.Map<String, Object>> getMovimentacoesDirectly(
+            MovimentacoesQueryParams params) {
+        // This implementation intentionally avoids the @Transactional annotation
+        // to prevent Spring proxy self-invocation issues
+        return executeMovimentacoesQuery(params);
+    }
+
+    /**
+     * Non-transactional implementation of movimentacoes listing logic.
+     * This method contains the core business logic without transactional
+     * boundaries.
+     */
+    private ResponseEntity<java.util.Map<String, Object>> executeMovimentacoesQuery(
+            MovimentacoesQueryParams params) {
+        try {
+            java.time.LocalDate dia = null;
+            java.time.LocalDate inicio = null;
+            java.time.LocalDate fim = null;
+
+            // Parse date parameters from the simplified parameter object
+            if (params.periodoInicio != null && params.periodoFim != null) {
+                inicio = java.time.LocalDate.parse(params.periodoInicio);
+                fim = java.time.LocalDate.parse(params.periodoFim);
+            }
+
+            java.util.List<java.util.Map<String, Object>> lista = new java.util.ArrayList<>();
+
+            // Build data using simplified logic for this parameter object
+            lista.addAll(buildManualMovRows(dia, inicio, fim));
+            lista.addAll(buildSaleOrderRows(dia, inicio, fim));
+
+            lista = sortByDataMovimentoDesc(lista);
+            // Since we removed tipo/metodoPagamento from params, pass null for these
+            // filters
+            var filtrada = applyFilters(lista, null, null, null, null);
+
+            int pageNum = (params.page == null || params.page < 1) ? 1 : params.page;
+            int pageSize = (params.size == null || params.size < 1) ? 20 : params.size;
+            int fromIndex = (pageNum - 1) * pageSize;
+
+            if (fromIndex >= filtrada.size()) {
+                return ResponseEntity.ok(java.util.Map.of(
+                        KEY_ITEMS, java.util.List.of(),
+                        KEY_TOTAL, filtrada.size(),
+                        KEY_HAS_NEXT, false,
+                        KEY_PAGE, pageNum,
+                        KEY_SIZE, pageSize));
+            }
+
+            int toIndex = Math.min(fromIndex + pageSize, filtrada.size());
+            var paged = filtrada.subList(fromIndex, toIndex);
+            boolean hasNext = toIndex < filtrada.size();
+
+            java.util.Map<String, Object> body = new java.util.LinkedHashMap<>();
+            body.put(KEY_ITEMS, paged);
+            body.put(KEY_TOTAL, filtrada.size());
+            body.put(KEY_HAS_NEXT, hasNext);
+            body.put(KEY_PAGE, pageNum);
+            body.put(KEY_SIZE, pageSize);
+            return ResponseEntity.ok(body);
+        } catch (Exception e) {
+            log.error("executeMovimentacoesQuery: failed to execute query", e);
+            return ResponseEntity.status(500).body(java.util.Map.of(
+                    KEY_ERROR, "Falha ao executar consulta de movimentações",
+                    KEY_ITEMS, java.util.List.of(),
+                    KEY_TOTAL, 0,
+                    KEY_HAS_NEXT, false,
+                    KEY_PAGE, 1,
+                    KEY_SIZE, 20));
+        }
+    }
+
+    /**
+     * Parameter object for movimentacoes queries to reduce method parameter count
+     */
+    private static class MovimentacoesQueryParams {
+        final String periodoInicio;
+        final String periodoFim;
+        final Integer page;
+        final Integer size;
+
+        private MovimentacoesQueryParams(Builder builder) {
+            this.periodoInicio = builder.periodoInicio;
+            this.periodoFim = builder.periodoFim;
+            this.page = builder.page;
+            this.size = builder.size;
+        }
+
+        static Builder builder() {
+            return new Builder();
+        }
+
+        static class Builder {
+            String periodoInicio;
+            String periodoFim;
+            Integer page;
+            Integer size;
+
+            Builder periodoInicio(String periodoInicio) {
+                this.periodoInicio = periodoInicio;
+                return this;
+            }
+
+            Builder periodoFim(String periodoFim) {
+                this.periodoFim = periodoFim;
+                return this;
+            }
+
+            Builder page(Integer page) {
+                this.page = page;
+                return this;
+            }
+
+            Builder size(Integer size) {
+                this.size = size;
+                return this;
+            }
+
+            MovimentacoesQueryParams build() {
+                return new MovimentacoesQueryParams(this);
+            }
         }
     }
 

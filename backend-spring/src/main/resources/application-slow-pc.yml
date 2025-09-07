@@ -1,0 +1,62 @@
+# Configuração específica para PCs lentos
+spring:
+  datasource:
+    hikari:
+      # Configurações conservadoras para PCs lentos
+      connection-timeout: 90000 # 90 segundos para conectar
+      validation-timeout: 30000 # 30 segundos para validar conexão
+      idle-timeout: 900000 # 15 minutos idle
+      max-lifetime: 1800000 # 30 minutos max lifetime
+      minimum-idle: 1 # Mínimo de conexões
+      maximum-pool-size: 3 # Máximo de 3 conexões (reduzido)
+      initialization-fail-timeout: 180000 # 3 minutos para falhar inicialização
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        # Configurações para reduzir uso de memória
+        "[jdbc.batch_size]": 5
+        "[order_inserts]": true
+        "[order_updates]": true
+        "[jdbc.batch_versioned_data]": true
+        # Cache de segundo nível desabilitado para economizar RAM
+        "[cache.use_second_level_cache]": false
+        "[cache.use_query_cache]": false
+        # Logs mínimos para reduzir I/O
+        "[show_sql]": false
+        "[format_sql]": false
+
+  # Configurações do servidor web para PCs lentos
+  servlet:
+    multipart:
+      max-file-size: 10MB # Reduzido
+      max-request-size: 15MB # Reduzido
+
+server:
+  # Configurações Tomcat otimizadas para PCs lentos
+  tomcat:
+    connection-timeout: 90s # 90 segundos para conectar
+    keep-alive-timeout: 30s # 30 segundos keep-alive
+    max-connections: 50 # Máximo reduzido
+    accept-count: 25 # Fila reduzida
+    threads:
+      max: 20 # Threads reduzidas
+      min-spare: 2 # Threads mínimas
+  compression:
+    enabled: true
+    mime-types: text/html,text/css,application/json,application/javascript
+    min-response-size: 1024
+
+# Configurações de logging otimizadas
+logging:
+  level:
+    "[io.zonky.test.db.postgres]": INFO # Reduzir logs PostgreSQL
+    "[org.hibernate]": WARN # Reduzir logs Hibernate
+    "[org.springframework.web]": WARN # Reduzir logs Spring Web
+    "[com.zaxxer.hikari]": WARN # Reduzir logs HikariCP
+  pattern:
+    # Pattern mais simples para reduzir I/O
+    console: "%d{HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n"
+    file: "%d{HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n"

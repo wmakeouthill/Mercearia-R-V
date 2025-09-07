@@ -1,5 +1,14 @@
 server:
   port: 3000
+  # Configurações para PCs lentos durante inicialização do PostgreSQL
+  shutdown: graceful
+  tomcat:
+    # Timeout para conexões HTTP mais longas
+    connection-timeout: 60s
+    # Threads para lidar com requests
+    threads:
+      max: 50
+      min-spare: 10
 
 spring:
   config:
@@ -10,6 +19,10 @@ spring:
     url: ${DB_URL:}
     username: ${DB_USERNAME:}
     password: ${DB_PASSWORD:}
+    # Configurações para aguardar PostgreSQL inicializar em PCs lentos
+    hikari:
+      connection-timeout: 60000 # 60 segundos para conectar
+      initialization-fail-timeout: 120000 # 2 minutos para inicialização falhar
   devtools:
     restart:
       enabled: false
