@@ -326,57 +326,7 @@ public class NotaController {
         }
     }
 
-    // Método para comprimir imagens se necessário
-    private byte[] compressImageIfNeeded(byte[] imageBytes, int maxSizeBytes) {
-        if (imageBytes.length <= maxSizeBytes) {
-            return imageBytes; // Já está dentro do limite
-        }
-
-        try {
-            // Usar BufferedImage para redimensionar e comprimir
-            ByteArrayInputStream bais = new ByteArrayInputStream(imageBytes);
-            java.awt.image.BufferedImage originalImage = javax.imageio.ImageIO.read(bais);
-
-            if (originalImage == null) {
-                return imageBytes; // Não conseguiu ler a imagem
-            }
-
-            // Redimensionar para tamanho bem pequeno (adequado para coluna da tabela)
-            int newWidth = Math.min(originalImage.getWidth(), 48); // Max 48px width - menor ainda
-            int newHeight = (int) ((double) newWidth / originalImage.getWidth() * originalImage.getHeight());
-
-            java.awt.image.BufferedImage resizedImage = new java.awt.image.BufferedImage(newWidth, newHeight,
-                    java.awt.image.BufferedImage.TYPE_INT_RGB);
-            java.awt.Graphics2D g2d = resizedImage.createGraphics();
-            g2d.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION,
-                    java.awt.RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-            g2d.drawImage(originalImage, 0, 0, newWidth, newHeight, null);
-            g2d.dispose();
-
-            // Converter para JPEG com qualidade reduzida
-            ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            javax.imageio.ImageWriter writer = javax.imageio.ImageIO.getImageWritersByFormatName("jpg").next();
-            javax.imageio.stream.ImageOutputStream ios = javax.imageio.ImageIO.createImageOutputStream(baos);
-            writer.setOutput(ios);
-
-            javax.imageio.ImageWriteParam writeParam = writer.getDefaultWriteParam();
-            writeParam.setCompressionMode(javax.imageio.ImageWriteParam.MODE_EXPLICIT);
-            writeParam.setCompressionQuality(0.5f); // 50% quality - mais compressão para produtos
-
-            writer.write(null, new javax.imageio.IIOImage(resizedImage, null, null), writeParam);
-            writer.dispose();
-            ios.close();
-
-            byte[] compressedBytes = baos.toByteArray();
-            log.debug("Image compressed from {}KB to {}KB", imageBytes.length / 1024, compressedBytes.length / 1024);
-            return compressedBytes;
-
-        } catch (Exception e) {
-            log.debug("Failed to compress image: {}", e.getMessage());
-            return imageBytes;
-        }
-    } // Optimized product images - smaller resolution for reduced PDF size
-
+    // Optimized product images - smaller resolution for reduced PDF size
     private String getProductImageDataUri(Long productId) {
         if (productId == null)
             return "";
@@ -541,55 +491,6 @@ public class NotaController {
         ios.close();
 
         return baos.toByteArray();
-    }
-
-    // Método simplificado de redimensionamento para acelerar o processo
-    private byte[] simpleImageResize(byte[] imageBytes, int maxWidth) {
-        try {
-            ByteArrayInputStream bais = new ByteArrayInputStream(imageBytes);
-            java.awt.image.BufferedImage originalImage = javax.imageio.ImageIO.read(bais);
-
-            if (originalImage == null) {
-                return imageBytes;
-            }
-
-            // Se já é pequena, retorna original
-            if (originalImage.getWidth() <= maxWidth) {
-                return imageBytes;
-            }
-
-            // Redimensionar apenas
-            int newWidth = maxWidth;
-            int newHeight = (int) ((double) newWidth / originalImage.getWidth() * originalImage.getHeight());
-
-            java.awt.image.BufferedImage resizedImage = new java.awt.image.BufferedImage(newWidth, newHeight,
-                    java.awt.image.BufferedImage.TYPE_INT_RGB);
-            java.awt.Graphics2D g2d = resizedImage.createGraphics();
-            g2d.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION,
-                    java.awt.RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-            g2d.drawImage(originalImage, 0, 0, newWidth, newHeight, null);
-            g2d.dispose();
-
-            // JPEG com qualidade média (mais rápido que compressão pesada)
-            ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            javax.imageio.ImageWriter writer = javax.imageio.ImageIO.getImageWritersByFormatName("jpg").next();
-            javax.imageio.stream.ImageOutputStream ios = javax.imageio.ImageIO.createImageOutputStream(baos);
-            writer.setOutput(ios);
-
-            javax.imageio.ImageWriteParam writeParam = writer.getDefaultWriteParam();
-            writeParam.setCompressionMode(javax.imageio.ImageWriteParam.MODE_EXPLICIT);
-            writeParam.setCompressionQuality(0.7f); // 70% quality - mais rápido que 50%
-
-            writer.write(null, new javax.imageio.IIOImage(resizedImage, null, null), writeParam);
-            writer.dispose();
-            ios.close();
-
-            return baos.toByteArray();
-
-        } catch (Exception e) {
-            log.debug("Failed to resize image: {}", e.getMessage());
-            return imageBytes;
-        }
     }
 
     private String buildHtmlForVenda(SaleOrder venda) {

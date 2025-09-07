@@ -15,8 +15,6 @@ import java.nio.file.Files;
 public class PostgresDiagnostic {
 
     private static final Logger log = LoggerFactory.getLogger(PostgresDiagnostic.class);
-    private static final String JAVA_IO_TMPDIR = "java.io.tmpdir";
-    private static final String JAVA_VENDOR = "java.vendor";
 
     private PostgresDiagnostic() {
         // Utility class
@@ -175,19 +173,9 @@ public class PostgresDiagnostic {
     private static void diagnoseSecuritySoftware() {
         log.info("--- Diagnóstico Software de Segurança ---");
 
-        // Lista de processos que podem interferir
-        String[] problematicProcesses = {
-                "avp.exe", "avpui.exe", // Kaspersky
-                "avgnt.exe", "avguard.exe", // Avira
-                "msmpeng.exe", // Windows Defender
-                "NortonSecurity.exe", // Norton
-                "McShield.exe", "mcods.exe", // McAfee
-                "bdagent.exe", "vsserv.exe", // Bitdefender
-                "ekrn.exe" // ESET
-        };
-
         try {
-            Process proc = Runtime.getRuntime().exec("tasklist.exe");
+            ProcessBuilder pb = new ProcessBuilder("tasklist.exe");
+            Process proc = pb.start();
             proc.waitFor(5, TimeUnit.SECONDS);
 
             // Não vamos analisar a saída completa aqui, apenas alertar
@@ -209,7 +197,8 @@ public class PostgresDiagnostic {
 
         try {
             // Verificar processos postgres ativos
-            Process proc = Runtime.getRuntime().exec("tasklist.exe /FI \"IMAGENAME eq postgres.exe\"");
+            ProcessBuilder pb = new ProcessBuilder("tasklist.exe", "/FI", "IMAGENAME eq postgres.exe");
+            Process proc = pb.start();
             proc.waitFor(10, TimeUnit.SECONDS);
 
             if (proc.exitValue() == 0) {

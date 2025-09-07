@@ -169,399 +169,764 @@ public class CaixaController {
             @RequestParam(value = "page", required = false) Integer page,
             @RequestParam(value = "size", required = false) Integer size) {
         try {
-            java.time.LocalDate dia = null;
-            java.time.LocalDate inicio = null;
-            java.time.LocalDate fim = null;
-            if (data != null && !data.isBlank()) {
-                dia = java.time.LocalDate.parse(data);
-            } else if (periodoInicio != null && periodoFim != null) {
-                inicio = java.time.LocalDate.parse(periodoInicio);
-                fim = java.time.LocalDate.parse(periodoFim);
-            }
-            // Debug: when client requests all, log repository counts for the requested
-            // range
-            logRepositoryCountsForDebug(all, dia, inicio, fim, from, to);
-            log.debug(
-                    "listarMovimentacoes: request params data={} periodo_inicio={} periodo_fim={} from={} to={} all={} tipo={} metodo_pagamento={} hora_inicio={} hora_fim={} page={} size={}",
-                    data, periodoInicio, periodoFim, from, to, all, tipo, metodoPagamento, horaInicio, horaFim, page,
-                    size);
-            java.util.List<java.util.Map<String, Object>> lista = new java.util.ArrayList<>();
+            MovimentacoesQueryParams params = buildQueryParams(data, periodoInicio, periodoFim, from, to,
+                    all, aggs, tipo, metodoPagamento, horaInicio, horaFim, page, size);
 
-            var tIni = safeParseLocalTime(horaInicio);
-            var tFim = safeParseLocalTime(horaFim);
+            java.util.List<java.util.Map<String, Object>> lista = fetchMovimentacoesList(params);
+            var filtrada = applyFilters(lista, params.tipo, params.metodoPagamento, params.tIni, params.tFim);
 
-            // Calculate timestamp bounds using extracted helper method
-            TimestampBounds bounds = calculateTimestampBounds(dia, inicio, fim, tIni, tFim, from, to);
-            java.time.OffsetDateTime fromTs = bounds.fromTs;
-            java.time.OffsetDateTime toTs = bounds.toTs;
-
-            // If a timestamp range was provided, prefer database queries (timestamp-aware)
-            // to avoid fetching all records and filtering in memory. This improves
-            // performance and ensures consistent timezone handling.
-            if (fromTs != null || toTs != null) {
-                final java.time.OffsetDateTime fFrom = fromTs;
-                final java.time.OffsetDateTime fTo = toTs;
-
-                // Movimentações no período via DB
-                try {
-                    var movs = movimentacaoRepository.findByPeriodoTimestamps(fFrom, fTo);
-                    for (var m : movs) {
-                        java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
-                        row.put("id", m.getId());
-                        row.put(KEY_CAIXA_STATUS_ID, m.getCaixaStatus() != null ? m.getCaixaStatus().getId() : null);
-                        row.put("tipo", m.getTipo());
-                        row.put(KEY_VALOR, m.getValor());
-                        row.put(KEY_DESCRICAO, m.getDescricao());
-                        String usuarioNome = extractUsuarioNome(m);
-                        row.put(KEY_USUARIO, usuarioNome);
-                        row.put(KEY_DATA_MOVIMENTO, m.getDataMovimento());
-                        lista.add(row);
-                    }
-                } catch (Exception e) {
-                    log.warn("listarMovimentacoes: DB movs query failed, falling back to in-memory", e);
-                    lista.addAll(buildManualMovRows(dia, inicio, fim));
-                }
-
-                // Vendas no período via DB
-                try {
-                    var orders = saleOrderRepository.findByPeriodoTimestampsRaw(fFrom, fTo);
-                    for (var vo : orders) {
-                        for (var pg : vo.getPagamentos()) {
-                            // Skip sale payment rows for cash payments that already generated
-                            // caixa_movimentacao to avoid double-counting. We detect this by
-                            // checking if payment is cash and linked to a caixa_status.
-                            // Previously we skipped cash payments already linked to a caixa_status
-                            // to avoid double-counting. Per business decision, include all sale
-                            // payment rows here so 'tudo' and period views count all sales and
-                            // the caixa session records remain an audit artifact.
-                            java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
-                            row.put("id", vo.getId());
-                            row.put("tipo", TIPO_VENDA);
-                            row.put(KEY_VALOR, pg.getValor());
-                            row.put(KEY_PAGAMENTO_VALOR, pg.getValor());
-                            row.put(KEY_TOTAL_VENDA, vo.getTotalFinal());
-                            var nf = java.text.NumberFormat
-                                    .getCurrencyInstance(java.util.Locale.forLanguageTag(LOCALE_PT_BR));
-                            String totalFmt = nf.format(vo.getTotalFinal());
-                            boolean multi = vo.getPagamentos().size() > 1;
-                            if (multi) {
-                                String breakdown = vo.getPagamentos().stream()
-                                        .map(p -> {
-                                            StringBuilder labelBuilder = new StringBuilder();
-                                            labelBuilder.append(labelMetodoPagamento(p.getMetodo()))
-                                                       .append(" ")
-                                                       .append(nf.format(p.getValor()));
-                                            if (p.getValor() != null && p.getValor() < 0)
-                                                labelBuilder.append(LABEL_DEVOLVIDO_SUFFIX);
-                                            return labelBuilder.toString();
-                                        })
-                                        .collect(java.util.stream.Collectors.joining(" | "));
-                                row.put(KEY_DESCRICAO, LABEL_VENDA_MULTI_PREFIX + totalFmt + " - " + breakdown);
-                            } else {
-                                String single = LABEL_VENDA_TOTAL + totalFmt + " ("
-                                        + labelMetodoPagamento(pg.getMetodo()) + " " + nf.format(pg.getValor()) + ")";
-                                if (pg.getValor() != null && pg.getValor() < 0)
-                                    single += LABEL_DEVOLVIDO_SUFFIX;
-                                row.put(KEY_DESCRICAO, single);
-                            }
-                            row.put(KEY_PRODUTO_NOME,
-                                    vo.getItens().isEmpty() ? null : vo.getItens().get(0).getProduto().getNome());
-                            row.put(KEY_METODO_PAGAMENTO, pg.getMetodo());
-                            row.put(KEY_USUARIO, vo.getOperador() != null ? vo.getOperador().getUsername() : null);
-                            row.put(KEY_DATA_MOVIMENTO, vo.getDataVenda());
-                            row.put(KEY_CAIXA_STATUS_ID,
-                                    vo.getCaixaStatus() != null ? vo.getCaixaStatus().getId() : null);
-                            lista.add(row);
-                        }
-                    }
-                } catch (Exception e) {
-                    log.warn("listarMovimentacoes: DB orders query failed, falling back to in-memory", e);
-                    lista.addAll(buildSaleOrderRows(dia, inicio, fim));
-                }
-
-                // Deduplicate by id while preserving order
-                java.util.Map<Object, java.util.Map<String, Object>> byId = new java.util.LinkedHashMap<>();
-                for (var m : lista) {
-                    Object idObj = m.get("id");
-                    if (idObj == null) {
-                        idObj = (m.get(KEY_DATA_MOVIMENTO) == null ? java.util.UUID.randomUUID().toString()
-                                : m.get(KEY_DATA_MOVIMENTO).toString() + "|" + m.get(KEY_DESCRICAO));
-                    } else {
-                        // Preserve separate rows for multi-payment sales by including
-                        // payment method/value in the dedupe key so they are not
-                        // collapsed into a single entry.
-                        try {
-                            if (TIPO_VENDA.equals(m.get("tipo"))) {
-                                Object metodo = m.get(KEY_METODO_PAGAMENTO);
-                                Object pgVal = m.get(KEY_PAGAMENTO_VALOR);
-                                idObj = idObj.toString() + "|" + (metodo == null ? "" : metodo.toString()) + "|"
-                                        + (pgVal == null ? "" : pgVal.toString());
-                            }
-                        } catch (Exception ignored) {
-                            // Silently ignore errors constructing composite ID for deduplication
-                        }
-                    }
-                    if (!byId.containsKey(idObj))
-                        byId.put(idObj, m);
-                }
-                lista = new java.util.ArrayList<>(byId.values());
-
-                // debug instants
-                try {
-                    var sampleInst = lista.stream().limit(6).map(m -> {
-                        try {
-                            var odt = (java.time.OffsetDateTime) m.get(KEY_DATA_MOVIMENTO);
-                            return odt == null ? "null" : odt.toInstant().toString();
-                        } catch (Exception ex) {
-                            return "err";
-                        }
-                    }).toList();
-                    log.debug("listarMovimentacoes: after-db-instant-fetch count={} sampleInst={}", lista.size(),
-                            sampleInst);
-                } catch (Exception ignored) {
-                    // Silently ignore debug logging errors
-                }
-            } else {
-                // No timestamp range provided — fallback to original behavior: fetch by
-                // date/period or all
-                lista.addAll(buildManualMovRows(dia, inicio, fim));
-                lista.addAll(buildSaleOrderRows(dia, inicio, fim));
-            }
-
-            // Ordenar por data_movimento desc
-            lista = sortByDataMovimentoDesc(lista);
-
-            // Debug: when hora filters are used, log samples to diagnose timezone issues
-            if (tIni != null || tFim != null) {
-                try {
-                    var sample = lista.stream().limit(6).map(m -> {
-                        try {
-                            var odt = (java.time.OffsetDateTime) m.get(KEY_DATA_MOVIMENTO);
-                            if (odt == null)
-                                return "null";
-                            try {
-                                return odt.atZoneSameInstant(java.time.ZoneId.of(TIMEZONE_SAO_PAULO)).toLocalTime()
-                                        .toString();
-                            } catch (Exception ex) {
-                                return odt.toLocalTime().toString();
-                            }
-                        } catch (Exception e) {
-                            return "err";
-                        }
-                    }).toList();
-                    log.debug("listarMovimentacoes: pre-local-time-filter count={} sampleTimes={}", lista.size(),
-                            sample);
-                } catch (Exception ignored) {
-                    // Silently ignore debug logging errors for time filtering
-                }
-            }
-
-            // Filtros opcionais por tipo, método e faixa horária (local-time)
-            var filtrada = applyFilters(lista, tipo, metodoPagamento, tIni, tFim);
-            log.debug("listarMovimentacoes: after-local-time-filter count={}", filtrada.size());
-
-            // If client requested aggregations only, return sums without fetching pages
-            if (Boolean.TRUE.equals(aggs)) {
-                double sumEntradasAgg = filtrada.stream()
-                        .filter(m -> TIPO_ENTRADA.equals(m.get("tipo")))
-                        .mapToDouble(m -> ((Number) m.get(KEY_VALOR)).doubleValue())
-                        .sum();
-                double sumRetiradasAgg = filtrada.stream()
-                        .filter(m -> TIPO_RETIRADA.equals(m.get("tipo")))
-                        .mapToDouble(m -> ((Number) m.get(KEY_VALOR)).doubleValue())
-                        .sum();
-                // Avoid double-counting: when a cash sale generated an explicit
-                // caixa_movimentacao
-                // (entrada) we should not count the sale payment row again as a separate venda
-                // in the aggregates. Build a set of (caixa_status_id|valor) keys for entrada
-                // rows
-                // and skip venda rows that match.
-                java.util.Set<String> entradaCashKeys = filtrada.stream()
-                        .filter(m -> TIPO_ENTRADA.equals(m.get("tipo")))
-                        .filter(m -> m.get(KEY_CAIXA_STATUS_ID) != null && m.get(KEY_VALOR) != null)
-                        .map(m -> m.get(KEY_CAIXA_STATUS_ID).toString() + "|"
-                                + Double.toString(((Number) m.get(KEY_VALOR)).doubleValue()))
-                        .collect(java.util.stream.Collectors.toSet());
-
-                double sumVendasAgg = filtrada.stream().filter(m -> TIPO_VENDA.equals(m.get("tipo"))).mapToDouble(m -> {
-                    try {
-                        Object metodo = m.get(KEY_METODO_PAGAMENTO);
-                        Object caixaId = m.get(KEY_CAIXA_STATUS_ID);
-                        double val = ((Number) m.get(KEY_VALOR)).doubleValue();
-                        if (VALOR_DINHEIRO.equals(metodo) && caixaId != null) {
-                            String key = caixaId.toString() + "|" + Double.toString(val);
-                            if (entradaCashKeys.contains(key)) {
-                                return 0.0; // skip duplicate
-                            }
-                        }
-                        return val;
-                    } catch (Exception e) {
-                        return 0.0;
-                    }
-                }).sum();
-                // Diagnostic log to help compare server-side aggregates vs frontend
-                log.debug(
-                        "DIAG_CAIXA_AGGS: periodoInicio={} periodoFim={} tipo={} metodo_pagamento={} -> sums: entradas={} retiradas={} vendas={} totalItems={}",
-                        periodoInicio, periodoFim, tipo, metodoPagamento, sumEntradasAgg, sumRetiradasAgg, sumVendasAgg,
-                        filtrada.size());
-                // Also calculate net vendas using adjusted_total when available
-                double sumVendasNet = 0.0;
-                try {
-                    sumVendasNet = filtrada.stream()
-                            .filter(m -> TIPO_VENDA.equals(m.get("tipo")))
-                            .mapToDouble(m -> {
-                                try {
-                                    Object adj = m.get("adjusted_total");
-                                    if (adj instanceof Number)
-                                        return ((Number) adj).doubleValue();
-                                } catch (Exception ignored) {
-                                    // Silently ignore errors accessing adjusted_total field
-                                }
-                                try {
-                                    return ((Number) m.get(KEY_VALOR)).doubleValue();
-                                } catch (Exception e) {
-                                    return 0.0;
-                                }
-                            }).sum();
-                } catch (Exception ignored) {
-                    // Silently ignore aggregation calculation errors
-                }
-                // Detalhar entradas automáticas (geradas por vendas) vs manuais
-                double sumEntradasAuto = 0.0;
-                try {
-                    sumEntradasAuto = filtrada.stream()
-                            .filter(m -> TIPO_ENTRADA.equals(m.get("tipo")))
-                            .filter(m -> {
-                                try {
-                                    Object d = m.get(KEY_DESCRICAO);
-                                    if (d == null)
-                                        return false;
-                                    String s = d.toString().toLowerCase();
-                                    return s.contains(TIPO_VENDA);
-                                } catch (Exception e) {
-                                    return false;
-                                }
-                            })
-                            .mapToDouble(m -> ((Number) m.get(KEY_VALOR)).doubleValue())
-                            .sum();
-                } catch (Exception ignored) {
-                }
-                double sumEntradasManuais = Math.max(0.0, sumEntradasAgg - sumEntradasAuto);
-
-                java.util.Map<String, Object> aggsMap = new java.util.LinkedHashMap<>();
-                aggsMap.put(KEY_SUM_ENTRADAS, sumEntradasAgg);
-                aggsMap.put(KEY_SUM_RETIRADAS, sumRetiradasAgg);
-                aggsMap.put(KEY_SUM_VENDAS, sumVendasAgg);
-                aggsMap.put("sum_vendas_net", sumVendasNet);
-                aggsMap.put(KEY_SUM_ENTRADAS_AUTOMATICAS, sumEntradasAuto);
-                aggsMap.put(KEY_SUM_ENTRADAS_MANUAIS, sumEntradasManuais);
-                aggsMap.put(KEY_TOTAL, filtrada.size());
-                return ResponseEntity.ok(aggsMap);
-            }
-
-            // If client requested all matching items (no pagination), return them
-            // in a single response. Useful for UIs that need client-side
-            // filtering/aggregation without fetching pages.
-            if (Boolean.TRUE.equals(all)) {
-                java.util.Map<String, Object> bodyAll = new java.util.LinkedHashMap<>();
-                bodyAll.put(KEY_ITEMS, filtrada);
-                bodyAll.put(KEY_TOTAL, filtrada.size());
-                bodyAll.put(KEY_HAS_NEXT, false);
-                bodyAll.put(KEY_PAGE, 1);
-                bodyAll.put(KEY_SIZE, filtrada.size());
-                double sumEntradasAll = filtrada.stream()
-                        .filter(m -> TIPO_ENTRADA.equals(m.get("tipo")))
-                        .mapToDouble(m -> ((Number) m.get(KEY_VALOR)).doubleValue())
-                        .sum();
-                double sumRetiradasAll = filtrada.stream()
-                        .filter(m -> TIPO_RETIRADA.equals(m.get("tipo")))
-                        .mapToDouble(m -> ((Number) m.get(KEY_VALOR)).doubleValue())
-                        .sum();
-                double sumVendasAll = filtrada.stream()
-                        .filter(m -> TIPO_VENDA.equals(m.get("tipo")))
-                        .mapToDouble(m -> ((Number) m.get(KEY_VALOR)).doubleValue())
-                        .sum();
-                double sumEntradasAutoAll = 0.0;
-                try {
-                    sumEntradasAutoAll = filtrada.stream()
-                            .filter(m -> TIPO_ENTRADA.equals(m.get("tipo")))
-                            .filter(m -> {
-                                try {
-                                    Object d = m.get(KEY_DESCRICAO);
-                                    if (d == null)
-                                        return false;
-                                    String s = d.toString().toLowerCase();
-                                    return s.contains(TIPO_VENDA);
-                                } catch (Exception e) {
-                                    return false;
-                                }
-                            })
-                            .mapToDouble(m -> ((Number) m.get(KEY_VALOR)).doubleValue())
-                            .sum();
-                } catch (Exception ignored) {
-                }
-                double sumEntradasManuaisAll = Math.max(0.0, sumEntradasAll - sumEntradasAutoAll);
-                bodyAll.put(KEY_SUM_ENTRADAS, sumEntradasAll);
-                bodyAll.put(KEY_SUM_RETIRADAS, sumRetiradasAll);
-                bodyAll.put(KEY_SUM_VENDAS, sumVendasAll);
-                bodyAll.put(KEY_SUM_ENTRADAS_AUTOMATICAS, sumEntradasAutoAll);
-                bodyAll.put(KEY_SUM_ENTRADAS_MANUAIS, sumEntradasManuaisAll);
-                return ResponseEntity.ok(bodyAll);
-            }
-
-            // Somatórios no período filtrado
-            double sumEntradas = filtrada.stream()
-                    .filter(m -> TIPO_ENTRADA.equals(m.get("tipo")))
-                    .mapToDouble(m -> ((Number) m.get(KEY_VALOR)).doubleValue())
-                    .sum();
-            double sumRetiradas = filtrada.stream()
-                    .filter(m -> TIPO_RETIRADA.equals(m.get("tipo")))
-                    .mapToDouble(m -> ((Number) m.get(KEY_VALOR)).doubleValue())
-                    .sum();
-            double sumVendas = filtrada.stream()
-                    .filter(m -> TIPO_VENDA.equals(m.get("tipo")))
-                    .mapToDouble(m -> ((Number) m.get(KEY_VALOR)).doubleValue())
-                    .sum();
-
-            // Paginação simples em memória
-            int pageNum = (page == null || page < 1) ? 1 : page;
-            int pageSize = (size == null || size < 1) ? 20 : size;
-            int fromIndex = (pageNum - 1) * pageSize;
-            if (fromIndex >= filtrada.size()) {
-                return ResponseEntity.ok(java.util.Map.of(
-                        KEY_ITEMS, java.util.List.of(),
-                        KEY_TOTAL, filtrada.size(),
-                        KEY_HAS_NEXT, false,
-                        KEY_PAGE, pageNum,
-                        KEY_SIZE, pageSize,
-                        KEY_SUM_ENTRADAS, sumEntradas,
-                        KEY_SUM_RETIRADAS, sumRetiradas,
-                        KEY_SUM_VENDAS, sumVendas));
-            }
-            int toIndex = Math.min(fromIndex + pageSize, filtrada.size());
-            var paged = filtrada.subList(fromIndex, toIndex);
-            boolean hasNext = toIndex < filtrada.size();
-            java.util.Map<String, Object> body = new java.util.LinkedHashMap<>();
-            body.put(KEY_ITEMS, paged);
-            body.put(KEY_TOTAL, filtrada.size());
-            body.put(KEY_HAS_NEXT, hasNext);
-            body.put(KEY_PAGE, pageNum);
-            body.put(KEY_SIZE, pageSize);
-            body.put(KEY_SUM_ENTRADAS, sumEntradas);
-            body.put(KEY_SUM_RETIRADAS, sumRetiradas);
-            body.put(KEY_SUM_VENDAS, sumVendas);
-            return ResponseEntity.ok(body);
+            return buildMovimentacoesResponse(params, filtrada);
         } catch (Exception e) {
-            // Em caso de erro, retornar lista vazia para não quebrar o frontend
-            return ResponseEntity.ok(java.util.Map.of(
-                    KEY_ITEMS, java.util.List.of(),
-                    KEY_TOTAL, 0,
-                    KEY_HAS_NEXT, false,
-                    KEY_PAGE, 1,
-                    KEY_SIZE, 20,
-                    KEY_SUM_ENTRADAS, 0.0,
-                    KEY_SUM_RETIRADAS, 0.0,
-                    KEY_SUM_VENDAS, 0.0));
+            return buildErrorResponse();
+        }
+    }
+
+    private static class MovimentacoesQueryParams {
+        java.time.LocalDate dia;
+        java.time.LocalDate inicio;
+        java.time.LocalDate fim;
+        java.time.LocalTime tIni;
+        java.time.LocalTime tFim;
+        java.time.OffsetDateTime fromTs;
+        java.time.OffsetDateTime toTs;
+        Boolean all;
+        Boolean aggs;
+        String tipo;
+        String metodoPagamento;
+        String periodoInicio;
+        String periodoFim;
+        Integer page;
+        Integer size;
+    }
+
+    private MovimentacoesQueryParams buildQueryParams(String data, String periodoInicio, String periodoFim,
+            String from, String to, Boolean all, Boolean aggs, String tipo, String metodoPagamento,
+            String horaInicio, String horaFim, Integer page, Integer size) {
+
+        return new MovimentacoesQueryParamsBuilder()
+                .withBasicParams(data, periodoInicio, periodoFim, from, to)
+                .withFilterParams(all, aggs, tipo, metodoPagamento)
+                .withTimeParams(horaInicio, horaFim)
+                .withPaginationParams(page, size)
+                .build();
+    }
+
+    private class MovimentacoesQueryParamsBuilder {
+        private String data;
+        private String periodoInicio;
+        private String periodoFim;
+        private String from;
+        private String to;
+        private String horaInicio;
+        private String horaFim;
+        private String tipo;
+        private String metodoPagamento;
+        private Boolean all;
+        private Boolean aggs;
+        private Integer page;
+        private Integer size;
+
+        MovimentacoesQueryParamsBuilder withBasicParams(String data, String periodoInicio, String periodoFim,
+                String from, String to) {
+            this.data = data;
+            this.periodoInicio = periodoInicio;
+            this.periodoFim = periodoFim;
+            this.from = from;
+            this.to = to;
+            return this;
+        }
+
+        MovimentacoesQueryParamsBuilder withFilterParams(Boolean all, Boolean aggs, String tipo,
+                String metodoPagamento) {
+            this.all = all;
+            this.aggs = aggs;
+            this.tipo = tipo;
+            this.metodoPagamento = metodoPagamento;
+            return this;
+        }
+
+        MovimentacoesQueryParamsBuilder withTimeParams(String horaInicio, String horaFim) {
+            this.horaInicio = horaInicio;
+            this.horaFim = horaFim;
+            return this;
+        }
+
+        MovimentacoesQueryParamsBuilder withPaginationParams(Integer page, Integer size) {
+            this.page = page;
+            this.size = size;
+            return this;
+        }
+
+        MovimentacoesQueryParams build() {
+            MovimentacoesQueryParams params = new MovimentacoesQueryParams();
+            params.all = this.all;
+            params.aggs = this.aggs;
+            params.tipo = this.tipo;
+            params.metodoPagamento = this.metodoPagamento;
+            params.page = this.page;
+            params.size = this.size;
+            params.periodoInicio = this.periodoInicio;
+            params.periodoFim = this.periodoFim;
+
+            // Parse date parameters
+            if (this.data != null && !this.data.isBlank()) {
+                params.dia = java.time.LocalDate.parse(this.data);
+            } else if (this.periodoInicio != null && this.periodoFim != null) {
+                params.inicio = java.time.LocalDate.parse(this.periodoInicio);
+                params.fim = java.time.LocalDate.parse(this.periodoFim);
+            }
+
+            // Parse time parameters
+            params.tIni = safeParseLocalTime(this.horaInicio);
+            params.tFim = safeParseLocalTime(this.horaFim);
+
+            // Calculate timestamp bounds
+            TimestampBounds bounds = calculateTimestampBounds(params.dia, params.inicio, params.fim,
+                    params.tIni, params.tFim, this.from, this.to);
+            params.fromTs = bounds.fromTs;
+            params.toTs = bounds.toTs;
+
+            logRepositoryCountsForDebug(this.all, params.dia, params.inicio, params.fim, this.from, this.to);
+
+            return params;
+        }
+    }
+
+    private java.util.List<java.util.Map<String, Object>> fetchMovimentacoesList(MovimentacoesQueryParams params) {
+        java.util.List<java.util.Map<String, Object>> lista = new java.util.ArrayList<>();
+
+        if (params.fromTs != null || params.toTs != null) {
+            lista.addAll(fetchMovimentacoesByTimestamp(params.fromTs, params.toTs));
+            lista.addAll(fetchSaleOrdersByTimestamp(params.fromTs, params.toTs));
+            lista = deduplicateMovimentacoes(lista);
+        } else {
+            lista.addAll(buildManualMovRows(params.dia, params.inicio, params.fim));
+            lista.addAll(buildSaleOrderRows(params.dia, params.inicio, params.fim));
+        }
+
+        return sortByDataMovimentoDesc(lista);
+    }
+
+    private java.util.List<java.util.Map<String, Object>> fetchMovimentacoesByTimestamp(
+            java.time.OffsetDateTime fromTs, java.time.OffsetDateTime toTs) {
+        java.util.List<java.util.Map<String, Object>> lista = new java.util.ArrayList<>();
+
+        safeExecute(() -> {
+            var movs = movimentacaoRepository.findByPeriodoTimestamps(fromTs, toTs);
+            for (var m : movs) {
+                java.util.Map<String, Object> row = buildMovimentacaoRow(m);
+                lista.add(row);
+            }
+        }, () -> lista.addAll(buildManualMovRows(null, null, null)));
+
+        return lista;
+    }
+
+    private java.util.Map<String, Object> buildMovimentacaoRow(CaixaMovimentacao m) {
+        java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
+        row.put("id", m.getId());
+        row.put(KEY_CAIXA_STATUS_ID, m.getCaixaStatus() != null ? m.getCaixaStatus().getId() : null);
+        row.put("tipo", m.getTipo());
+        row.put(KEY_VALOR, m.getValor());
+        row.put(KEY_DESCRICAO, m.getDescricao());
+        String usuarioNome = extractUsuarioNome(m);
+        row.put(KEY_USUARIO, usuarioNome);
+        row.put(KEY_DATA_MOVIMENTO, m.getDataMovimento());
+        return row;
+    }
+
+    private java.util.List<java.util.Map<String, Object>> fetchSaleOrdersByTimestamp(
+            java.time.OffsetDateTime fromTs, java.time.OffsetDateTime toTs) {
+        java.util.List<java.util.Map<String, Object>> lista = new java.util.ArrayList<>();
+
+        safeExecute(() -> {
+            var orders = saleOrderRepository.findByPeriodoTimestampsRaw(fromTs, toTs);
+            for (var vo : orders) {
+                lista.addAll(buildSaleOrderPaymentRows(vo));
+            }
+        }, () -> lista.addAll(buildSaleOrderRows(null, null, null)));
+
+        return lista;
+    }
+
+    private java.util.List<java.util.Map<String, Object>> buildSaleOrderPaymentRows(
+            com.example.backendspring.sale.SaleOrder vo) {
+        java.util.List<java.util.Map<String, Object>> rows = new java.util.ArrayList<>();
+
+        for (var pg : vo.getPagamentos()) {
+            java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
+            row.put("id", vo.getId());
+            row.put("tipo", TIPO_VENDA);
+            row.put(KEY_VALOR, pg.getValor());
+            row.put(KEY_PAGAMENTO_VALOR, pg.getValor());
+            row.put(KEY_TOTAL_VENDA, vo.getTotalFinal());
+
+            addSaleDescriptionToRow(row, vo, pg);
+            addSaleDetailsToRow(row, vo, pg);
+
+            rows.add(row);
+        }
+
+        return rows;
+    }
+
+    private void addSaleDescriptionToRow(java.util.Map<String, Object> row,
+            com.example.backendspring.sale.SaleOrder vo, com.example.backendspring.sale.SalePayment pg) {
+        var nf = java.text.NumberFormat.getCurrencyInstance(java.util.Locale.forLanguageTag(LOCALE_PT_BR));
+        String totalFmt = nf.format(vo.getTotalFinal());
+        boolean multi = vo.getPagamentos().size() > 1;
+
+        if (multi) {
+            String breakdown = buildPaymentBreakdown(vo, nf);
+            row.put(KEY_DESCRICAO, LABEL_VENDA_MULTI_PREFIX + totalFmt + " - " + breakdown);
+        } else {
+            String single = buildSinglePaymentDescription(pg, totalFmt, nf);
+            row.put(KEY_DESCRICAO, single);
+        }
+    }
+
+    private String buildPaymentBreakdown(com.example.backendspring.sale.SaleOrder vo,
+            java.text.NumberFormat nf) {
+        return vo.getPagamentos().stream()
+                .map(p -> {
+                    StringBuilder labelBuilder = new StringBuilder();
+                    labelBuilder.append(labelMetodoPagamento(p.getMetodo()))
+                            .append(" ")
+                            .append(nf.format(p.getValor()));
+                    if (p.getValor() != null && p.getValor() < 0)
+                        labelBuilder.append(LABEL_DEVOLVIDO_SUFFIX);
+                    return labelBuilder.toString();
+                })
+                .collect(java.util.stream.Collectors.joining(" | "));
+    }
+
+    private String buildSinglePaymentDescription(com.example.backendspring.sale.SalePayment pg,
+            String totalFmt, java.text.NumberFormat nf) {
+        String single = LABEL_VENDA_TOTAL + totalFmt + " ("
+                + labelMetodoPagamento(pg.getMetodo()) + " " + nf.format(pg.getValor()) + ")";
+        if (pg.getValor() != null && pg.getValor() < 0)
+            single += LABEL_DEVOLVIDO_SUFFIX;
+        return single;
+    }
+
+    private void addSaleDetailsToRow(java.util.Map<String, Object> row,
+            com.example.backendspring.sale.SaleOrder vo, com.example.backendspring.sale.SalePayment pg) {
+        row.put(KEY_PRODUTO_NOME,
+                vo.getItens().isEmpty() ? null : vo.getItens().get(0).getProduto().getNome());
+        row.put(KEY_METODO_PAGAMENTO, pg.getMetodo());
+        row.put(KEY_USUARIO, vo.getOperador() != null ? vo.getOperador().getUsername() : null);
+        row.put(KEY_DATA_MOVIMENTO, vo.getDataVenda());
+        row.put(KEY_CAIXA_STATUS_ID,
+                vo.getCaixaStatus() != null ? vo.getCaixaStatus().getId() : null);
+    }
+
+    private java.util.List<java.util.Map<String, Object>> deduplicateMovimentacoes(
+            java.util.List<java.util.Map<String, Object>> lista) {
+        java.util.Map<Object, java.util.Map<String, Object>> byId = new java.util.LinkedHashMap<>();
+
+        for (var m : lista) {
+            Object idObj = buildDeduplicationKey(m);
+            byId.computeIfAbsent(idObj, k -> m);
+        }
+
+        return new java.util.ArrayList<>(byId.values());
+    }
+
+    private Object buildDeduplicationKey(java.util.Map<String, Object> m) {
+        Object idObj = m.get("id");
+        if (idObj == null) {
+            idObj = (m.get(KEY_DATA_MOVIMENTO) == null ? java.util.UUID.randomUUID().toString()
+                    : m.get(KEY_DATA_MOVIMENTO).toString() + "|" + m.get(KEY_DESCRICAO));
+        } else {
+            if (TIPO_VENDA.equals(m.get("tipo"))) {
+                return buildVendaDeduplicationKey(idObj, m);
+            }
+        }
+        return idObj;
+    }
+
+    private Object buildVendaDeduplicationKey(Object baseIdObj, java.util.Map<String, Object> m) {
+        try {
+            Object metodo = m.get(KEY_METODO_PAGAMENTO);
+            Object pgVal = m.get(KEY_PAGAMENTO_VALOR);
+            return baseIdObj.toString() + "|" + (metodo == null ? "" : metodo.toString()) + "|"
+                    + (pgVal == null ? "" : pgVal.toString());
+        } catch (Exception e) {
+            // Silently ignore errors constructing composite ID for deduplication
+            return baseIdObj;
+        }
+    }
+
+    // =================
+    // MÉTODOS AUXILIARES PARA FECHAMENTO DE CAIXA (Brain Method Refactoring)
+    // =================
+
+    private ResponseEntity<Map<String, Object>> validateUserPermissionsForClosing(Long userId) {
+        if (userId == null) {
+            return ResponseEntity.status(401).body(Map.of(KEY_ERROR, MSG_NAO_AUTENTICADO));
+        }
+
+        var closer = userRepository.findById(userId).orElse(null);
+        if (closer == null || (!Boolean.TRUE.equals(closer.getPodeControlarCaixa())
+                && (closer.getRole() == null || !closer.getRole().equals(VALOR_ADMIN)))) {
+            return ResponseEntity.status(403).body(Map.of(KEY_ERROR, "Permissão negada para fechar o caixa"));
+        }
+
+        return null; // Validation passed
+    }
+
+    private CaixaStatus findCashSessionToClose(FecharRequest body) {
+        if (body != null && body.getSessionId() != null) {
+            CaixaStatus status = caixaStatusRepository.findByIdForUpdate(body.getSessionId()).orElse(null);
+            if (status == null) {
+                throw new IllegalArgumentException(MSG_SESSAO_NAO_ENCONTRADA);
+            }
+            if (!Boolean.TRUE.equals(status.getAberto())) {
+                throw new IllegalStateException("Sessão já está fechada");
+            }
+            return status;
+        } else {
+            CaixaStatus status = caixaStatusRepository.findTopByAbertoTrueOrderByIdDesc().orElse(null);
+            if (status == null || !Boolean.TRUE.equals(status.getAberto())) {
+                throw new IllegalStateException("Caixa já está fechado");
+            }
+            return status;
+        }
+    }
+
+    private void calculateAndSetExpectedBalance(CaixaStatus session) {
+        try {
+            double esperado = calculateExpectedForSession(session);
+            session.setSaldoEsperado(esperado);
+        } catch (Exception e) {
+            log.warn("Error calculating expected balance for session {}: {}", session.getId(), e.getMessage());
+        }
+    }
+
+    private ResponseEntity<Map<String, Object>> validateClosingRequest(FecharRequest body) {
+        if (body == null || body.getSaldoContado() == null) {
+            return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, "saldo_contado é obrigatório ao fechar o caixa"));
+        }
+        return null; // Validation passed
+    }
+
+    private void setSessionClosingData(CaixaStatus session, FecharRequest body, Long userId, OffsetDateTime agora) {
+        session.setSaldoContado(body.getSaldoContado());
+        if (session.getSaldoEsperado() != null) {
+            session.setVariacao(session.getSaldoContado() - session.getSaldoEsperado());
+        }
+        if (body.getObservacoes() != null) {
+            session.setObservacoesFechamento(body.getObservacoes());
+        }
+
+        session.setAberto(false);
+        session.setFechadoPor(userRepository.findById(userId).orElse(null));
+        session.setDataFechamento(agora);
+        session.setAtualizadoEm(agora);
+    }
+
+    private void calculateAndSetCumulativeValues(CaixaStatus currentSession) {
+        try {
+            var allSessions = caixaStatusRepository.findAll().stream()
+                    .filter(s -> s.getId() != null)
+                    .sorted(java.util.Comparator.comparing(CaixaStatus::getId))
+                    .toList();
+
+            CumulativeCalculationResult result = calculateCumulativeValues(allSessions, currentSession);
+            currentSession.setVariacaoAcumulada(result.runningTotal);
+            currentSession.setDeficitNaoRepostoAcumulada(result.deficit);
+        } catch (Exception e) {
+            log.warn("Error calculating cumulative values for session {}: {}", currentSession.getId(), e.getMessage());
+        }
+    }
+
+    private CumulativeCalculationResult calculateCumulativeValues(java.util.List<CaixaStatus> allSessions,
+            CaixaStatus currentSession) {
+        CumulativeAccumulator accumulator = new CumulativeAccumulator();
+
+        for (var session : allSessions) {
+            if (session.getId().equals(currentSession.getId())) {
+                processCurrentSessionValues(currentSession, accumulator);
+                break;
+            } else {
+                processOtherSessionValues(session, accumulator);
+            }
+        }
+
+        double deficit = Math.max(0.0, accumulator.totalNeg - accumulator.totalPos);
+        return new CumulativeCalculationResult(accumulator.running, deficit);
+    }
+
+    private void processCurrentSessionValues(CaixaStatus currentSession, CumulativeAccumulator accumulator) {
+        double variacao = currentSession.getVariacao() == null ? 0.0 : currentSession.getVariacao();
+        accumulator.running += variacao;
+
+        if (currentSession.getVariacao() != null) {
+            updatePositiveNegativeTotals(currentSession.getVariacao(), accumulator);
+        }
+    }
+
+    private void processOtherSessionValues(CaixaStatus session, CumulativeAccumulator accumulator) {
+        double variacao = session.getVariacao() == null ? 0.0 : session.getVariacao();
+        accumulator.running += variacao;
+
+        if (session.getVariacao() != null) {
+            updatePositiveNegativeTotals(session.getVariacao(), accumulator);
+        }
+    }
+
+    private void updatePositiveNegativeTotals(Double variacao, CumulativeAccumulator accumulator) {
+        if (variacao > 0) {
+            accumulator.totalPos += variacao;
+        } else {
+            accumulator.totalNeg += -variacao;
+        }
+    }
+
+    // Helper class for cumulative calculations
+    private static class CumulativeAccumulator {
+        double running = 0.0;
+        double totalPos = 0.0;
+        double totalNeg = 0.0;
+    }
+
+    private Map<String, Object> buildClosingResponse(CaixaStatus session) {
+        java.util.Map<String, Object> resp = new java.util.LinkedHashMap<>();
+        resp.put("id", session.getId());
+        resp.put(KEY_ABERTO, Boolean.TRUE.equals(session.getAberto()));
+        resp.put(KEY_DATA_FECHAMENTO, session.getDataFechamento());
+        resp.put(KEY_FECHADO_POR, session.getFechadoPor() != null ? session.getFechadoPor().getId() : null);
+        resp.put("fechado_por_username",
+                session.getFechadoPor() != null ? session.getFechadoPor().getUsername() : null);
+        resp.put(KEY_SALDO_ESPERADO, session.getSaldoEsperado());
+        resp.put(KEY_SALDO_CONTADO, session.getSaldoContado());
+        resp.put(KEY_VARIACAO, session.getVariacao());
+        resp.put("observacoes", session.getObservacoesFechamento());
+        return resp;
+    }
+
+    // Helper class for cumulative calculation results
+    private static class CumulativeCalculationResult {
+        final double runningTotal;
+        final double deficit;
+
+        CumulativeCalculationResult(double runningTotal, double deficit) {
+            this.runningTotal = runningTotal;
+            this.deficit = deficit;
+        }
+    }
+
+    // =================
+    // FIM DOS MÉTODOS AUXILIARES PARA FECHAMENTO
+    // =================
+
+    // =================
+    // MÉTODOS AUXILIARES PARA DIAGNÓSTICO DE DIVERGÊNCIA
+    // =================
+
+    private java.util.function.Function<java.util.Map<String, Object>, String> createDedupeKeyFunction() {
+        return m -> {
+            try {
+                Object idObj = m.get("id");
+                if (idObj == null) {
+                    return buildKeyFromDataAndDescription(m);
+                } else {
+                    return buildKeyFromId(idObj, m);
+                }
+            } catch (Exception e) {
+                return java.util.UUID.randomUUID().toString();
+            }
+        };
+    }
+
+    private String buildKeyFromDataAndDescription(java.util.Map<String, Object> m) {
+        Object dm = m.get(KEY_DATA_MOVIMENTO);
+        Object desc = m.get(KEY_DESCRICAO);
+        String dataStr = dm == null ? java.util.UUID.randomUUID().toString() : dm.toString();
+        String descStr = desc == null ? "" : desc.toString();
+        return dataStr + "|" + descStr;
+    }
+
+    private String buildKeyFromId(Object idObj, java.util.Map<String, Object> m) {
+        if (TIPO_VENDA.equals(m.get("tipo"))) {
+            return buildVendaCompositeKey(idObj, m);
+        }
+        return idObj.toString();
+    }
+
+    private String buildVendaCompositeKey(Object idObj, java.util.Map<String, Object> m) {
+        Object metodo = m.get(KEY_METODO_PAGAMENTO);
+        Object pgVal = m.get(KEY_PAGAMENTO_VALOR);
+        String metodoPart = metodo == null ? "" : metodo.toString();
+        String valorPart = pgVal == null ? "" : pgVal.toString();
+        return idObj.toString() + "|" + metodoPart + "|" + valorPart;
+    }
+
+    private java.util.Map<String, java.util.Map<String, Object>> buildItemMap(
+            java.util.List<java.util.Map<String, Object>> items,
+            java.util.function.Function<java.util.Map<String, Object>, String> keyFn) {
+        java.util.Map<String, java.util.Map<String, Object>> map = new java.util.LinkedHashMap<>();
+        for (var item : items) {
+            map.put(keyFn.apply(item), item);
+        }
+        return map;
+    }
+
+    private java.util.List<java.util.Map<String, Object>> findItemsNotInOtherMap(
+            java.util.Map<String, java.util.Map<String, Object>> sourceMap,
+            java.util.Map<String, java.util.Map<String, Object>> targetMap) {
+        java.util.List<java.util.Map<String, Object>> notInTarget = new java.util.ArrayList<>();
+        for (var entry : sourceMap.entrySet()) {
+            if (!targetMap.containsKey(entry.getKey())) {
+                notInTarget.add(entry.getValue());
+            }
+        }
+        return notInTarget;
+    }
+
+    private TimestampBounds calculateTimestampBounds(String periodoInicio, String periodoFim) {
+        java.time.LocalDate inicio = java.time.LocalDate.parse(periodoInicio);
+        java.time.LocalDate fim = java.time.LocalDate.parse(periodoFim);
+        java.time.ZoneId sp = java.time.ZoneId.of(TIMEZONE_SAO_PAULO);
+        var zdtFrom = java.time.ZonedDateTime.of(inicio, java.time.LocalTime.MIDNIGHT, sp);
+        var zdtTo = java.time.ZonedDateTime.of(fim.plusDays(1), java.time.LocalTime.MIDNIGHT, sp).minusNanos(1);
+        return new TimestampBounds(zdtFrom.toOffsetDateTime(), zdtTo.toOffsetDateTime());
+    }
+
+    // =================
+    // FIM DOS MÉTODOS AUXILIARES PARA DIAGNÓSTICO
+    // =================
+
+    private ResponseEntity<java.util.Map<String, Object>> buildMovimentacoesResponse(
+            MovimentacoesQueryParams params, java.util.List<java.util.Map<String, Object>> filtrada) {
+
+        if (Boolean.TRUE.equals(params.aggs)) {
+            return buildAggregationsResponse(params, filtrada);
+        }
+
+        if (Boolean.TRUE.equals(params.all)) {
+            return buildAllItemsResponse(filtrada);
+        }
+
+        return buildPaginatedResponse(params, filtrada);
+    }
+
+    private ResponseEntity<java.util.Map<String, Object>> buildAggregationsResponse(
+            MovimentacoesQueryParams params, java.util.List<java.util.Map<String, Object>> filtrada) {
+
+        MovimentacoesSums sums = calculateMovimentacoesSums(filtrada);
+
+        java.util.Map<String, Object> aggsMap = new java.util.LinkedHashMap<>();
+        aggsMap.put(KEY_SUM_ENTRADAS, sums.sumEntradas);
+        aggsMap.put(KEY_SUM_RETIRADAS, sums.sumRetiradas);
+        aggsMap.put(KEY_SUM_VENDAS, sums.sumVendas);
+        aggsMap.put("sum_vendas_net", sums.sumVendasNet);
+        aggsMap.put(KEY_SUM_ENTRADAS_AUTOMATICAS, sums.sumEntradasAuto);
+        aggsMap.put(KEY_SUM_ENTRADAS_MANUAIS, sums.sumEntradasManuais);
+        aggsMap.put(KEY_TOTAL, filtrada.size());
+
+        logDiagnosticAggs(params, sums, filtrada.size());
+
+        return ResponseEntity.ok(aggsMap);
+    }
+
+    private static class MovimentacoesSums {
+        double sumEntradas;
+        double sumRetiradas;
+        double sumVendas;
+        double sumVendasNet;
+        double sumEntradasAuto;
+        double sumEntradasManuais;
+    }
+
+    private MovimentacoesSums calculateMovimentacoesSums(java.util.List<java.util.Map<String, Object>> filtrada) {
+        MovimentacoesSums sums = new MovimentacoesSums();
+
+        sums.sumEntradas = calculateSumByType(filtrada, TIPO_ENTRADA);
+        sums.sumRetiradas = calculateSumByType(filtrada, TIPO_RETIRADA);
+
+        java.util.Set<String> entradaCashKeys = buildEntradaCashKeys(filtrada);
+        sums.sumVendas = calculateVendasSum(filtrada, entradaCashKeys);
+        sums.sumVendasNet = calculateVendasNetSum(filtrada);
+        sums.sumEntradasAuto = calculateEntradasAutoSum(filtrada);
+        sums.sumEntradasManuais = Math.max(0.0, sums.sumEntradas - sums.sumEntradasAuto);
+
+        return sums;
+    }
+
+    private double calculateSumByType(java.util.List<java.util.Map<String, Object>> filtrada, String tipo) {
+        return filtrada.stream()
+                .filter(m -> tipo.equals(m.get("tipo")))
+                .mapToDouble(m -> ((Number) m.get(KEY_VALOR)).doubleValue())
+                .sum();
+    }
+
+    private java.util.Set<String> buildEntradaCashKeys(java.util.List<java.util.Map<String, Object>> filtrada) {
+        return filtrada.stream()
+                .filter(m -> TIPO_ENTRADA.equals(m.get("tipo")))
+                .filter(m -> m.get(KEY_CAIXA_STATUS_ID) != null && m.get(KEY_VALOR) != null)
+                .map(m -> m.get(KEY_CAIXA_STATUS_ID).toString() + "|"
+                        + Double.toString(((Number) m.get(KEY_VALOR)).doubleValue()))
+                .collect(java.util.stream.Collectors.toSet());
+    }
+
+    private double calculateVendasSum(java.util.List<java.util.Map<String, Object>> filtrada,
+            java.util.Set<String> entradaCashKeys) {
+        return filtrada.stream()
+                .filter(m -> TIPO_VENDA.equals(m.get("tipo")))
+                .mapToDouble(m -> calculateVendaValue(m, entradaCashKeys))
+                .sum();
+    }
+
+    private double calculateVendaValue(java.util.Map<String, Object> m, java.util.Set<String> entradaCashKeys) {
+        try {
+            Object metodo = m.get(KEY_METODO_PAGAMENTO);
+            Object caixaId = m.get(KEY_CAIXA_STATUS_ID);
+            double val = ((Number) m.get(KEY_VALOR)).doubleValue();
+
+            if (VALOR_DINHEIRO.equals(metodo) && caixaId != null) {
+                String key = caixaId.toString() + "|" + Double.toString(val);
+                if (entradaCashKeys.contains(key)) {
+                    return 0.0; // skip duplicate
+                }
+            }
+            return val;
+        } catch (Exception e) {
+            return 0.0;
+        }
+    }
+
+    private double calculateVendasNetSum(java.util.List<java.util.Map<String, Object>> filtrada) {
+        return safeCalculate(() -> filtrada.stream()
+                .filter(m -> TIPO_VENDA.equals(m.get("tipo")))
+                .mapToDouble(m -> {
+                    Object adj = m.get("adjusted_total");
+                    if (adj instanceof Number number) {
+                        return number.doubleValue();
+                    }
+                    return ((Number) m.get(KEY_VALOR)).doubleValue();
+                })
+                .sum(), 0.0);
+    }
+
+    private double calculateEntradasAutoSum(java.util.List<java.util.Map<String, Object>> filtrada) {
+        return safeCalculate(() -> filtrada.stream()
+                .filter(m -> TIPO_ENTRADA.equals(m.get("tipo")))
+                .filter(this::isEntradaAuto)
+                .mapToDouble(m -> ((Number) m.get(KEY_VALOR)).doubleValue())
+                .sum(), 0.0);
+    }
+
+    private boolean isEntradaAuto(java.util.Map<String, Object> m) {
+        try {
+            Object d = m.get(KEY_DESCRICAO);
+            if (d == null)
+                return false;
+            String s = d.toString().toLowerCase();
+            return s.contains(TIPO_VENDA);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private void logDiagnosticAggs(MovimentacoesQueryParams params, MovimentacoesSums sums, int totalItems) {
+        log.debug(
+                "DIAG_CAIXA_AGGS: periodoInicio={} periodoFim={} tipo={} metodo_pagamento={} -> sums: entradas={} retiradas={} vendas={} totalItems={}",
+                params.inicio, params.fim, params.tipo, params.metodoPagamento,
+                sums.sumEntradas, sums.sumRetiradas, sums.sumVendas, totalItems);
+    }
+
+    private ResponseEntity<java.util.Map<String, Object>> buildAllItemsResponse(
+            java.util.List<java.util.Map<String, Object>> filtrada) {
+
+        MovimentacoesSums sums = calculateMovimentacoesSums(filtrada);
+
+        java.util.Map<String, Object> bodyAll = new java.util.LinkedHashMap<>();
+        bodyAll.put(KEY_ITEMS, filtrada);
+        bodyAll.put(KEY_TOTAL, filtrada.size());
+        bodyAll.put(KEY_HAS_NEXT, false);
+        bodyAll.put(KEY_PAGE, 1);
+        bodyAll.put(KEY_SIZE, filtrada.size());
+        bodyAll.put(KEY_SUM_ENTRADAS, sums.sumEntradas);
+        bodyAll.put(KEY_SUM_RETIRADAS, sums.sumRetiradas);
+        bodyAll.put(KEY_SUM_VENDAS, sums.sumVendas);
+        bodyAll.put(KEY_SUM_ENTRADAS_AUTOMATICAS, sums.sumEntradasAuto);
+        bodyAll.put(KEY_SUM_ENTRADAS_MANUAIS, sums.sumEntradasManuais);
+
+        return ResponseEntity.ok(bodyAll);
+    }
+
+    private ResponseEntity<java.util.Map<String, Object>> buildPaginatedResponse(
+            MovimentacoesQueryParams params, java.util.List<java.util.Map<String, Object>> filtrada) {
+
+        MovimentacoesSums sums = calculateMovimentacoesSums(filtrada);
+
+        int pageNum = (params.page == null || params.page < 1) ? 1 : params.page;
+        int pageSize = (params.size == null || params.size < 1) ? 20 : params.size;
+        int fromIndex = (pageNum - 1) * pageSize;
+
+        if (fromIndex >= filtrada.size()) {
+            return buildEmptyPageResponse(pageNum, pageSize, filtrada.size(), sums);
+        }
+
+        int toIndex = Math.min(fromIndex + pageSize, filtrada.size());
+        var paged = filtrada.subList(fromIndex, toIndex);
+        boolean hasNext = toIndex < filtrada.size();
+
+        java.util.Map<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put(KEY_ITEMS, paged);
+        body.put(KEY_TOTAL, filtrada.size());
+        body.put(KEY_HAS_NEXT, hasNext);
+        body.put(KEY_PAGE, pageNum);
+        body.put(KEY_SIZE, pageSize);
+        body.put(KEY_SUM_ENTRADAS, sums.sumEntradas);
+        body.put(KEY_SUM_RETIRADAS, sums.sumRetiradas);
+        body.put(KEY_SUM_VENDAS, sums.sumVendas);
+
+        return ResponseEntity.ok(body);
+    }
+
+    private ResponseEntity<java.util.Map<String, Object>> buildEmptyPageResponse(
+            int pageNum, int pageSize, int totalSize, MovimentacoesSums sums) {
+        return ResponseEntity.ok(java.util.Map.of(
+                KEY_ITEMS, java.util.List.of(),
+                KEY_TOTAL, totalSize,
+                KEY_HAS_NEXT, false,
+                KEY_PAGE, pageNum,
+                KEY_SIZE, pageSize,
+                KEY_SUM_ENTRADAS, sums.sumEntradas,
+                KEY_SUM_RETIRADAS, sums.sumRetiradas,
+                KEY_SUM_VENDAS, sums.sumVendas));
+    }
+
+    private ResponseEntity<java.util.Map<String, Object>> buildErrorResponse() {
+        return ResponseEntity.ok(java.util.Map.of(
+                KEY_ITEMS, java.util.List.of(),
+                KEY_TOTAL, 0,
+                KEY_HAS_NEXT, false,
+                KEY_PAGE, 1,
+                KEY_SIZE, 20,
+                KEY_SUM_ENTRADAS, 0.0,
+                KEY_SUM_RETIRADAS, 0.0,
+                KEY_SUM_VENDAS, 0.0));
+    }
+
+    // Helper methods for safe execution
+    private void safeExecute(Runnable operation, Runnable fallback) {
+        try {
+            operation.run();
+        } catch (Exception e) {
+            log.warn("Operation failed, using fallback", e);
+            fallback.run();
+        }
+    }
+
+    private double safeCalculate(java.util.function.DoubleSupplier calculation, double defaultValue) {
+        try {
+            return calculation.getAsDouble();
+        } catch (Exception e) {
+            log.debug("Calculation failed, using default value", e);
+            return defaultValue;
         }
     }
 
@@ -576,164 +941,294 @@ public class CaixaController {
             @RequestParam(value = "data") String data) {
         try {
             java.time.LocalDate dia = java.time.LocalDate.parse(data);
-            java.time.ZoneId sp = java.time.ZoneId.of(TIMEZONE_SAO_PAULO);
-            var zdtFrom = java.time.ZonedDateTime.of(dia, java.time.LocalTime.MIDNIGHT, sp);
-            var zdtTo = java.time.ZonedDateTime.of(dia.plusDays(1), java.time.LocalTime.MIDNIGHT, sp).minusNanos(1);
-            java.time.OffsetDateTime fromTs = zdtFrom.toOffsetDateTime();
-            java.time.OffsetDateTime toTs = zdtTo.toOffsetDateTime();
+            TimestampRange range = calculateDayTimestampRange(dia);
 
-            java.util.List<java.util.Map<String, Object>> lista = new java.util.ArrayList<>();
+            java.util.List<java.util.Map<String, Object>> lista = fetchDayMovimentacoes(range);
+            lista = deduplicateAndSortMovimentacoes(lista);
 
-            // movs via DB
-            try {
-                var movs = movimentacaoRepository.findByPeriodoTimestamps(fromTs, toTs);
-                for (var m : movs) {
-                    java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
-                    row.put("id", m.getId());
-                    row.put(KEY_CAIXA_STATUS_ID, m.getCaixaStatus() != null ? m.getCaixaStatus().getId() : null);
-                    row.put("tipo", m.getTipo());
-                    row.put(KEY_VALOR, m.getValor());
-                    row.put(KEY_DESCRICAO, m.getDescricao());
-                    String usuarioNome = null;
-                    try {
-                        if (m.getOperador() != null)
-                            usuarioNome = m.getOperador().getUsername();
-                    } catch (Exception ignored) {
-                    }
-                    if (usuarioNome == null && m.getUsuario() != null) {
-                        usuarioNome = m.getUsuario().getUsername();
-                    }
-                    row.put(KEY_USUARIO, usuarioNome);
-                    row.put(KEY_DATA_MOVIMENTO, m.getDataMovimento());
-                    lista.add(row);
-                }
-            } catch (Exception e) {
-                log.warn("listarMovimentacoes/dia: movs query failed", e);
-                lista.addAll(buildManualMovRows(dia, null, null));
-            }
-
-            // orders via DB — build rows the same way as the main listing so
-            // 'dia' matches 'tudo' formatting (including multi-payment breakdown)
-            try {
-                var orders = saleOrderRepository.findByPeriodoTimestampsRaw(fromTs, toTs);
-                for (var vo : orders) {
-                    for (var pg : vo.getPagamentos()) {
-                        java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
-                        row.put("id", vo.getId());
-                        row.put("tipo", TIPO_VENDA);
-                        row.put(KEY_VALOR, pg.getValor());
-                        row.put(KEY_PAGAMENTO_VALOR, pg.getValor());
-                        row.put(KEY_TOTAL_VENDA, vo.getTotalFinal());
-                        var nf = java.text.NumberFormat
-                                .getCurrencyInstance(java.util.Locale.forLanguageTag(LOCALE_PT_BR));
-                        String totalFmt = nf.format(vo.getTotalFinal());
-                        boolean multi = vo.getPagamentos().size() > 1;
-                        if (multi) {
-                            String breakdown = vo.getPagamentos().stream()
-                                    .map(p -> labelMetodoPagamento(p.getMetodo()) + " " + nf.format(p.getValor()))
-                                    .collect(java.util.stream.Collectors.joining(" | "));
-                            row.put(KEY_DESCRICAO, LABEL_VENDA_MULTI_PREFIX + totalFmt + " - " + breakdown);
-                        } else {
-                            row.put(KEY_DESCRICAO,
-                                    LABEL_VENDA_TOTAL + totalFmt + " (" + labelMetodoPagamento(pg.getMetodo()) + " "
-                                            + nf.format(pg.getValor()) + ")");
-                        }
-                        row.put(KEY_PRODUTO_NOME,
-                                vo.getItens().isEmpty() ? null : vo.getItens().get(0).getProduto().getNome());
-                        row.put(KEY_METODO_PAGAMENTO, pg.getMetodo());
-                        row.put(KEY_USUARIO, vo.getOperador() != null ? vo.getOperador().getUsername() : null);
-                        row.put(KEY_DATA_MOVIMENTO, vo.getDataVenda());
-                        row.put(KEY_CAIXA_STATUS_ID, vo.getCaixaStatus() != null ? vo.getCaixaStatus().getId() : null);
-                        lista.add(row);
-                    }
-                }
-            } catch (Exception e) {
-                log.warn("listarMovimentacoes/dia: orders query failed", e);
-                lista.addAll(buildSaleOrderRows(dia, null, null));
-            }
-
-            // dedupe and sort
-            java.util.Map<Object, java.util.Map<String, Object>> byId = new java.util.LinkedHashMap<>();
-            for (var m : lista) {
-                Object idObj = m.get("id");
-                if (idObj == null) {
-                    idObj = (m.get(KEY_DATA_MOVIMENTO) == null ? java.util.UUID.randomUUID().toString()
-                            : m.get(KEY_DATA_MOVIMENTO).toString() + "|" + m.get(KEY_DESCRICAO));
-                }
-                if (!byId.containsKey(idObj))
-                    byId.put(idObj, m);
-            }
-            lista = new java.util.ArrayList<>(byId.values());
-            lista = sortByDataMovimentoDesc(lista);
-
-            java.util.Map<String, Object> body = new java.util.LinkedHashMap<>();
-            body.put(KEY_ITEMS, lista);
-            body.put(KEY_TOTAL, lista.size());
-            body.put(KEY_HAS_NEXT, false);
-            body.put(KEY_PAGE, 1);
-            body.put(KEY_SIZE, lista.size());
-            double sumEntradasAll = lista.stream()
-                    .filter(m -> TIPO_ENTRADA.equals(m.get("tipo")))
-                    .mapToDouble(m -> ((Number) (m.get(KEY_VALOR) == null ? 0 : m.get(KEY_VALOR))).doubleValue())
-                    .sum();
-            double sumRetiradasAll = lista.stream()
-                    .filter(m -> TIPO_RETIRADA.equals(m.get("tipo")))
-                    .mapToDouble(m -> ((Number) (m.get(KEY_VALOR) == null ? 0 : m.get(KEY_VALOR))).doubleValue())
-                    .sum();
-
-            // Avoid double-counting cash: build keys of entrada rows
-            // (caixa_status_id|valor)
-            java.util.Set<String> entradaCashKeysAll = lista.stream()
-                    .filter(m -> TIPO_ENTRADA.equals(m.get("tipo")))
-                    .filter(m -> m.get(KEY_CAIXA_STATUS_ID) != null && m.get(KEY_VALOR) != null)
-                    .map(m -> m.get(KEY_CAIXA_STATUS_ID).toString() + "|"
-                            + Double.toString(((Number) m.get(KEY_VALOR)).doubleValue()))
-                    .collect(java.util.stream.Collectors.toSet());
-
-            double sumVendasAll = lista.stream().filter(m -> TIPO_VENDA.equals(m.get("tipo"))).mapToDouble(m -> {
-                try {
-                    Object metodo = m.get(KEY_METODO_PAGAMENTO);
-                    Object caixaId = m.get(KEY_CAIXA_STATUS_ID);
-                    double val = ((Number) (m.get(KEY_VALOR) == null ? 0 : m.get(KEY_VALOR))).doubleValue();
-                    if (VALOR_DINHEIRO.equals(metodo) && caixaId != null) {
-                        String key = caixaId.toString() + "|" + Double.toString(val);
-                        if (entradaCashKeysAll.contains(key)) {
-                            return 0.0; // skip duplicate
-                        }
-                    }
-                    return val;
-                } catch (Exception e) {
-                    return 0.0;
-                }
-            }).sum();
-            body.put(KEY_SUM_ENTRADAS, sumEntradasAll);
-            body.put(KEY_SUM_RETIRADAS, sumRetiradasAll);
-            body.put(KEY_SUM_VENDAS, sumVendasAll);
-            try {
-                double sumEntradasAutoDia = lista.stream()
-                        .filter(m -> TIPO_ENTRADA.equals(m.get("tipo")))
-                        .filter(m -> {
-                            try {
-                                Object d = m.get(KEY_DESCRICAO);
-                                if (d == null)
-                                    return false;
-                                String s = d.toString().toLowerCase();
-                                return s.contains(TIPO_VENDA);
-                            } catch (Exception e) {
-                                return false;
-                            }
-                        })
-                        .mapToDouble(m -> ((Number) (m.get(KEY_VALOR) == null ? 0 : m.get(KEY_VALOR))).doubleValue())
-                        .sum();
-                double sumEntradasManuaisDia = Math.max(0.0, sumEntradasAll - sumEntradasAutoDia);
-                body.put(KEY_SUM_ENTRADAS_AUTOMATICAS, sumEntradasAutoDia);
-                body.put(KEY_SUM_ENTRADAS_MANUAIS, sumEntradasManuaisDia);
-            } catch (Exception ignored) {
-            }
-            return ResponseEntity.ok(body);
+            return buildDayMovimentacoesResponse(lista);
         } catch (Exception e) {
             log.error("listarMovimentacoes/dia: exception", e);
             return ResponseEntity.status(500).body(Map.of(KEY_ERROR, MSG_FALHA_LISTAR_DIA));
+        }
+    }
+
+    private static class TimestampRange {
+        final java.time.OffsetDateTime fromTs;
+        final java.time.OffsetDateTime toTs;
+
+        TimestampRange(java.time.OffsetDateTime fromTs, java.time.OffsetDateTime toTs) {
+            this.fromTs = fromTs;
+            this.toTs = toTs;
+        }
+    }
+
+    private TimestampRange calculateDayTimestampRange(java.time.LocalDate dia) {
+        java.time.ZoneId sp = java.time.ZoneId.of(TIMEZONE_SAO_PAULO);
+        var zdtFrom = java.time.ZonedDateTime.of(dia, java.time.LocalTime.MIDNIGHT, sp);
+        var zdtTo = java.time.ZonedDateTime.of(dia.plusDays(1), java.time.LocalTime.MIDNIGHT, sp).minusNanos(1);
+        return new TimestampRange(zdtFrom.toOffsetDateTime(), zdtTo.toOffsetDateTime());
+    }
+
+    private java.util.List<java.util.Map<String, Object>> fetchDayMovimentacoes(TimestampRange range) {
+        java.util.List<java.util.Map<String, Object>> lista = new java.util.ArrayList<>();
+
+        // Fetch movimentações
+        fetchDayMovimentacoesFromDb(lista, range);
+
+        // Fetch sale orders
+        fetchDaySaleOrdersFromDb(lista, range);
+
+        return lista;
+    }
+
+    private void fetchDayMovimentacoesFromDb(java.util.List<java.util.Map<String, Object>> lista,
+            TimestampRange range) {
+        safeExecute(() -> {
+            var movs = movimentacaoRepository.findByPeriodoTimestamps(range.fromTs, range.toTs);
+            for (var m : movs) {
+                java.util.Map<String, Object> row = buildDayMovimentacaoRow(m);
+                lista.add(row);
+            }
+        }, () -> {
+            log.warn("listarMovimentacoes/dia: movs query failed");
+            lista.addAll(buildManualMovRows(range.fromTs.toLocalDate(), null, null));
+        });
+    }
+
+    private java.util.Map<String, Object> buildDayMovimentacaoRow(CaixaMovimentacao m) {
+        java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
+        row.put("id", m.getId());
+        row.put(KEY_CAIXA_STATUS_ID, m.getCaixaStatus() != null ? m.getCaixaStatus().getId() : null);
+        row.put("tipo", m.getTipo());
+        row.put(KEY_VALOR, m.getValor());
+        row.put(KEY_DESCRICAO, m.getDescricao());
+
+        String usuarioNome = extractDayUsuarioNome(m);
+        row.put(KEY_USUARIO, usuarioNome);
+        row.put(KEY_DATA_MOVIMENTO, m.getDataMovimento());
+
+        return row;
+    }
+
+    private String extractDayUsuarioNome(CaixaMovimentacao m) {
+        try {
+            if (m.getOperador() != null) {
+                return m.getOperador().getUsername();
+            }
+        } catch (Exception e) {
+            log.debug("Error extracting operator username: {}", e.getMessage());
+        }
+
+        if (m.getUsuario() != null) {
+            return m.getUsuario().getUsername();
+        }
+
+        return null;
+    }
+
+    private void fetchDaySaleOrdersFromDb(java.util.List<java.util.Map<String, Object>> lista, TimestampRange range) {
+        safeExecute(() -> {
+            var orders = saleOrderRepository.findByPeriodoTimestampsRaw(range.fromTs, range.toTs);
+            for (var vo : orders) {
+                lista.addAll(buildDaySaleOrderRows(vo));
+            }
+        }, () -> {
+            log.warn("listarMovimentacoes/dia: orders query failed");
+            lista.addAll(buildSaleOrderRows(range.fromTs.toLocalDate(), null, null));
+        });
+    }
+
+    private java.util.List<java.util.Map<String, Object>> buildDaySaleOrderRows(
+            com.example.backendspring.sale.SaleOrder vo) {
+        java.util.List<java.util.Map<String, Object>> rows = new java.util.ArrayList<>();
+
+        for (var pg : vo.getPagamentos()) {
+            java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
+            row.put("id", vo.getId());
+            row.put("tipo", TIPO_VENDA);
+            row.put(KEY_VALOR, pg.getValor());
+            row.put(KEY_PAGAMENTO_VALOR, pg.getValor());
+            row.put(KEY_TOTAL_VENDA, vo.getTotalFinal());
+
+            addDaySaleDescription(row, vo, pg);
+            addDaySaleDetails(row, vo, pg);
+
+            rows.add(row);
+        }
+
+        return rows;
+    }
+
+    private void addDaySaleDescription(java.util.Map<String, Object> row,
+            com.example.backendspring.sale.SaleOrder vo, com.example.backendspring.sale.SalePayment pg) {
+        var nf = java.text.NumberFormat.getCurrencyInstance(java.util.Locale.forLanguageTag(LOCALE_PT_BR));
+        String totalFmt = nf.format(vo.getTotalFinal());
+        boolean multi = vo.getPagamentos().size() > 1;
+
+        if (multi) {
+            String breakdown = buildDayPaymentBreakdown(vo, nf);
+            row.put(KEY_DESCRICAO, LABEL_VENDA_MULTI_PREFIX + totalFmt + " - " + breakdown);
+        } else {
+            row.put(KEY_DESCRICAO,
+                    LABEL_VENDA_TOTAL + totalFmt + " (" + labelMetodoPagamento(pg.getMetodo()) + " "
+                            + nf.format(pg.getValor()) + ")");
+        }
+    }
+
+    private String buildDayPaymentBreakdown(com.example.backendspring.sale.SaleOrder vo,
+            java.text.NumberFormat nf) {
+        return vo.getPagamentos().stream()
+                .map(p -> labelMetodoPagamento(p.getMetodo()) + " " + nf.format(p.getValor()))
+                .collect(java.util.stream.Collectors.joining(" | "));
+    }
+
+    private void addDaySaleDetails(java.util.Map<String, Object> row,
+            com.example.backendspring.sale.SaleOrder vo, com.example.backendspring.sale.SalePayment pg) {
+        addSaleDetailsToRow(row, vo, pg);
+    }
+
+    private java.util.List<java.util.Map<String, Object>> deduplicateAndSortMovimentacoes(
+            java.util.List<java.util.Map<String, Object>> lista) {
+        java.util.Map<Object, java.util.Map<String, Object>> byId = new java.util.LinkedHashMap<>();
+
+        for (var m : lista) {
+            Object idObj = buildSimpleDeduplicationKey(m);
+            byId.computeIfAbsent(idObj, k -> m);
+        }
+
+        lista = new java.util.ArrayList<>(byId.values());
+        return sortByDataMovimentoDesc(lista);
+    }
+
+    private Object buildSimpleDeduplicationKey(java.util.Map<String, Object> m) {
+        Object idObj = m.get("id");
+        if (idObj == null) {
+            idObj = (m.get(KEY_DATA_MOVIMENTO) == null ? java.util.UUID.randomUUID().toString()
+                    : m.get(KEY_DATA_MOVIMENTO).toString() + "|" + m.get(KEY_DESCRICAO));
+        }
+        return idObj;
+    }
+
+    private ResponseEntity<java.util.Map<String, Object>> buildDayMovimentacoesResponse(
+            java.util.List<java.util.Map<String, Object>> lista) {
+
+        DayMovimentacoesSums sums = calculateDayMovimentacoesSums(lista);
+
+        java.util.Map<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put(KEY_ITEMS, lista);
+        body.put(KEY_TOTAL, lista.size());
+        body.put(KEY_HAS_NEXT, false);
+        body.put(KEY_PAGE, 1);
+        body.put(KEY_SIZE, lista.size());
+        body.put(KEY_SUM_ENTRADAS, sums.sumEntradas);
+        body.put(KEY_SUM_RETIRADAS, sums.sumRetiradas);
+        body.put(KEY_SUM_VENDAS, sums.sumVendas);
+
+        addDayEntradasBreakdown(body, lista);
+
+        return ResponseEntity.ok(body);
+    }
+
+    private static class DayMovimentacoesSums {
+        double sumEntradas;
+        double sumRetiradas;
+        double sumVendas;
+    }
+
+    private DayMovimentacoesSums calculateDayMovimentacoesSums(java.util.List<java.util.Map<String, Object>> lista) {
+        DayMovimentacoesSums sums = new DayMovimentacoesSums();
+
+        sums.sumEntradas = calculateDaySumByType(lista, TIPO_ENTRADA);
+        sums.sumRetiradas = calculateDaySumByType(lista, TIPO_RETIRADA);
+
+        // Avoid double-counting cash: build keys of entrada rows
+        java.util.Set<String> entradaCashKeys = buildDayEntradaCashKeys(lista);
+        sums.sumVendas = calculateDayVendasSum(lista, entradaCashKeys);
+
+        return sums;
+    }
+
+    private double calculateDaySumByType(java.util.List<java.util.Map<String, Object>> lista, String tipo) {
+        return lista.stream()
+                .filter(m -> tipo.equals(m.get("tipo")))
+                .mapToDouble(m -> {
+                    Object valor = m.get(KEY_VALOR);
+                    return valor == null ? 0.0 : ((Number) valor).doubleValue();
+                })
+                .sum();
+    }
+
+    private java.util.Set<String> buildDayEntradaCashKeys(java.util.List<java.util.Map<String, Object>> lista) {
+        return lista.stream()
+                .filter(m -> TIPO_ENTRADA.equals(m.get("tipo")))
+                .filter(m -> m.get(KEY_CAIXA_STATUS_ID) != null && m.get(KEY_VALOR) != null)
+                .map(m -> m.get(KEY_CAIXA_STATUS_ID).toString() + "|"
+                        + Double.toString(((Number) m.get(KEY_VALOR)).doubleValue()))
+                .collect(java.util.stream.Collectors.toSet());
+    }
+
+    private double calculateDayVendasSum(java.util.List<java.util.Map<String, Object>> lista,
+            java.util.Set<String> entradaCashKeys) {
+        return lista.stream()
+                .filter(m -> TIPO_VENDA.equals(m.get("tipo")))
+                .mapToDouble(m -> calculateDayVendaValue(m, entradaCashKeys))
+                .sum();
+    }
+
+    private double calculateDayVendaValue(java.util.Map<String, Object> m, java.util.Set<String> entradaCashKeys) {
+        try {
+            Object metodo = m.get(KEY_METODO_PAGAMENTO);
+            Object caixaId = m.get(KEY_CAIXA_STATUS_ID);
+            Object valorObj = m.get(KEY_VALOR);
+            double val = valorObj == null ? 0.0 : ((Number) valorObj).doubleValue();
+
+            if (VALOR_DINHEIRO.equals(metodo) && caixaId != null) {
+                String key = caixaId.toString() + "|" + Double.toString(val);
+                if (entradaCashKeys.contains(key)) {
+                    return 0.0; // skip duplicate
+                }
+            }
+            return val;
+        } catch (Exception e) {
+            return 0.0;
+        }
+    }
+
+    private void addDayEntradasBreakdown(java.util.Map<String, Object> body,
+            java.util.List<java.util.Map<String, Object>> lista) {
+        safeExecute(() -> {
+            double sumEntradasAuto = calculateDayEntradasAutoSum(lista);
+            double sumEntradasManuais = Math.max(0.0,
+                    ((Number) body.get(KEY_SUM_ENTRADAS)).doubleValue() - sumEntradasAuto);
+
+            body.put(KEY_SUM_ENTRADAS_AUTOMATICAS, sumEntradasAuto);
+            body.put(KEY_SUM_ENTRADAS_MANUAIS, sumEntradasManuais);
+        }, () -> {
+            // Ignore errors in entradas breakdown calculation
+        });
+    }
+
+    private double calculateDayEntradasAutoSum(java.util.List<java.util.Map<String, Object>> lista) {
+        return lista.stream()
+                .filter(m -> TIPO_ENTRADA.equals(m.get("tipo")))
+                .filter(this::isDayEntradaAuto)
+                .mapToDouble(m -> {
+                    Object valor = m.get(KEY_VALOR);
+                    return valor == null ? 0.0 : ((Number) valor).doubleValue();
+                })
+                .sum();
+    }
+
+    private boolean isDayEntradaAuto(java.util.Map<String, Object> m) {
+        try {
+            Object d = m.get(KEY_DESCRICAO);
+            if (d == null)
+                return false;
+            String s = d.toString().toLowerCase();
+            return s.contains(TIPO_VENDA);
+        } catch (Exception e) {
+            return false;
         }
     }
 
@@ -756,21 +1251,19 @@ public class CaixaController {
             // differences between the LocalDate and timestamp branches).
             try {
                 // Use helper method to avoid self-invocation of @Transactional method
-                MovimentacoesQueryParams params = MovimentacoesQueryParams.builder()
-                        .periodoInicio(inicio.toString())
-                        .periodoFim(fim.toString())
-                        .page(page == null ? 1 : page)
-                        .size(size == null ? 20 : size)
-                        .build();
+                MovimentacoesQueryParams params = new MovimentacoesQueryParams();
+                params.periodoInicio = inicio.toString();
+                params.periodoFim = fim.toString();
+                params.page = page == null ? 1 : page;
+                params.size = size == null ? 20 : size;
                 return getMovimentacoesDirectly(params);
             } catch (Exception ex) {
                 // Fallback to LocalDate path if timezone conversion fails
-                MovimentacoesQueryParams fallbackParams = MovimentacoesQueryParams.builder()
-                        .periodoInicio(inicio.toString())
-                        .periodoFim(fim.toString())
-                        .page(page == null ? 1 : page)
-                        .size(size == null ? 20 : size)
-                        .build();
+                MovimentacoesQueryParams fallbackParams = new MovimentacoesQueryParams();
+                fallbackParams.periodoInicio = inicio.toString();
+                fallbackParams.periodoFim = fim.toString();
+                fallbackParams.page = page == null ? 1 : page;
+                fallbackParams.size = size == null ? 20 : size;
                 return getMovimentacoesDirectly(fallbackParams);
             }
         } catch (Exception e) {
@@ -792,79 +1285,29 @@ public class CaixaController {
             @RequestParam(value = "periodo_inicio") String periodoInicio,
             @RequestParam(value = "periodo_fim") String periodoFim) {
         try {
-            // Call LocalDate path (all=true) => uses buildSaleOrderRows/buildManualMovRows
+            // Get local date path results
             ResponseEntity<java.util.Map<String, Object>> localResp = listarMovimentacoes(null, periodoInicio,
                     periodoFim, null, null, Boolean.TRUE, null, null, null, null, null, 1, Integer.MAX_VALUE);
 
-            // Compute timestamp bounds in America/Sao_Paulo and call timestamp path
-            // (all=true)
-            java.time.LocalDate inicio = java.time.LocalDate.parse(periodoInicio);
-            java.time.LocalDate fim = java.time.LocalDate.parse(periodoFim);
-            java.time.ZoneId sp = java.time.ZoneId.of(TIMEZONE_SAO_PAULO);
-            var zdtFrom = java.time.ZonedDateTime.of(inicio, java.time.LocalTime.MIDNIGHT, sp);
-            var zdtTo = java.time.ZonedDateTime.of(fim.plusDays(1), java.time.LocalTime.MIDNIGHT, sp).minusNanos(1);
-            java.time.OffsetDateTime fromTs = zdtFrom.toOffsetDateTime();
-            java.time.OffsetDateTime toTs = zdtTo.toOffsetDateTime();
-
+            // Get timestamp path results
+            TimestampBounds bounds = calculateTimestampBounds(periodoInicio, periodoFim);
             ResponseEntity<java.util.Map<String, Object>> tsResp = listarMovimentacoes(null, null, null,
-                    fromTs.toString(), toTs.toString(), Boolean.TRUE, null, null, null, null, null, 1,
+                    bounds.fromTs.toString(), bounds.toTs.toString(), Boolean.TRUE, null, null, null, null, null, 1,
                     Integer.MAX_VALUE);
 
-            // Safe extraction with null checks
-            java.util.Map<String, Object> localBody = localResp.getBody();
-            java.util.Map<String, Object> tsBody = tsResp.getBody();
+            // Extract and process items
+            java.util.List<java.util.Map<String, Object>> localItems = extractItemsFromResponse(localResp);
+            java.util.List<java.util.Map<String, Object>> tsItems = extractItemsFromResponse(tsResp);
 
-            @SuppressWarnings("unchecked")
-            java.util.List<java.util.Map<String, Object>> localItems = localBody != null
-                    ? (java.util.List<java.util.Map<String, Object>>) localBody.getOrDefault(KEY_ITEMS,
-                            java.util.List.of())
-                    : java.util.List.of();
-            @SuppressWarnings("unchecked")
-            java.util.List<java.util.Map<String, Object>> tsItems = tsBody != null
-                    ? (java.util.List<java.util.Map<String, Object>>) tsBody.getOrDefault(KEY_ITEMS,
-                            java.util.List.of())
-                    : java.util.List.of();
+            // Build maps and find differences
+            java.util.function.Function<java.util.Map<String, Object>, String> keyFn = createDedupeKeyFunction();
+            java.util.Map<String, java.util.Map<String, Object>> mapLocal = buildItemMap(localItems, keyFn);
+            java.util.Map<String, java.util.Map<String, Object>> mapTs = buildItemMap(tsItems, keyFn);
 
-            // Build dedupe key function consistent with listing code
-            java.util.function.Function<java.util.Map<String, Object>, String> keyFn = m -> {
-                try {
-                    Object idObj = m.get("id");
-                    if (idObj == null) {
-                        Object dm = m.get(KEY_DATA_MOVIMENTO);
-                        Object desc = m.get(KEY_DESCRICAO);
-                        return (dm == null ? java.util.UUID.randomUUID().toString() : dm.toString()) + "|"
-                                + (desc == null ? "" : desc.toString());
-                    } else {
-                        if (TIPO_VENDA.equals(m.get("tipo"))) {
-                            Object metodo = m.get(KEY_METODO_PAGAMENTO);
-                            Object pgVal = m.get(KEY_PAGAMENTO_VALOR);
-                            return idObj.toString() + "|" + (metodo == null ? "" : metodo.toString()) + "|"
-                                    + (pgVal == null ? "" : pgVal.toString());
-                        }
-                        return idObj.toString();
-                    }
-                } catch (Exception e) {
-                    return java.util.UUID.randomUUID().toString();
-                }
-            };
+            java.util.List<java.util.Map<String, Object>> inLocalNotInTs = findItemsNotInOtherMap(mapLocal, mapTs);
+            java.util.List<java.util.Map<String, Object>> inTsNotInLocal = findItemsNotInOtherMap(mapTs, mapLocal);
 
-            java.util.Map<String, java.util.Map<String, Object>> mapLocal = new java.util.LinkedHashMap<>();
-            for (var m : localItems)
-                mapLocal.put(keyFn.apply(m), m);
-            java.util.Map<String, java.util.Map<String, Object>> mapTs = new java.util.LinkedHashMap<>();
-            for (var m : tsItems)
-                mapTs.put(keyFn.apply(m), m);
-
-            java.util.List<java.util.Map<String, Object>> inLocalNotInTs = new java.util.ArrayList<>();
-            for (var entry : mapLocal.entrySet())
-                if (!mapTs.containsKey(entry.getKey()))
-                    inLocalNotInTs.add(entry.getValue());
-
-            java.util.List<java.util.Map<String, Object>> inTsNotInLocal = new java.util.ArrayList<>();
-            for (var entry : mapTs.entrySet())
-                if (!mapLocal.containsKey(entry.getKey()))
-                    inTsNotInLocal.add(entry.getValue());
-
+            // Build response
             java.util.Map<String, Object> resp = new java.util.LinkedHashMap<>();
             resp.put("local_count", mapLocal.size());
             resp.put("ts_count", mapTs.size());
@@ -875,6 +1318,15 @@ public class CaixaController {
             log.error("diagnosticarDivergencia: exception", e);
             return ResponseEntity.status(500).body(Map.of(KEY_ERROR, MSG_FALHA_DIAGNOSTICAR));
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private java.util.List<java.util.Map<String, Object>> extractItemsFromResponse(
+            ResponseEntity<java.util.Map<String, Object>> response) {
+        java.util.Map<String, Object> body = response.getBody();
+        return body != null
+                ? (java.util.List<java.util.Map<String, Object>>) body.getOrDefault(KEY_ITEMS, java.util.List.of())
+                : java.util.List.of();
     }
 
     @GetMapping("/sessoes")
@@ -1264,8 +1716,8 @@ public class CaixaController {
             try {
                 if (m.getOperador() != null)
                     usuarioNome = m.getOperador().getUsername();
-            } catch (Exception ignored) {
-                // Silently ignore errors accessing operator username
+            } catch (Exception e) {
+                log.debug("Error accessing operator username: {}", e.getMessage());
             }
             if (usuarioNome == null && m.getUsuario() != null) {
                 usuarioNome = m.getUsuario().getUsername();
@@ -1528,111 +1980,41 @@ public class CaixaController {
     public ResponseEntity<Map<String, Object>> fechar(
             @RequestAttribute(name = "userId", required = false) Long userId,
             @RequestBody(required = false) FecharRequest body) {
-        if (userId == null)
-            return ResponseEntity.status(401).body(Map.of(KEY_ERROR, MSG_NAO_AUTENTICADO));
-        // verificar permissões: apenas operador autorizado (podeControlarCaixa) ou
-        // admin podem fechar
-        var closer = userRepository.findById(userId).orElse(null);
-        if (closer == null || (!Boolean.TRUE.equals(closer.getPodeControlarCaixa())
-                && (closer.getRole() == null || !closer.getRole().equals(VALOR_ADMIN)))) {
-            return ResponseEntity.status(403).body(Map.of(KEY_ERROR, "Permissão negada para fechar o caixa"));
+
+        // Validate user permissions
+        ResponseEntity<Map<String, Object>> permissionResult = validateUserPermissionsForClosing(userId);
+        if (permissionResult != null)
+            return permissionResult;
+
+        // Find and validate cash session
+        CaixaStatus status;
+        try {
+            status = findCashSessionToClose(body);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(404).body(Map.of(KEY_ERROR, e.getMessage()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, e.getMessage()));
         }
 
-        // localizar sessão a ser fechada: preferir sessionId fornecido, caso contrário
-        // buscar a sessão aberta mais recente. Usar métodos com lock pessimista.
-        CaixaStatus status = null;
-        if (body != null && body.getSessionId() != null) {
-            status = caixaStatusRepository.findByIdForUpdate(body.getSessionId()).orElse(null);
-            if (status == null) {
-                return ResponseEntity.status(404).body(Map.of(KEY_ERROR, MSG_SESSAO_NAO_ENCONTRADA));
-            }
-            if (!Boolean.TRUE.equals(status.getAberto())) {
-                return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, "Sessão já está fechada"));
-            }
-        } else {
-            status = caixaStatusRepository.findTopByAbertoTrueOrderByIdDesc().orElse(null);
-            if (status == null || !Boolean.TRUE.equals(status.getAberto())) {
-                return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, "Caixa já está fechado"));
-            }
-        }
+        // Validate closing request body
+        ResponseEntity<Map<String, Object>> bodyResult = validateClosingRequest(body);
+        if (bodyResult != null)
+            return bodyResult;
+
         var agora = OffsetDateTime.now();
 
-        // tornar referência final ao objeto de sessão para uso em lambdas
-        final CaixaStatus sessionFinal = status;
+        // Calculate expected balance
+        calculateAndSetExpectedBalance(status);
 
-        // calcular saldo esperado e preencher sessão (delegado a helper)
-        try {
-            double esperado = calculateExpectedForSession(sessionFinal);
-            sessionFinal.setSaldoEsperado(esperado);
-        } catch (Exception ignored) {
-            // Expected: Calculation errors should not interrupt session closure
-        }
+        // Set session closing data
+        setSessionClosingData(status, body, userId, agora);
 
-        // validar body com saldoContado
-        if (body == null || body.getSaldoContado() == null) {
-            return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, "saldo_contado é obrigatório ao fechar o caixa"));
-        }
-        sessionFinal.setSaldoContado(body.getSaldoContado());
-        if (sessionFinal.getSaldoEsperado() != null) {
-            sessionFinal.setVariacao(sessionFinal.getSaldoContado() - sessionFinal.getSaldoEsperado());
-        }
-        if (body.getObservacoes() != null)
-            sessionFinal.setObservacoesFechamento(body.getObservacoes());
+        // Calculate cumulative values
+        calculateAndSetCumulativeValues(status);
 
-        sessionFinal.setAberto(false);
-        sessionFinal.setFechadoPor(userRepository.findById(userId).orElse(null));
-        sessionFinal.setDataFechamento(agora);
-        sessionFinal.setAtualizadoEm(agora);
-
-        // calcular e persistir cumulativos: variação acumulada e déficit não reposto
-        try {
-            var all = caixaStatusRepository.findAll().stream()
-                    .filter(s -> s.getId() != null)
-                    .sorted(java.util.Comparator.comparing(CaixaStatus::getId)).toList();
-            double running = 0.0;
-            double totalPos = 0.0;
-            double totalNeg = 0.0;
-            for (var s : all) {
-                if (s.getId().equals(sessionFinal.getId())) {
-                    // include current session's variacao
-                    running += (sessionFinal.getVariacao() == null ? 0.0 : sessionFinal.getVariacao());
-                    if (sessionFinal.getVariacao() != null) {
-                        if (sessionFinal.getVariacao() > 0)
-                            totalPos += sessionFinal.getVariacao();
-                        else
-                            totalNeg += -sessionFinal.getVariacao();
-                    }
-                    break;
-                } else {
-                    running += (s.getVariacao() == null ? 0.0 : s.getVariacao());
-                    if (s.getVariacao() != null) {
-                        if (s.getVariacao() > 0)
-                            totalPos += s.getVariacao();
-                        else
-                            totalNeg += -s.getVariacao();
-                    }
-                }
-            }
-            sessionFinal.setVariacaoAcumulada(running);
-            double deficit = Math.max(0.0, totalNeg - totalPos);
-            sessionFinal.setDeficitNaoRepostoAcumulada(deficit);
-        } catch (Exception ignored) {
-            // Expected: Cumulative calculation errors should not interrupt session closure
-        }
-
-        caixaStatusRepository.save(sessionFinal);
-        java.util.Map<String, Object> resp = new java.util.LinkedHashMap<>();
-        resp.put("id", sessionFinal.getId());
-        resp.put(KEY_ABERTO, Boolean.TRUE.equals(sessionFinal.getAberto()));
-        resp.put(KEY_DATA_FECHAMENTO, sessionFinal.getDataFechamento());
-        resp.put(KEY_FECHADO_POR, sessionFinal.getFechadoPor() != null ? sessionFinal.getFechadoPor().getId() : null);
-        resp.put("fechado_por_username",
-                sessionFinal.getFechadoPor() != null ? sessionFinal.getFechadoPor().getUsername() : null);
-        resp.put(KEY_SALDO_ESPERADO, sessionFinal.getSaldoEsperado());
-        resp.put(KEY_SALDO_CONTADO, sessionFinal.getSaldoContado());
-        resp.put(KEY_VARIACAO, sessionFinal.getVariacao());
-        resp.put("observacoes", sessionFinal.getObservacoesFechamento());
-        return ResponseEntity.ok(resp);
+        // Save and return response
+        caixaStatusRepository.save(status);
+        return ResponseEntity.ok(buildClosingResponse(status));
     }
 
     @PutMapping("/horarios")
@@ -1775,9 +2157,9 @@ public class CaixaController {
         resp.put(KEY_VARIACAO, status.getVariacao());
     }
 
-    private void logRepositoryCountsForDebug(Boolean all, java.time.LocalDate dia, 
-                                           java.time.LocalDate inicio, java.time.LocalDate fim, 
-                                           String from, String to) {
+    private void logRepositoryCountsForDebug(Boolean all, java.time.LocalDate dia,
+            java.time.LocalDate inicio, java.time.LocalDate fim,
+            String from, String to) {
         try {
             if (Boolean.TRUE.equals(all)) {
                 if (dia != null) {
@@ -2254,58 +2636,6 @@ public class CaixaController {
                     KEY_HAS_NEXT, false,
                     KEY_PAGE, 1,
                     KEY_SIZE, 20));
-        }
-    }
-
-    /**
-     * Parameter object for movimentacoes queries to reduce method parameter count
-     */
-    private static class MovimentacoesQueryParams {
-        final String periodoInicio;
-        final String periodoFim;
-        final Integer page;
-        final Integer size;
-
-        private MovimentacoesQueryParams(Builder builder) {
-            this.periodoInicio = builder.periodoInicio;
-            this.periodoFim = builder.periodoFim;
-            this.page = builder.page;
-            this.size = builder.size;
-        }
-
-        static Builder builder() {
-            return new Builder();
-        }
-
-        static class Builder {
-            String periodoInicio;
-            String periodoFim;
-            Integer page;
-            Integer size;
-
-            Builder periodoInicio(String periodoInicio) {
-                this.periodoInicio = periodoInicio;
-                return this;
-            }
-
-            Builder periodoFim(String periodoFim) {
-                this.periodoFim = periodoFim;
-                return this;
-            }
-
-            Builder page(Integer page) {
-                this.page = page;
-                return this;
-            }
-
-            Builder size(Integer size) {
-                this.size = size;
-                return this;
-            }
-
-            MovimentacoesQueryParams build() {
-                return new MovimentacoesQueryParams(this);
-            }
         }
     }
 
