@@ -476,86 +476,10 @@ export class CaixaComponent implements OnInit {
             // Atualizar tooltips após calcular valores locais
             await this.atualizarTooltipsMovimentacoes();
 
-            // Adjust sumVendas to avoid double-counting cash that is already represented
-            // as a caixa 'entrada' movimentacao. Strategy:
-            // - Build a map of entrada amounts per caixa_status_id (consume matches)
-            // - For each venda, if multi-payment (pagamentos_badges) parse parts and
-            //   exclude dinheiro parts that match an existing entrada for the same
-            //   caixa_status_id. For single-method vendas, exclude the whole venda
-            //   if a matching entrada exists.
-            const entradasBySession = new Map<string, number[]>();
-            for (const e of consolidated.filter((c: any) => c.tipo === 'entrada' && c.caixa_status_id != null)) {
-              const key = String(e.caixa_status_id);
-              const arr = entradasBySession.get(key) || [];
-              arr.push(Number(e.valor || 0));
-              entradasBySession.set(key, arr);
-            }
-
-            const parseBadgeValue = (badge: string): number => {
-              try {
-                // badge format: 'Dinheiro · R$ 20,00' or similar
-                const parts = badge.split('·');
-                const valPart = parts.length > 1 ? parts[1] : parts[0];
-                let cleaned = String(valPart).replace(/[^0-9,\.]/g, '').trim();
-                // remove thousands separators and normalize decimal
-                cleaned = cleaned.replace(/\./g, '').replace(/,/g, '.');
-                const n = parseFloat(cleaned);
-                return isNaN(n) ? 0 : n;
-              } catch {
-                return 0;
-              }
-            };
-
+            // Simplificando: agora o backend já cuida da deduplicação corretamente
             let sumVendasAdj = 0;
-            const vendasDebug: any[] = [];
             for (const v of consolidated.filter((c: any) => c.tipo === 'venda')) {
-              let contribution = 0;
-              const sessionKey = v.caixa_status_id != null ? String(v.caixa_status_id) : null;
-              const debugEntry: any = {
-                id: v.id,
-                sessionKey,
-                metodo: v.metodo_pagamento,
-                valor: v.valor,
-                badges: Array.isArray((v as any).pagamentos_badges) ? (v as any).pagamentos_badges.slice() : null,
-                contributionBefore: 0,
-                contributionAfter: 0
-              };
-              if (Array.isArray(v.pagamentos_badges) && v.pagamentos_badges.length) {
-                for (const b of v.pagamentos_badges) {
-                  const parts = String(b).split('·');
-                  const metodo = parts[0] ? parts[0].trim().toLowerCase() : '';
-                  const val = parseBadgeValue(b);
-                  if (metodo === 'dinheiro' && sessionKey) {
-                    const arr = entradasBySession.get(sessionKey) || [];
-                    const idx = arr.findIndex(a => Math.abs(a - val) < 0.01);
-                    if (idx >= 0) {
-                      arr.splice(idx, 1);
-                      entradasBySession.set(sessionKey, arr);
-                      continue;
-                    }
-                  }
-                  contribution += val;
-                }
-              } else {
-                const metodo = (v.metodo_pagamento || '').toLowerCase();
-                const val = Number(v.valor || 0);
-                if (metodo === 'dinheiro' && sessionKey) {
-                  const arr = entradasBySession.get(sessionKey) || [];
-                  const idx = arr.findIndex(a => Math.abs(a - val) < 0.01);
-                  if (idx >= 0) {
-                    arr.splice(idx, 1);
-                    entradasBySession.set(sessionKey, arr);
-                    contribution = 0;
-                  } else {
-                    contribution = val;
-                  }
-                } else {
-                  contribution = val;
-                }
-              }
-              debugEntry.contributionAfter = contribution;
-              vendasDebug.push(debugEntry);
-              sumVendasAdj += contribution;
+              sumVendasAdj += Number(v.valor || 0);
             }
             this.sumVendas = sumVendasAdj;
             // Preferir valor agregado do backend quando disponível (evita
@@ -581,7 +505,6 @@ export class CaixaComponent implements OnInit {
               });
             } catch { /* ignore */ }
             try {
-              const entradasDebug = Array.from(entradasBySession.entries()).map(([k, arr]) => ({ session: k, valoresRestantes: arr }));
               let totalInclDinheiro = 0;
               if (this.filtroModo === 'dia') {
                 totalInclDinheiro = Number((this.resumoVendasDia as any)?.receita_total || 0);
@@ -592,12 +515,9 @@ export class CaixaComponent implements OnInit {
               const naoDinheiro = Number(this.sumVendas || 0);
               const dinheiroEstimado = Math.max(0, totalInclDinheiro - naoDinheiro);
               const totalCaixaPrev = naoDinheiro + this.sumEntradas - this.sumRetiradas;
-              logger.info('CAIXA_COMPONENT', 'DEDUP_DEBUG', 'Resumo deduplicacao vendas', {
+              logger.info('CAIXA_COMPONENT', 'DEDUP_DEBUG', 'Resumo deduplicacao vendas (simplificado)', {
                 filtroModo: this.filtroModo,
                 sumVendasAdj,
-                entradasDebug,
-                vendasDebugCount: vendasDebug.length,
-                vendasDebugSample: vendasDebug.slice(0, 10),
                 totalInclDinheiro,
                 naoDinheiro,
                 dinheiroEstimado,

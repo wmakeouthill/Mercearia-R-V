@@ -933,8 +933,14 @@ public class CaixaController {
         return filtrada.stream()
                 .filter(m -> TIPO_ENTRADA.equals(m.get("tipo")))
                 .filter(m -> m.get(KEY_CAIXA_STATUS_ID) != null && m.get(KEY_VALOR) != null)
-                .map(m -> m.get(KEY_CAIXA_STATUS_ID).toString() + "|"
-                        + Double.toString(((Number) m.get(KEY_VALOR)).doubleValue()))
+                .map(m -> {
+                    String caixaId = m.get(KEY_CAIXA_STATUS_ID).toString();
+                    double valor = ((Number) m.get(KEY_VALOR)).doubleValue();
+                    String key = caixaId + "|" + String.format("%.2f", valor);
+                    log.debug("DEDUP: Criando chave entrada em dinheiro - caixa_id: {}, valor: {}, key: {}", caixaId,
+                            valor, key);
+                    return key;
+                })
                 .collect(java.util.stream.Collectors.toSet());
     }
 
@@ -952,14 +958,18 @@ public class CaixaController {
             Object caixaId = m.get(KEY_CAIXA_STATUS_ID);
             double val = ((Number) m.get(KEY_VALOR)).doubleValue();
 
+            // Para vendas em dinheiro, verificar se já existe uma entrada correspondente no
+            // caixa
             if (VALOR_DINHEIRO.equals(metodo) && caixaId != null) {
-                String key = caixaId.toString() + "|" + Double.toString(val);
+                String key = caixaId.toString() + "|" + String.format("%.2f", val);
                 if (entradaCashKeys.contains(key)) {
-                    return 0.0; // skip duplicate
+                    log.debug("DEDUP: Excluindo venda em dinheiro duplicada - caixa_id: {}, valor: {}", caixaId, val);
+                    return 0.0; // skip duplicate - dinheiro já contado como entrada
                 }
             }
             return val;
         } catch (Exception e) {
+            log.warn("Erro ao calcular valor da venda: {}", e.getMessage());
             return 0.0;
         }
     }
@@ -1002,6 +1012,11 @@ public class CaixaController {
                 "DIAG_CAIXA_AGGS: periodoInicio={} periodoFim={} tipo={} metodo_pagamento={} -> sums: entradas={} retiradas={} vendas={} totalItems={}",
                 params.inicio, params.fim, params.tipo, params.metodoPagamento,
                 sums.sumEntradas, sums.sumRetiradas, sums.sumVendas, totalItems);
+
+        // Log adicional para monitorar deduplicação
+        log.info(
+                "CAIXA_AGGREGATES_RESULT: sumEntradas={}, sumRetiradas={}, sumVendas={}, sumVendasNet={}, totalItems={}",
+                sums.sumEntradas, sums.sumRetiradas, sums.sumVendas, sums.sumVendasNet, totalItems);
     }
 
     private ResponseEntity<java.util.Map<String, Object>> buildAllItemsResponse(
@@ -1331,8 +1346,14 @@ public class CaixaController {
         return lista.stream()
                 .filter(m -> TIPO_ENTRADA.equals(m.get("tipo")))
                 .filter(m -> m.get(KEY_CAIXA_STATUS_ID) != null && m.get(KEY_VALOR) != null)
-                .map(m -> m.get(KEY_CAIXA_STATUS_ID).toString() + "|"
-                        + Double.toString(((Number) m.get(KEY_VALOR)).doubleValue()))
+                .map(m -> {
+                    String caixaId = m.get(KEY_CAIXA_STATUS_ID).toString();
+                    double valor = ((Number) m.get(KEY_VALOR)).doubleValue();
+                    String key = caixaId + "|" + String.format("%.2f", valor);
+                    log.debug("DEDUP_DAY: Criando chave entrada em dinheiro - caixa_id: {}, valor: {}, key: {}",
+                            caixaId, valor, key);
+                    return key;
+                })
                 .collect(java.util.stream.Collectors.toSet());
     }
 
@@ -1351,14 +1372,19 @@ public class CaixaController {
             Object valorObj = m.get(KEY_VALOR);
             double val = valorObj == null ? 0.0 : ((Number) valorObj).doubleValue();
 
+            // Para vendas em dinheiro, verificar se já existe uma entrada correspondente no
+            // caixa
             if (VALOR_DINHEIRO.equals(metodo) && caixaId != null) {
-                String key = caixaId.toString() + "|" + Double.toString(val);
+                String key = caixaId.toString() + "|" + String.format("%.2f", val);
                 if (entradaCashKeys.contains(key)) {
-                    return 0.0; // skip duplicate
+                    log.debug("DEDUP_DAY: Excluindo venda em dinheiro duplicada - caixa_id: {}, valor: {}", caixaId,
+                            val);
+                    return 0.0; // skip duplicate - dinheiro já contado como entrada
                 }
             }
             return val;
         } catch (Exception e) {
+            log.warn("Erro ao calcular valor da venda (dia): {}", e.getMessage());
             return 0.0;
         }
     }
@@ -1812,10 +1838,16 @@ public class CaixaController {
                 .filter(m -> TIPO_RETIRADA.equals(m.get("tipo")))
                 .mapToDouble(m -> ((Number) m.get(KEY_VALOR)).doubleValue())
                 .sum();
+
+        // Aplicar lógica de deduplicação para vendas em dinheiro
+        java.util.Set<String> entradaCashKeys = buildEntradaCashKeys(filtrada);
         double sumVendasAgg = filtrada.stream()
                 .filter(m -> TIPO_VENDA.equals(m.get("tipo")))
-                .mapToDouble(m -> ((Number) m.get(KEY_VALOR)).doubleValue())
+                .mapToDouble(m -> calculateVendaValue(m, entradaCashKeys))
                 .sum();
+
+        log.debug("DEDUP_SUMMARY: Calculando agregados com deduplicação - entradas: {}, retiradas: {}, vendas: {}",
+                sumEntradasAgg, sumRetiradasAgg, sumVendasAgg);
 
         java.util.Map<String, Object> aggsMap = new java.util.LinkedHashMap<>();
         aggsMap.put(KEY_SUM_ENTRADAS, sumEntradasAgg);
