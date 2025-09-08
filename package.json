@@ -20,7 +20,7 @@
         "dist": "npm run build:prod && cd electron && npm run dist",
         "dist:win": "npm run build:prod && cd electron && npm run dist:win",
         "dist:standalone": "npx ts-node scripts/build-standalone.ts",
-        "dev": "node scripts/cleanup-selective.js && concurrently -k -s first \"cd backend-spring && mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=3000 --define spring.devtools.restart.enabled=false\" \"node scripts/wait-and-start-frontend.js -- network\" \"node scripts/wait-and-start-electron.js\"",
+        "dev": "node scripts/cleanup-selective.js && concurrently -k -s first \"cd backend-spring && mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=3000 --define spring.devtools.restart.enabled=false -DskipTests\" \"node scripts/wait-and-start-frontend.js -- network\" \"node scripts/wait-and-start-electron.js\"",
         "dev:https": "concurrently -k -s first \"cd backend-spring && mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=3000 --define spring.devtools.restart.enabled=false\" \"node scripts/wait-and-start-frontend.js -- https network\" \"node scripts/wait-and-start-electron.js\"",
         "dev:lan": "concurrently -k -s first \"cd backend-spring && mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=3000 --define spring.devtools.restart.enabled=false -Dspring-boot.run.profiles=lan\" \"node scripts/wait-and-start-frontend.js -- network\" \"node scripts/wait-and-start-electron.js\"",
         "dev:lan:https": "concurrently -k -s first \"cd backend-spring && mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=3000 --define spring.devtools.restart.enabled=false -Dspring-boot.run.profiles=lan\" \"node scripts/wait-and-start-frontend.js -- https network lan\" \"node scripts/wait-and-start-electron.js\"",
@@ -36,7 +36,10 @@
         "start": "cd electron && npm start",
         "cert:generate": "node scripts/generate-dev-cert.js",
         "sync-db": "powershell -ExecutionPolicy Bypass -File ./scripts/sync-db.ps1",
-        "validate-dist": "node ./scripts/validate-dist.js"
+        "validate-dist": "node ./scripts/validate-dist.js",
+        "import-sqlite-data": "node scripts/import-sqlite-data.js",
+        "import-sqlite-data:reset": "node scripts/import-sqlite-data.js --reset",
+        "dump-sqlite": "node scripts/sqlite-to-postgres-dump.js"
     },
     "keywords": [
         "electron",

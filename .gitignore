@@ -11,7 +11,9 @@ deploy/package/
 
 # Java/Maven
 backend-spring/target/
-
+backend-spring/pgsql/
+backend-spring/pg/win/share
+backend-spring/pg/win/lib
 # OS / Editor
 .DS_Store
 Thumbs.db

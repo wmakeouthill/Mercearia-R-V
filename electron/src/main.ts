@@ -51,7 +51,7 @@ let backendStdoutStream: fs.WriteStream | null = null;
 let backendStderrStream: fs.WriteStream | null = null;
 // Flag para desativar completamente logs em arquivo (frontend.log, backend-stdout.log, backend-stderr.log)
 // Temporariamente habilitado para debugging em builds empacotados
-const DISABLE_FILE_LOGS = false;
+const DISABLE_FILE_LOGS = true;
 
 // Retry menos agressivo para garantir que a janela navegue para o frontend servido pelo backend
 let frontendRetryTimer: NodeJS.Timeout | null = null;
@@ -1323,7 +1323,7 @@ async function preparePgData(): Promise<{ userDataDir: string; userPgDir: string
 }
 
 function buildEnvForBackend(userDataDir: string, userPgDir: string): NodeJS.ProcessEnv {
-    return {
+    const env = {
         ...process.env,
         NODE_ENV: 'production',
         // Forçar apontar para o banco de dados copiado em userData (única fonte de verdade)
@@ -1334,9 +1334,15 @@ function buildEnvForBackend(userDataDir: string, userPgDir: string): NodeJS.Proc
         // Garantir que nenhum dump automático seja aplicado
         APPLY_DB_DUMP: 'false',
         // Desabilitar Liquibase em produção pois o banco já vem pronto de desenvolvimento
-        LIQUIBASE_ENABLED: 'false',
-        LOG_FILE: path.join(getLogsDirectory(), 'backend.log')
+        LIQUIBASE_ENABLED: 'false'
     } as NodeJS.ProcessEnv;
+
+    // Adicionar LOG_FILE apenas se logs estiverem habilitados
+    if (!DISABLE_FILE_LOGS) {
+        env.LOG_FILE = path.join(getLogsDirectory(), 'backend.log');
+    }
+
+    return env;
 }
 
 // Helper function to get platform directory name
@@ -1583,7 +1589,9 @@ async function launchBackendProcess(jarPath: string, userDataDir: string, env: N
 
     // Garantir variáveis para backend reconhecer modo empacotado e diretórios
     env.APP_PACKAGED = 'true';
-    env.LOG_FILE = path.join(getLogsDirectory(), 'backend.log');
+    if (!DISABLE_FILE_LOGS) {
+        env.LOG_FILE = path.join(getLogsDirectory(), 'backend.log');
+    }
 
     console.log('🚀 Iniciando processo Java com:');
     console.log('  - Executável:', javaExecutable);
