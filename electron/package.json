@@ -120,7 +120,7 @@
                 }
             ],
             "icon": "icon/icon.ico",
-            "requestedExecutionLevel": "requireAdministrator"
+            "requestedExecutionLevel": "asInvoker"
         },
         "nsis": {
             "oneClick": false,

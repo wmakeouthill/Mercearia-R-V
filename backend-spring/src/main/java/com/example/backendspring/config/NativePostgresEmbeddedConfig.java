@@ -10,6 +10,7 @@ import org.springframework.context.annotation.Configuration;
 import javax.sql.DataSource;
 import org.springframework.jdbc.datasource.SimpleDriverDataSource;
 import java.io.IOException;
+import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -83,6 +84,12 @@ public class NativePostgresEmbeddedConfig {
 
             // 4. Inicializar banco se necessário
             initializeDatabase();
+
+            // 4.5. Configurar permissões e estratégia anti-admin
+            setupAdminWorkaround();
+
+            // 4.6. Criar estrutura de diretórios esperada pelo PostgreSQL
+            setupPostgresDirectoryStructure();
 
             // 5. Iniciar servidor PostgreSQL
             startPostgresServer();
@@ -233,52 +240,315 @@ public class NativePostgresEmbeddedConfig {
             }
         }
 
+        private void setupAdminWorkaround() {
+            // Detectar se está executando como administrador e configurar workarounds
+            boolean isAdmin = isRunningAsAdministrator();
+            if (isAdmin) {
+                log.warn("⚠️ Executando como administrador! Configurando workarounds...");
+
+                // Ajustar permissões do diretório de dados
+                adjustDataDirectoryPermissions();
+            } else {
+                log.info("✅ Executando como usuário normal");
+            }
+        }
+
+        private void adjustDataDirectoryPermissions() {
+            try {
+                // Ajustar permissões do diretório de dados para todos os usuários
+                File dataDir = dataDirectory.toFile();
+                if (dataDir.exists()) {
+                    boolean readable = dataDir.setReadable(true, false);
+                    boolean writable = dataDir.setWritable(true, false);
+                    boolean executable = dataDir.setExecutable(true, false);
+
+                    log.info("📁 Permissões ajustadas - R:{} W:{} X:{}", readable, writable, executable);
+                }
+            } catch (Exception e) {
+                log.debug("Erro ao ajustar permissões: {}", e.getMessage());
+            }
+        }
+
+        private void setupPostgresDirectoryStructure() {
+            try {
+                // 🔧 SOLUÇÃO: Garantir que PostgreSQL encontre todos os diretórios necessários
+                if (!binariesDirectory.toString().contains(PGSQL_DIR)) {
+                    log.info("🔧 Configurando estrutura de diretórios para pg/win...");
+
+                    Path pgRoot = binariesDirectory.getParent(); // pg/win -> pg
+
+                    // Criar diretório 'lib' se não existir (PostgreSQL procura por /lib)
+                    Path libDir = pgRoot.resolve("lib");
+                    if (!Files.exists(libDir)) {
+                        Files.createDirectories(libDir);
+                        log.info("📁 Criado diretório lib: {}", libDir);
+
+                        // Copiar DLLs essenciais para lib/
+                        String[] essentialDlls = { "libpq.dll", "vcruntime140.dll", "msvcp140.dll" };
+                        for (String dll : essentialDlls) {
+                            Path sourceDll = binariesDirectory.resolve(dll);
+                            Path targetDll = libDir.resolve(dll);
+                            if (Files.exists(sourceDll) && !Files.exists(targetDll)) {
+                                try {
+                                    Files.copy(sourceDll, targetDll);
+                                    log.debug("📋 Copiado: {}", dll);
+                                } catch (Exception e) {
+                                    log.debug("⚠️ Falha ao copiar {}: {}", dll, e.getMessage());
+                                }
+                            }
+                        }
+                    }
+
+                    // 🎯 SOLUÇÃO PRINCIPAL: Criar estrutura completa que PostgreSQL espera
+                    // PostgreSQL procura por /lib, /share, etc. relativos ao working directory
+
+                    // Criar /lib relativo ao working directory (binariesDirectory)
+                    Path workingLibDir = binariesDirectory.resolve("lib");
+                    if (!Files.exists(workingLibDir)) {
+                        Files.createDirectories(workingLibDir);
+                        log.info("📁 Criado working lib: {}", workingLibDir);
+
+                        // Copiar todas as DLLs para o lib do working directory
+                        try {
+                            Files.walk(binariesDirectory)
+                                    .filter(p -> p.toString().endsWith(".dll"))
+                                    .forEach(dll -> {
+                                        try {
+                                            Path targetDll = workingLibDir.resolve(dll.getFileName());
+                                            if (!Files.exists(targetDll)) {
+                                                Files.copy(dll, targetDll);
+                                                log.debug("📋 Copiado para working lib: {}", dll.getFileName());
+                                            }
+                                        } catch (Exception e) {
+                                            log.debug("⚠️ Falha ao copiar DLL: {}", e.getMessage());
+                                        }
+                                    });
+                        } catch (Exception e) {
+                            log.warn("⚠️ Erro ao copiar DLLs para working lib: {}", e.getMessage());
+                        }
+                    }
+
+                    // 🎯 SOLUÇÃO CRÍTICA: Criar diretório /lib absoluto que PostgreSQL procura
+                    // PostgreSQL no Windows às vezes procura por C:/lib ou /lib dependendo do
+                    // contexto
+                    try {
+                        // Tentar criar na raiz do disco atual
+                        Path diskRoot = Paths.get(System.getProperty("user.dir")).getRoot();
+                        Path absoluteLibDir = diskRoot.resolve("lib");
+
+                        if (!Files.exists(absoluteLibDir)) {
+                            try {
+                                Files.createDirectories(absoluteLibDir);
+                                log.info("📁 Criado lib absoluto: {}", absoluteLibDir);
+
+                                // Copiar DLLs essenciais para o diretório absoluto
+                                String[] criticalDlls = { "libpq.dll", "postgres.exe" };
+                                for (String dll : criticalDlls) {
+                                    Path sourceDll = binariesDirectory.resolve(dll);
+                                    if (Files.exists(sourceDll)) {
+                                        Path targetDll = absoluteLibDir.resolve(dll);
+                                        if (!Files.exists(targetDll)) {
+                                            Files.copy(sourceDll, targetDll);
+                                            log.debug("📋 Copiado para lib absoluto: {}", dll);
+                                        }
+                                    }
+                                }
+                            } catch (Exception e) {
+                                log.debug("⚠️ Não foi possível criar lib absoluto: {}", e.getMessage());
+                            }
+                        }
+                    } catch (Exception e) {
+                        log.debug("⚠️ Erro ao criar estrutura lib absoluta: {}", e.getMessage());
+                    }
+
+                    // 🎯 SOLUÇÃO CRÍTICA: Criar diretório /share absoluto que PostgreSQL procura
+                    // PostgreSQL procura por /share/timezone, /share/timezonesets, etc.
+                    try {
+                        Path diskRoot = Paths.get(System.getProperty("user.dir")).getRoot();
+                        Path absoluteShareDir = diskRoot.resolve("share");
+                        Path sourceShareDir = binariesDirectory.resolve(SHARE_DIR);
+
+                        if (!Files.exists(absoluteShareDir) && Files.exists(sourceShareDir)) {
+                            try {
+                                Files.createDirectories(absoluteShareDir);
+                                log.info("📁 Criado share absoluto: {}", absoluteShareDir);
+
+                                // Copiar diretórios essenciais do share
+                                String[] criticalDirs = { "timezone", "timezonesets", "locale" };
+                                for (String dir : criticalDirs) {
+                                    Path sourceDir = sourceShareDir.resolve(dir);
+                                    Path targetDir = absoluteShareDir.resolve(dir);
+                                    if (Files.exists(sourceDir) && !Files.exists(targetDir)) {
+                                        try {
+                                            copyDirectory(sourceDir, targetDir);
+                                            log.debug("📋 Copiado diretório share: {}", dir);
+                                        } catch (Exception e) {
+                                            log.debug("⚠️ Falha ao copiar {}: {}", dir, e.getMessage());
+                                        }
+                                    }
+                                }
+
+                                // Copiar arquivos essenciais do share
+                                String[] criticalFiles = { "postgres.bki", "postgresql.conf.sample" };
+                                for (String file : criticalFiles) {
+                                    Path sourceFile = sourceShareDir.resolve(file);
+                                    Path targetFile = absoluteShareDir.resolve(file);
+                                    if (Files.exists(sourceFile) && !Files.exists(targetFile)) {
+                                        try {
+                                            Files.copy(sourceFile, targetFile);
+                                            log.debug("📋 Copiado arquivo share: {}", file);
+                                        } catch (Exception e) {
+                                            log.debug("⚠️ Falha ao copiar {}: {}", file, e.getMessage());
+                                        }
+                                    }
+                                }
+                            } catch (Exception e) {
+                                log.debug("⚠️ Não foi possível criar share absoluto: {}", e.getMessage());
+                            }
+                        }
+                    } catch (Exception e) {
+                        log.debug("⚠️ Erro ao criar estrutura share absoluta: {}", e.getMessage());
+                    }
+
+                    // Verificar se share existe
+                    Path shareDir = binariesDirectory.resolve(SHARE_DIR);
+                    if (!Files.exists(shareDir)) {
+                        log.warn("❌ Diretório share não encontrado: {}", shareDir);
+                    } else {
+                        log.info("✅ Diretório share OK: {}", shareDir);
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("⚠️ Falha ao configurar estrutura de diretórios: {}", e.getMessage());
+            }
+        }
+
+        /**
+         * Método helper para copiar diretórios recursivamente
+         */
+        private void copyDirectory(Path source, Path target) throws IOException {
+            Files.walk(source)
+                    .forEach(sourcePath -> {
+                        try {
+                            Path targetPath = target.resolve(source.relativize(sourcePath));
+                            if (Files.isDirectory(sourcePath)) {
+                                Files.createDirectories(targetPath);
+                            } else {
+                                Files.copy(sourcePath, targetPath);
+                            }
+                        } catch (IOException e) {
+                            log.debug("⚠️ Erro ao copiar {}: {}", sourcePath, e.getMessage());
+                        }
+                    });
+        }
+
         private void startPostgresServer() throws IOException {
             log.info("🔥 Iniciando servidor PostgreSQL...");
 
             Path postgresExe = binariesDirectory.resolve(POSTGRES_EXE);
 
+            // Detectar se está executando como administrador
+            boolean isRunningAsAdmin = isRunningAsAdministrator();
+            log.info("🔍 Executando como administrador: {}", isRunningAsAdmin);
+
             // Primeiro, testar se o PostgreSQL consegue mostrar a versão
             testPostgresExecutable(postgresExe);
 
             List<String> postgresCommand = new ArrayList<>();
-            postgresCommand.add(postgresExe.toString());
-            postgresCommand.add("-D");
-            postgresCommand.add(dataDirectory.toString());
-            postgresCommand.add("-p");
-            postgresCommand.add(String.valueOf(postgresPort));
-            postgresCommand.add("-F"); // Don't run in background
 
-            // Permitir execução com privilégios administrativos
-            postgresCommand.add("-c");
-            postgresCommand.add("logging_collector=off");
-            postgresCommand.add("-c");
-            postgresCommand.add("shared_preload_libraries=");
-            postgresCommand.add("-c");
-            postgresCommand.add("dynamic_shared_memory_type=none");
+            if (isRunningAsAdmin) {
+                // SOLUÇÃO 1: Tentar usar pg_ctl que pode ser mais permissivo
+                log.info("🔧 Tentando usar pg_ctl para contornar restrições de administrador...");
+                Path pgCtlExe = binariesDirectory.resolve("pg_ctl.exe");
+                if (Files.exists(pgCtlExe)) {
+                    postgresCommand.add(pgCtlExe.toString());
+                    postgresCommand.add("start");
+                    postgresCommand.add("-D");
+                    postgresCommand.add(dataDirectory.toString());
+                    postgresCommand.add("-o");
+                    postgresCommand.add("-p " + postgresPort
+                            + " -c logging_collector=off -c shared_preload_libraries= -c dynamic_shared_memory_type=windows -c log_timezone=UTC -c timezone=UTC");
+                    postgresCommand.add("-w"); // Wait for startup
+                } else {
+                    // SOLUÇÃO 2: Usar postgres diretamente mas sem superuser
+                    log.warn("⚠️ pg_ctl não encontrado, tentando postgres diretamente...");
+                    postgresCommand.add(postgresExe.toString());
+                    postgresCommand.add("-D");
+                    postgresCommand.add(dataDirectory.toString());
+                    postgresCommand.add("-p");
+                    postgresCommand.add(String.valueOf(postgresPort));
+                    postgresCommand.add("-F"); // Don't run in background
+                    // Remover --allow-superuser para evitar erro de administrador
+                    postgresCommand.add("-c");
+                    postgresCommand.add("logging_collector=off");
+                    postgresCommand.add("-c");
+                    postgresCommand.add("shared_preload_libraries=");
+                    postgresCommand.add("-c");
+                    postgresCommand.add("dynamic_shared_memory_type=windows");
+                    postgresCommand.add("-c");
+                    postgresCommand.add("log_timezone=UTC");
+                    postgresCommand.add("-c");
+                    postgresCommand.add("timezone=UTC");
+                }
+            } else {
+                // Execução normal se não for administrador
+                postgresCommand.add(postgresExe.toString());
+                postgresCommand.add("-D");
+                postgresCommand.add(dataDirectory.toString());
+                postgresCommand.add("-p");
+                postgresCommand.add(String.valueOf(postgresPort));
+                postgresCommand.add("-F"); // Don't run in background
 
-            // Permitir execução como administrador/superuser
-            postgresCommand.add("--allow-superuser");
+                postgresCommand.add("-c");
+                postgresCommand.add("logging_collector=off");
+                postgresCommand.add("-c");
+                postgresCommand.add("shared_preload_libraries=");
+                postgresCommand.add("-c");
+                postgresCommand.add("dynamic_shared_memory_type=windows");
+                postgresCommand.add("-c");
+                postgresCommand.add("log_timezone=UTC");
+                postgresCommand.add("-c");
+                postgresCommand.add("timezone=UTC");
+            }
 
             ProcessBuilder pb = new ProcessBuilder(postgresCommand);
+
             // Configurar variáveis de ambiente essenciais para PostgreSQL
             pb.environment().put("PATH", binariesDirectory.toString() + ";" + System.getenv("PATH"));
             pb.environment().put("PGDATA", dataDirectory.toString());
             pb.environment().put("PGTZ", "UTC"); // Força timezone UTC para evitar erro
 
-            // Permitir execução com privilégios administrativos
-            pb.environment().put("PGUSER", POSTGRES_USER); // Define usuário postgres
-            pb.environment().put("POSTGRES_ALLOW_SUPERUSER", "1"); // Permite superuser
-
-            // Para pg/win, configurar PGSYSCONFDIR explicitamente
+            // 🔧 SOLUÇÃO: Forçar PostgreSQL a usar APENAS os diretórios pg/win
             if (!binariesDirectory.toString().contains(PGSQL_DIR)) {
-                pb.environment().put("PGSYSCONFDIR", binariesDirectory.resolve(SHARE_DIR).toString());
-                log.info("🔧 Configurando PGSYSCONFDIR para pg/win: {}", binariesDirectory.resolve(SHARE_DIR));
-            }
-            // Sempre tenta garantir que o diretório de suporte está visível
-            pb.environment().put("PGSYSDIR", binariesDirectory.resolve(SHARE_DIR).toString());
+                Path shareDir = binariesDirectory.resolve(SHARE_DIR);
 
-            // Log das configurações para diagnóstico
+                // Configurar todos os caminhos para pg/win
+                pb.environment().put("PGSYSCONFDIR", shareDir.toString());
+                pb.environment().put("PGSYSDIR", shareDir.toString());
+                pb.environment().put("PGSHARE", shareDir.toString());
+
+                // Forçar lib paths para procurar na pasta pg/win
+                pb.environment().put("PGLIBDIR", binariesDirectory.toString());
+                pb.environment().put("PGLIB", binariesDirectory.toString());
+
+                // Definir PostgreSQL installation root como pg/win parent
+                Path pgRoot = binariesDirectory.getParent(); // pg/win -> pg
+                pb.environment().put("PGHOME", pgRoot.toString());
+                pb.environment().put("POSTGRES_HOME", pgRoot.toString());
+
+                // Configurar working directory como binariesDirectory
+                pb.directory(binariesDirectory.toFile());
+
+                log.info("🔧 Configurado para usar APENAS pg/win:");
+                log.info("   PGSYSCONFDIR: {}", shareDir);
+                log.info("   PGLIBDIR: {}", binariesDirectory);
+                log.info("   PGHOME: {}", pgRoot);
+                log.info("   Working Directory: {}", binariesDirectory);
+            } else {
+                // Para distribuição completa, usar configuração padrão
+                pb.environment().put("PGSYSDIR", binariesDirectory.resolve(SHARE_DIR).toString());
+                log.info("✅ Usando distribuição completa do PostgreSQL");
+            } // Log das configurações para diagnóstico
             log.info("🔍 Comando PostgreSQL: {}", String.join(" ", postgresCommand));
             log.info("🔍 Variáveis de ambiente:");
             log.info("   PGDATA: {}", pb.environment().get("PGDATA"));
@@ -406,6 +676,25 @@ public class NativePostgresEmbeddedConfig {
             }
 
             return output.toString();
+        }
+
+        /**
+         * Detecta se o processo atual está sendo executado com privilégios
+         * administrativos
+         */
+        private boolean isRunningAsAdministrator() {
+            try {
+                // Tentar criar um arquivo temporário em C:\ (requer admin)
+                Path tempFile = Paths.get("C:\\", "temp_admin_test_" + System.currentTimeMillis() + ".tmp");
+                Files.createFile(tempFile);
+                Files.deleteIfExists(tempFile);
+                log.debug("🔍 Teste de administrador: POSITIVO (conseguiu criar arquivo em C:\\)");
+                return true;
+            } catch (Exception e) {
+                // Se falhou, provavelmente não é administrador
+                log.debug("🔍 Teste de administrador: NEGATIVO ({})", e.getMessage());
+                return false;
+            }
         }
 
         public String getJdbcUrl() {
