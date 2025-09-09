@@ -1593,6 +1593,20 @@ async function launchBackendProcess(jarPath: string, userDataDir: string, env: N
         env.LOG_FILE = path.join(getLogsDirectory(), 'backend.log');
     }
 
+    // 🔧 CORREÇÃO: Configurar paths do PostgreSQL para produção
+    // Em produção empacotada, os executáveis ficam no resources/pg/win/
+    const baseResources = process.resourcesPath || path.join(__dirname, '../resources');
+    const pgWinDir = path.join(baseResources, 'pg', 'win');
+    const pgDumpPath = path.join(pgWinDir, 'pg_dump.exe');
+    const pgRestorePath = path.join(pgWinDir, 'pg_restore.exe');
+
+    env.PG_DUMP_PATH = pgDumpPath;
+    env.PG_RESTORE_PATH = pgRestorePath;
+
+    console.log('🔧 Configurando PostgreSQL paths para produção:');
+    console.log('  - PG_DUMP_PATH:', pgDumpPath);
+    console.log('  - PG_RESTORE_PATH:', pgRestorePath);
+
     console.log('🚀 Iniciando processo Java com:');
     console.log('  - Executável:', javaExecutable);
     console.log('  - Argumentos:', args.join(' '));

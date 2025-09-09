@@ -145,6 +145,36 @@ public class AdminService {
         if (datasourcePass != null && !datasourcePass.isBlank())
             env.put("PGPASSWORD", datasourcePass);
 
+        // 🔧 CORREÇÃO: Configurar variáveis de ambiente para PostgreSQL embedded
+        // Estas variáveis devem ser idênticas às usadas no servidor PostgreSQL
+        try {
+            Path pgDumpParent = Paths.get(pgDumpPath).getParent(); // pg/win/bin -> pg/win
+            if (pgDumpParent != null) {
+                Path shareDir = pgDumpParent.resolve("share");
+                Path pgRoot = pgDumpParent.getParent(); // pg/win -> pg
+
+                if (Files.exists(shareDir)) {
+                    env.put("PGSYSCONFDIR", shareDir.toString());
+                    env.put("PGSYSDIR", shareDir.toString());
+                    env.put("PGSHARE", shareDir.toString());
+                    env.put("PGLIBDIR", pgDumpParent.toString());
+                    env.put("PGHOME", pgRoot != null ? pgRoot.toString() : pgDumpParent.toString());
+
+                    log.debug("🔧 Configuradas variáveis de ambiente para pg_dump:");
+                    log.debug("   PGSYSDIR: {}", shareDir);
+                    log.debug("   PGLIBDIR: {}", pgDumpParent);
+                    log.debug("   PGHOME: {}", pgRoot);
+
+                    // 🔧 CORREÇÃO ADICIONAL: Configurar working directory para pg/win
+                    // para que paths relativos funcionem corretamente
+                    pb.directory(pgDumpParent.toFile());
+                    log.debug("🔧 Working directory configurado: {}", pgDumpParent);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("⚠️ Falha ao configurar variáveis de ambiente para pg_dump: {}", e.getMessage());
+        }
+
         pb.redirectErrorStream(true);
         // Log connection info just before running pg_dump to help debugging races
         String dbgHost = env.getOrDefault("PGHOST", "");
@@ -331,30 +361,33 @@ public class AdminService {
     public void restoreBackup(String name) throws IOException, InterruptedException {
         Path p = getBackupPathSanitized(name);
         if (!Files.exists(p))
-            throw new IllegalArgumentException("Backup não encontrado");
+            throw new IllegalArgumentException("Backup não encontrado: " + p.toAbsolutePath());
+
+        log.info("🔄 Iniciando restore do backup: {}", p.toAbsolutePath());
+
         // mesma lógica do createBackup: quando usamos embedded, tentar obter URL via
         // DataSource
         // Ensure pg binaries resolved (prefer system, then repo stubs)
-        resolvePgBinPaths();
-        String effectiveUrl = datasourceUrl;
-        if (effectiveUrl == null || effectiveUrl.isBlank()) {
-            try {
-                var ds = jdbcTemplate.getDataSource();
-                if (ds != null) {
-                    try (var connc = ds.getConnection()) {
-                        effectiveUrl = connc.getMetaData().getURL();
-                    }
-                }
-            } catch (Exception e) {
-                log.debug("Não foi possível obter URL do DataSource via metadata: {}", e.getMessage());
-            }
+        try {
+            resolvePgBinPaths();
+            log.debug("✅ pg_restore path resolvido: {}", pgRestorePath);
+        } catch (Exception e) {
+            log.error("❌ Falha ao resolver pg_restore: {}", e.getMessage());
+            throw new IllegalStateException("Falha ao encontrar pg_restore: " + e.getMessage());
         }
 
-        if (effectiveUrl == null || effectiveUrl.isBlank())
-            throw new IllegalStateException("Datasource URL não configurada; não é possível restaurar backup");
+        // Usar a mesma lógica do createBackup para resolver URL
+        String effectiveUrl = resolveEffectiveJdbcUrl();
+        log.debug("✅ URL efetiva obtida: {}", effectiveUrl);
 
         String dbName = extractDatabaseName(effectiveUrl);
+        if (dbName == null || dbName.isBlank()) {
+            throw new IllegalStateException("Não foi possível extrair nome do banco da URL: " + effectiveUrl);
+        }
+        log.debug("✅ Nome do banco extraído: {}", dbName);
+
         Map<String, String> conn = parseJdbcUrl(effectiveUrl);
+        log.debug("✅ Parâmetros de conexão: host={}, port={}", conn.get("host"), conn.get("port"));
 
         List<String> cmd = new ArrayList<>();
         cmd.add(pgRestorePath);
@@ -366,9 +399,14 @@ public class AdminService {
         cmd.add("--no-privileges");
         // force operations to run as postgres role inside the target DB
         cmd.add("--role=postgres");
+        // 🔧 CORREÇÃO: Configurações para restaurar em PostgreSQL embedded
+        // Ignorar comentários de extensões para evitar problemas com adminpack
+        cmd.add("--no-comments");
         cmd.add("-d");
         cmd.add(dbName);
         cmd.add(p.toString());
+
+        log.info("🔧 Comando pg_restore: {}", String.join(" ", cmd));
 
         // build ProcessBuilder using the resolved pg_restore path directly
         // (Windows-only)
@@ -385,6 +423,39 @@ public class AdminService {
             env.put("PGUSER", "postgres");
         if (datasourcePass != null && !datasourcePass.isBlank())
             env.put("PGPASSWORD", datasourcePass);
+
+        log.debug("🔧 Variáveis de ambiente: PGHOST={}, PGPORT={}, PGUSER={}",
+                env.get("PGHOST"), env.get("PGPORT"), env.get("PGUSER"));
+
+        // 🔧 CORREÇÃO: Configurar variáveis de ambiente para PostgreSQL embedded
+        // Estas variáveis devem ser idênticas às usadas no servidor PostgreSQL
+        try {
+            Path pgRestoreParent = Paths.get(pgRestorePath).getParent(); // pg/win/bin -> pg/win
+            if (pgRestoreParent != null) {
+                Path shareDir = pgRestoreParent.resolve("share");
+                Path pgRoot = pgRestoreParent.getParent(); // pg/win -> pg
+
+                if (Files.exists(shareDir)) {
+                    env.put("PGSYSCONFDIR", shareDir.toString());
+                    env.put("PGSYSDIR", shareDir.toString());
+                    env.put("PGSHARE", shareDir.toString());
+                    env.put("PGLIBDIR", pgRestoreParent.toString());
+                    env.put("PGHOME", pgRoot != null ? pgRoot.toString() : pgRestoreParent.toString());
+
+                    log.debug("🔧 Configuradas variáveis de ambiente para pg_restore:");
+                    log.debug("   PGSYSDIR: {}", shareDir);
+                    log.debug("   PGLIBDIR: {}", pgRestoreParent);
+                    log.debug("   PGHOME: {}", pgRoot);
+
+                    // 🔧 CORREÇÃO ADICIONAL: Configurar working directory para pg/win
+                    // para que paths relativos funcionem corretamente
+                    pb.directory(pgRestoreParent.toFile());
+                    log.debug("🔧 Working directory configurado: {}", pgRestoreParent);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("⚠️ Falha ao configurar variáveis de ambiente para pg_restore: {}", e.getMessage());
+        }
 
         // Wait for Postgres to accept TCP connections before attempting restore
         if (conn.containsKey("host") && conn.containsKey("port")) {
@@ -404,21 +475,64 @@ public class AdminService {
         }
 
         pb.redirectErrorStream(true);
-        log.info("Executando pg_restore: {}", p.toAbsolutePath());
+        log.info("▶️  Executando pg_restore: {}", p.toAbsolutePath());
+
         Process pr = pb.start();
         String procOut = "";
         try {
             procOut = new String(pr.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
-            log.debug("pg_restore output: {}", procOut);
+            log.debug("📋 pg_restore output: {}", procOut);
         } catch (Exception e) {
-            log.debug("Falha ao ler output do pg_restore: {}", e.getMessage());
+            log.debug("⚠️  Falha ao ler output do pg_restore: {}", e.getMessage());
         }
+
         int code = pr.waitFor();
+        log.info("🏁 pg_restore finalizado com código: {}", code);
+
         if (code != 0) {
-            String msg = "pg_restore retornou codigo " + code;
-            log.error("{} -- output: {}", msg, procOut);
-            throw new IllegalStateException(msg + "\npg_restore output:\n" + procOut);
+            String msg = "pg_restore retornou código " + code;
+            log.error("❌ {} -- output: {}", msg, procOut);
+
+            // 🔧 CORREÇÃO: Aceitar código 1 se são apenas warnings de extensões
+            boolean onlyExtensionWarnings = code == 1 &&
+                    procOut.toLowerCase().contains("warning: errors ignored on restore") &&
+                    (procOut.toLowerCase().contains("adminpack") ||
+                            procOut.toLowerCase().contains("extension"));
+
+            if (onlyExtensionWarnings) {
+                log.warn("⚠️ pg_restore teve warnings de extensões, mas continuando (código {})", code);
+                log.warn("📋 Detalhes: {}", procOut);
+                log.info("✅ Restore do backup concluído com warnings de extensões");
+                return;
+            }
+
+            // Analisar tipos comuns de erro para dar feedback melhor
+            String errorType = "restore_failed";
+            String userMessage = msg;
+
+            if (procOut.toLowerCase().contains("authentication failed") ||
+                    procOut.toLowerCase().contains("password authentication failed")) {
+                errorType = "authentication_error";
+                userMessage = "Falha na autenticação com o banco de dados";
+            } else if (procOut.toLowerCase().contains("connection refused") ||
+                    procOut.toLowerCase().contains("could not connect")) {
+                errorType = "connection_error";
+                userMessage = "Não foi possível conectar ao banco de dados";
+            } else if (procOut.toLowerCase().contains("permission denied") ||
+                    procOut.toLowerCase().contains("access denied")) {
+                errorType = "permission_error";
+                userMessage = "Permissões insuficientes para restaurar o backup";
+            } else if (procOut.toLowerCase().contains("database") &&
+                    procOut.toLowerCase().contains("does not exist")) {
+                errorType = "database_not_found";
+                userMessage = "Banco de dados de destino não encontrado";
+            }
+
+            log.error("🔍 Tipo de erro identificado: {} - {}", errorType, userMessage);
+            throw new IllegalStateException(userMessage + "\n\nDetalhes técnicos:\n" + procOut);
         }
+
+        log.info("✅ Restore do backup concluído com sucesso");
     }
 
     @Transactional

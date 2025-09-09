@@ -3,6 +3,7 @@ package com.example.backendspring.admin;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -22,6 +23,7 @@ public class AdminController {
 
     private static final String ROLE_ADMIN = "hasRole('ADMIN')";
     private static final String KEY_MESSAGE = "message";
+    private static final String KEY_ERROR = "error";
 
     @PostMapping("/backups")
     @PreAuthorize(ROLE_ADMIN)
@@ -65,7 +67,7 @@ public class AdminController {
     @PostMapping("/backups/{name}/restore")
     @PreAuthorize(ROLE_ADMIN)
     public ResponseEntity<Map<String, Object>> restoreBackup(@PathVariable String name,
-            @RequestBody(required = false) Map<String, String> body) throws IOException, InterruptedException {
+            @RequestBody(required = false) Map<String, String> body) {
         String observation = body == null ? "" : body.getOrDefault("observation", "");
         String username = "";
         try {
@@ -75,11 +77,41 @@ public class AdminController {
         } catch (Exception e) {
             /* ignore */
         }
+
         org.slf4j.LoggerFactory.getLogger(AdminController.class)
                 .info("ADMIN_TOOL action=restore filename={} user={} observation={}", name, username, observation);
-        adminService.recordAdminAction(username, "restore", observation, name);
-        adminService.restoreBackup(name);
-        return ResponseEntity.ok(Map.of(KEY_MESSAGE, "restore_started"));
+
+        try {
+            adminService.recordAdminAction(username, "restore", observation, name);
+            adminService.restoreBackup(name);
+            return ResponseEntity.ok(Map.of(KEY_MESSAGE, "restore_started"));
+        } catch (IllegalArgumentException e) {
+            org.slf4j.LoggerFactory.getLogger(AdminController.class)
+                    .error("ADMIN_TOOL action=restore filename={} user={} error=backup_not_found: {}", name, username,
+                            e.getMessage());
+            return ResponseEntity.badRequest()
+                    .body(Map.of(KEY_ERROR, "backup_not_found", KEY_MESSAGE, e.getMessage()));
+        } catch (IllegalStateException e) {
+            org.slf4j.LoggerFactory.getLogger(AdminController.class)
+                    .error("ADMIN_TOOL action=restore filename={} user={} error=restore_failed: {}", name, username,
+                            e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of(KEY_ERROR, "restore_failed", KEY_MESSAGE, e.getMessage()));
+        } catch (IOException | InterruptedException e) {
+            org.slf4j.LoggerFactory.getLogger(AdminController.class)
+                    .error("ADMIN_TOOL action=restore filename={} user={} error=process_error: {}", name, username,
+                            e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of(KEY_ERROR, "process_error", KEY_MESSAGE,
+                            "Erro ao executar pg_restore: " + e.getMessage()));
+        } catch (Exception e) {
+            org.slf4j.LoggerFactory.getLogger(AdminController.class)
+                    .error("ADMIN_TOOL action=restore filename={} user={} error=unexpected: {}", name, username,
+                            e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of(KEY_ERROR, "unexpected_error", KEY_MESSAGE,
+                            "Erro inesperado durante o restore: " + e.getMessage()));
+        }
     }
 
     @PostMapping("/reset-database")
