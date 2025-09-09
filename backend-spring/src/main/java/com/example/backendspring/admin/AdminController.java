@@ -123,9 +123,13 @@ public class AdminController {
     @GetMapping("/audit-logs")
     @PreAuthorize(ROLE_ADMIN)
     public ResponseEntity<List<Map<String, String>>> getAuditLogs() throws IOException {
-        // Read application log file configured by logging.file.name (default
-        // ../backend.log)
-        String logFile = System.getenv().getOrDefault("LOG_FILE", System.getProperty("LOG_FILE", "../backend.log"));
+        // Read application log file configured by logging.file.name
+        // Only if LOG_FILE environment variable is set (no default)
+        String logFile = System.getenv("LOG_FILE");
+        if (logFile == null || logFile.trim().isEmpty()) {
+            return ResponseEntity.ok(List.of());
+        }
+
         java.nio.file.Path p = java.nio.file.Path.of(logFile);
         if (!java.nio.file.Files.exists(p)) {
             return ResponseEntity.ok(List.of());

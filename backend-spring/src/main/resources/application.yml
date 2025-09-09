@@ -28,9 +28,10 @@ spring:
       enabled: false
     livereload:
       enabled: false
+    add-properties: false # Desabilitar completamente as propriedades padrão do DevTools
   jpa:
     hibernate:
-      ddl-auto: none
+      ddl-auto: update # Permitir criação/atualização temporariamente para desenvolvimento
     properties:
       hibernate:
         "[format_sql]": true
@@ -38,7 +39,7 @@ spring:
           "[time_zone]": "UTC"
     open-in-view: false
   liquibase:
-    enabled: ${LIQUIBASE_ENABLED:true}
+    enabled: false # Temporariamente desabilitado para desenvolvimento
     change-log: classpath:db/changelog/db.changelog-master.yaml
 
 app:
@@ -66,9 +67,9 @@ logging:
     root: INFO
     "[org.springframework.web]": INFO
     "[com.example.backendspring]": DEBUG
-  file:
-    # If LOG_FILE env var is set, logs will also be written to that file
-    name: ${LOG_FILE:../backend.log}
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n"
     file: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n"
+  file:
+    # Only log to file if LOG_FILE environment variable is set
+    name: ${LOG_FILE:}

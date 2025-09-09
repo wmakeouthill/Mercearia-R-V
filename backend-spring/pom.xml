@@ -96,13 +96,15 @@
             <optional>true</optional>
         </dependency>
 
-        <!-- Devtools -->
+        <!-- Devtools - Temporariamente desabilitado por problemas com classes internas -->
+        <!--
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-devtools</artifactId>
             <scope>runtime</scope>
             <optional>true</optional>
         </dependency>
+        -->
 
         <!-- Mail sender -->
         <dependency>
