@@ -51,7 +51,7 @@ let backendStdoutStream: fs.WriteStream | null = null;
 let backendStderrStream: fs.WriteStream | null = null;
 // Flag para desativar completamente logs em arquivo (frontend.log, backend-stdout.log, backend-stderr.log)
 // Temporariamente habilitado para debugging em builds empacotados
-const DISABLE_FILE_LOGS = true;
+const DISABLE_FILE_LOGS = false;
 
 // Retry menos agressivo para garantir que a janela navegue para o frontend servido pelo backend
 let frontendRetryTimer: NodeJS.Timeout | null = null;

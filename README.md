@@ -1,323 +1,257 @@
-# Sistema de Gestão de Estoque
+# 🧾 Mercearia R&V — Sistema de Gestão de Estoque (Desktop + Web)
 
-Sistema desktop completo para gestão de produtos, estoque e vendas, desenvolvido com TypeScript, Angular, Node.js/Express e Electron.
+Um sistema completo de gestão de estoque e vendas para mercearias, com experiência desktop (Electron) e web (Angular), backend robusto em Spring Boot e banco de dados PostgreSQL embarcado. Projetado para funcionar 100% offline-first em Windows, com empacotamento do Java e do PostgreSQL dentro do instalador.
 
-## 🚀 Tecnologias Utilizadas
+## 🚀 Visão Geral
 
-- **Frontend**: Angular 17 (TypeScript)
-- **Backend**: Node.js + Express.js (TypeScript)
-- **Banco de Dados**: SQLite
-- **Desktop**: Electron (TypeScript)
-- **Autenticação**: JWT
-- **Estilização**: SCSS
+O Mercearia R&V une uma UI moderna em Angular a um backend Spring Boot embutido e controlado pelo Electron. O aplicativo inicia o backend localmente, serve o frontend e garante que tudo esteja pronto antes de apresentar a interface ao usuário. O banco de dados é PostgreSQL embarcado, evitando dependências externas e facilitando instalações em máquinas simples.
 
-## 📁 Estrutura do Projeto
+## 🏗️ Stack Tecnológica
 
-```mermaid
-sistema-estoque/
-├── backend/             # API REST em TypeScript
-│   ├── src/
-│   │   ├── config/      # Configuração do banco
-│   │   ├── controllers/ # Controladores da API
-│   │   ├── middleware/  # Middlewares de autenticação
-│   │   ├── models/      # Modelos de dados
-│   │   ├── routes/      # Rotas da API
-│   │   ├── types/       # Tipos TypeScript
-│   │   └── server.ts    # Servidor principal
-│   └── package.json
-├── frontend/            # Aplicação Angular
-│   ├── src/
-│   │   ├── app/
-│   │   │   ├── components/ # Componentes da UI
-│   │   │   ├── services/   # Serviços
-│   │   │   ├── guards/     # Guards de rota
-│   │   │   └── models/     # Modelos TypeScript
-│   │   └── ...
-│   └── package.json
-├── electron/            # Aplicação Electron
-│   ├── src/
-│   │   ├── main.ts      # Processo principal
-│   │   └── preload.ts   # Script de preload
-│   └── package.json
-└── package.json         # Scripts principais
-```
+### Backend (Spring Boot)
 
-## 🛠️ Instalação e Configuração
+- Java 21 + Spring Boot 3.5.5
+- Spring Web, Spring Data JPA, Spring Security, Validation
+- JWT (jjwt) para autenticação
+- Liquibase para migrações e controle de schema
+- OpenHTMLToPDF + PDFBox para geração de PDFs (notas)
+- PostgreSQL (driver) com binários embarcados
 
-### ⚡ Início Rápido de Desenvolvimento
+### Frontend (Angular)
 
-Para reduzir o tempo até a janela Electron abrir você pode usar os scripts de desenvolvimento rápido:
+- Angular 20 + TypeScript
+- Angular Material (UI)
+- SCSS
+- Chart.js via `ng2-charts` (visões e relatórios)
+
+### Desktop (Electron)
+
+- Electron 27 + TypeScript
+- Empacotamento com `electron-builder`
+- JDK/JRE embarcados para rodar o Spring Boot sem dependências
+- Inicialização coordenada: backend → frontend → exibição (splash + healthcheck)
+
+### Infraestrutura & DevOps
+
+- Mono-repo com scripts Node.js utilitários em `scripts/`
+- Build integrado: copia o `dist` do frontend para o backend antes do empacote Maven
+- Deploy web opcional com NGINX + Certbot (ver `deploy/`)
+
+## 🎯 Principais Funcionalidades
+
+### 1) Gestão de Produtos e Estoque
+
+- Cadastro, edição e listagem de produtos
+- Controle de estoque e auditorias
+- Upload de imagens de produtos (armazenadas em `backend-spring/uploads`)
+
+### 1) Vendas e Caixa
+
+- Fluxo de checkout completo
+- Itens de venda, pagamentos, ajustes e estornos
+- Controle de caixa (abertura/fechamento, movimentações)
+
+### 1) Clientes
+
+- Cadastro e consulta de clientes
+- Histórico de compras por cliente
+
+### 1) Relatórios e Documentos
+
+- Geração de nota/recibo em PDF (OpenHTMLToPDF + PDFBox)
+- Gráficos e dashboards (Chart.js)
+
+### 1) Segurança
+
+- Autenticação via JWT
+- Perfis de usuário: `admin` e `user` (seed automático opcional em dev)
+
+### 1) Banco de Dados Local Embarcado
+
+- PostgreSQL embarcado com binários e data-dir no app
+- Backups automatizados e scripts de manutenção
+- Nunca usa URL externa por padrão (somente o banco embarcado)
+
+## 🔧 Sistemas Técnicos de Destaque
+
+### Orquestração via Electron
+
+- Splash screen informativa durante o boot
+- Health-check do backend em `/health` antes de navegar para `http://<host>:3000/app/`
+- Logs persistidos em arquivo para facilitar suporte
+- Encerramento limpo do backend e dos processos PostgreSQL ao fechar o app
+
+### Backend Spring Boot
+
+- API REST organizada por domínios: produtos, vendas, caixa, clientes, relatórios
+- Liquibase habilitado em desenvolvimento e desabilitado para builds empacotados
+- Inicialização condicional de dados (seed) via `DataInitializer`
+
+### Banco de Dados Embarcado
+
+- Diretório de dados controlado pelo aplicativo (persistente entre sessões)
+- Ferramentas `pg_dump` e `pg_restore` empacotadas e expostas ao backend via env
+
+## 🗂️ Estrutura do Repositório
+
+- `backend-spring/`: aplicação Spring Boot (Maven)
+- `frontend/`: aplicação Angular
+- `electron/`: processo principal, preload e configuração do builder
+- `scripts/`: utilitários de build, deploy, manutenção e análise
+- `deploy/`: arquivos NGINX, systemd e guias de implantação
+- `db/`: `dump_data.sql` e docs do banco (uso em dev)
+
+## ▶️ Como Executar (Desenvolvimento)
+
+Pré-requisitos:
+
+- Node.js LTS e npm
+- Java 21 (apenas para rodar o backend em dev; o app empacotado inclui JDK)
+- Maven (para build do backend em dev)
+
+Passos rápidos:
+
+1) Instalar dependências nas partes do monorepo:
 
 ```bash
-npm run dev:fast          # Frontend inicia em paralelo (HTTP)
-npm run dev:fast:https    # Frontend inicia em paralelo (HTTPS se certs existirem)
-```
-
-Ou definir a variável de ambiente manualmente:
-
-```bash
-FAST_FRONTEND_START=true npm run dev
-```
-
-Variáveis relevantes:
-
-| Variável | Padrão | Efeito |
-|----------|--------|--------|
-| FAST_FRONTEND_START | false | Se true, não espera /health; inicia Angular após pequeno delay (configurável) |
-| FAST_FRONTEND_DELAY | 3     | Segundos de espera antes de subir o frontend em modo FAST |
-| AUTO_DEV_HTTPS      | true  | Se certificados existirem ativa HTTPS automaticamente |
-| DEV_HTTPS_HOST      | (vazio)| Host override para ng serve em modo https |
-| FRONTEND_BASE_HREF  | /app/ | Quando copiar frontend para o backend, define o `<base href>` usado pelo index (override via env)|
-
-Certificados esperados em `frontend/certs/merceariarv.app.pem` e `merceariarv.app-key.pem` (gerar com `npm run cert:generate`).
-
-### Pré-requisitos
-
-- Node.js (versão 18 ou superior)
-- npm ou yarn
-- Angular CLI (será instalado automaticamente)
-
-### 1. Instalar Dependências
-
-```bash
-# Instalar dependências de todos os módulos
 npm run install:all
 ```
 
-### 2. Configurar o Backend
+1) Levantar tudo em modo dev (backend + frontend + electron):
 
 ```bash
-# Navegar para o backend
-cd backend
-
-# Instalar dependências
-npm install
-
-# Compilar TypeScript
-npm run build
-
-# Iniciar em modo desenvolvimento
 npm run dev
 ```
 
-O backend estará disponível em `http://localhost:3000`
+- O backend inicia em `http://localhost:3000`
+- O frontend dev server inicia em `http://localhost:4200` (o Electron detecta e abre)
 
-### 3. Configurar o Frontend
+Dicas úteis:
 
-```bash
-# Navegar para o frontend
-cd frontend
+- Logs (dev) gravam no diretório raiz do workspace: `frontend.log` e `backend.log`
+- Caso o Angular esteja em HTTPS de dev, o Electron aceita certificados self-signed
 
-# Instalar dependências
-npm install
+## 📦 Build de Produção (Instalador Desktop)
 
-# Iniciar servidor de desenvolvimento
-npm start
-```
-
-O frontend estará disponível em `http://localhost:4200`
-
-### 4. Configurar o Electron
+- Build completo e empacotamento para Windows:
 
 ```bash
-# Navegar para o electron
-cd electron
-
-# Instalar dependências
-npm install
-
-# Compilar TypeScript
-npm run build
+npm run dist:win
 ```
 
-## 🚀 Executando o Sistema
-
-### Modo Desenvolvimento
+- Build genérico (multi-plataforma, se hosted em ambiente compatível):
 
 ```bash
-# Executar todos os serviços simultaneamente
-npm run dev
+npm run dist
 ```
 
-Este comando irá:
+O `electron-builder` copia:
 
-- Iniciar o backend na porta 3000
-- Iniciar o frontend na porta 4200
-- Iniciar o Electron
+- JAR do backend (`backend-spring/target/backend-spring-0.0.1-SNAPSHOT.jar`)
+- `frontend/dist/sistema-estoque/browser` para `resources/frontend`
+- Binários do PostgreSQL e dados
+- JDK/JRE para execução do backend
 
-### Modo Produção
+Observações importantes:
+
+- O backend em produção é iniciado pelo Electron e usa somente o PostgreSQL embarcado
+- Liquibase e seed automático ficam desativados no build empacotado (DB já provisionado)
+
+## 🧪 Comandos Úteis
+
+- Build apenas do frontend:
 
 ```bash
-# Build completo (gera frontend, copia para backend, empacota o JAR e prepara Electron)
-# No root do repositório execute:
-npm run build:backend   # -> executa o build do frontend, copia os assets para backend e empacota o JAR
-
-# Alternativamente (build completo):
-npm run build:all       # constrói backend, frontend e electron
-
-# Executar aplicação (após build)
-npm start
-
-# Criar executável (Electron)
-npm run package
+npm run build:frontend
 ```
 
-## 👤 Credenciais de Acesso
+- Build do backend (gera o JAR):
 
-### Usuário Administrador
+```bash
+npm run build:backend
+```
 
-- **Username**: `admin`
-- **Password**: `admin123`
-- **Permissões**: Acesso total ao sistema
+- Build de tudo (backend → frontend → electron):
 
-### Usuário Padrão
+```bash
+npm run build:all
+```
 
-- **Username**: `user`
-- **Password**: `user123`
-- **Permissões**: Acesso limitado (visualização e vendas)
+- Servir frontend de produção localmente (útil para testes sem Electron):
 
-## 📋 Funcionalidades
+```bash
+npm run serve:frontend
+```
 
-### 🔐 Autenticação e Autorização
+## 🔐 Autenticação e Perfis
 
-- Login com JWT
-- Diferenciação entre usuários admin e padrão
-- Guards de rota para proteção
+- Login via JWT
+- Usuários padrão em dev (seed condicional): `admin` (pode controlar caixa) e `user`
+- Senhas padrão podem ser definidas por envs: `DEFAULT_ADMIN_PASSWORD`, `DEFAULT_USER_PASSWORD`
 
-### 📦 Gestão de Produtos
+## 🗃️ Banco de Dados
 
-- Listagem de produtos
-- Adicionar novo produto (admin)
-- Editar produto (admin)
-- Excluir produto (admin)
-- Gerenciar estoque (admin)
+- Postgres embarcado: binários em `backend-spring/pg/<plataforma>`
+- Diretório de dados gerenciado pelo app em `resources/data/pg` (produção) ou caminho configurado em dev
+- Backups em `backend-spring/backups` (e correspondente nos recursos empacotados)
+- Dump opcional para desenvolvimento em `db/dump_data.sql`
 
-### 💰 Ponto de Venda
+Política do projeto:
 
-- Realizar vendas
-- Atualização automática do estoque
-- Histórico de vendas
+- Sempre usar o Postgres embarcado local; não cair em URLs externas para o banco
 
-### 📊 Relatórios
+## 🪵 Logs e Suporte
 
-- Relatório de vendas por dia
-- Relatório de vendas por mês
-- Dashboard com resumos
+- Frontend: `frontend.log`
+- Backend: `backend.log` e também `backend-stdout.log`/`backend-stderr.log` quando em dev
+- Em produção empacotada, os logs são salvos ao lado da pasta `resources` do aplicativo
 
-## 🔧 API Endpoints
+## 🚀 Deploy Web (Opcional)
 
-### Autenticação
+Para hospedagem web do frontend com backend como serviço:
 
-- `POST /api/auth/login` - Login de usuário
+- Consulte `deploy/README_DEPLOY.md` (guia NGINX + Certbot + systemd)
+- Arquivos prontos em `deploy/nginx/` e `deploy/systemd/`
+- Scripts auxiliares em `deploy/scripts/`
 
-### Produtos
+## 📈 Métricas, Health e Qualidade
 
-- `GET /api/produtos` - Listar produtos
-- `GET /api/produtos/:id` - Obter produto específico
-- `POST /api/produtos` - Criar produto (admin)
-- `PUT /api/produtos/:id` - Atualizar produto (admin)
-- `DELETE /api/produtos/:id` - Excluir produto (admin)
-- `PUT /api/produtos/:id/estoque` - Atualizar estoque (admin)
+- Health check simples em `/health` (usado pelo Electron)
+- Logs estruturados via SLF4J
+- Scripts de verificação e limpeza em `scripts/`
 
-### Vendas
+## 🎨 Interface do Usuário
 
-- `GET /api/vendas` - Listar vendas
-- `POST /api/vendas` - Criar venda
-- `DELETE /api/vendas/:id` - Excluir venda (admin)
+- Tema Angular Material
+- Layout responsivo
+- Gráficos integrados em páginas de relatório
 
-### Relatórios
+## 🔮 Destaques Técnicos
 
-- `GET /api/relatorios/vendas/dia` - Relatório diário
-- `GET /api/relatorios/vendas/mes` - Relatório mensal
+1) Desktop-first com backend Spring Boot embutido (JDK/JRE inclusos)
+2) PostgreSQL embarcado com gestão de dados e backups
+3) Orquestração robusta via Electron (splash, health-check, logs, cleaning)
+4) Geração de PDFs server-side para notas e comprovantes
+5) Mono-repo com automações de build e deploy
 
-## 🗄️ Banco de Dados
+## 📝 Conclusão
 
-O sistema utiliza SQLite com as seguintes tabelas:
+Este projeto demonstra experiência prática em:
 
-### Usuarios
+- Arquitetura full-stack moderna (Angular + Spring Boot + Electron)
+- Aplicações desktop com backend embutido e banco de dados local
+- Segurança com JWT e profiles de acesso
+- Automação de build/empacotamento e integração de recursos nativos
+- Operação offline-first e suporte simplificado (logs, backups, reset)
 
-- `id` (INTEGER, PRIMARY KEY)
-- `username` (TEXT, UNIQUE)
-- `password` (TEXT, hash bcrypt)
-- `role` (TEXT, 'admin' ou 'user')
+— Desenvolvido com foco em confiabilidade e usabilidade para o dia a dia de uma mercearia.
 
-### Produtos2
+---
 
-- `id` (INTEGER, PRIMARY KEY)
-- `nome` (TEXT)
-- `codigo_barras` (TEXT, UNIQUE)
-- `preco_venda` (REAL)
-- `quantidade_estoque` (INTEGER)
+Referências internas úteis:
 
-### Vendas2
-
-- `id` (INTEGER, PRIMARY KEY)
-- `produto_id` (INTEGER, FOREIGN KEY)
-- `quantidade_vendida` (INTEGER)
-- `preco_total` (REAL)
-- `data_venda` (TEXT)
-
-## 🐛 Solução de Problemas
-
-### Erro de CORS
-
-Se houver problemas de CORS, verifique se o backend está rodando na porta 3000 e o frontend na porta 4200.
-
-### Erro de Banco de Dados
-
-O banco SQLite será criado automaticamente na primeira execução. Verifique se o diretório tem permissões de escrita.
-
-### Erro de Compilação TypeScript
-
-Execute `npm run build` em cada módulo para verificar erros de compilação.
-
-## 📝 Scripts Disponíveis
-
-### Scripts Principais
-
-- `npm run install:all` - Instalar todas as dependências
-- `npm run dev` - Executar em modo desenvolvimento
-- `npm run dev:fast` - Dev mais rápido (inicia frontend sem esperar backend ficar saudável)
-- `npm run dev:fast:https` - Igual ao anterior mas preferindo HTTPS
-- `npm run build` - Build completo
-- `npm run start` - Executar aplicação
-- `npm run package` - Criar executável
-
-### Scripts do Backend
-
-- `npm run build:backend` - Compilar backend
-- `npm run start:backend` - Iniciar backend
-
-Nota: `npm run build:backend` no root agora executa automaticamente o build do frontend e copia os arquivos gerados para `backend-spring/src/main/resources/frontend` antes de executar `mvn package`. O mesmo passo também é executado quando você roda `mvn package` dentro de `backend-spring` graças a um plugin Maven configurado para chamar o script `../scripts/copy-frontend-to-backend.js` durante a fase `generate-resources`.
-
-Verificações de ambiente antes do build
-
--------------------------------------
-
-Executar `node scripts/check-env.js` (ou `npm run check-env`) para garantir que as ferramentas necessárias estejam disponíveis no PATH (`node`, `npm`, `mvn`, `java`). O script retorna código de saída não-zero se algo estiver faltando.
-
-### Scripts do Frontend
-
-- `npm run build:frontend` - Build do frontend
-- `npm run start:frontend` - Iniciar frontend
-
-### Scripts do Electron
-
-- `npm run build:electron` - Compilar Electron
-- `npm run start:electron` - Iniciar Electron
-
-## 🤝 Contribuição
-
-1. Faça um fork do projeto
-2. Crie uma branch para sua feature (`git checkout -b feature/AmazingFeature`)
-3. Commit suas mudanças (`git commit -m 'Add some AmazingFeature'`)
-4. Push para a branch (`git push origin feature/AmazingFeature`)
-5. Abra um Pull Request
-
-## 📄 Licença
-
-Este projeto está sob a licença ISC. Veja o arquivo `LICENSE` para mais detalhes.
-
-## 📞 Suporte
-
-Para suporte, abra uma issue no repositório do projeto.
+- `deploy/README_DEPLOY.md` — guia de deploy web (NGINX + Certbot + systemd)
+- `db/README.md` — anotações sobre estrutura e dados do banco em dev
+- `backend-spring/pom.xml` — dependências e build do backend
+- `electron/package.json` — configuração do empacotador e recursos extras
+- Scripts em `scripts/` — utilitários de build, deploy e manutenção
